@@ -1,0 +1,28 @@
+bbs:
+  system_name: "Mesh-Citadel"
+  max_messages_per_room: 300        # (restart required)
+  max_rooms: 50                     # (restart required)
+  max_users: 300                    # (restart required)
+  mail_message_limit: 50
+  starting_room: "Lobby"
+  export_format: "json"             # "csv", "json", or "yaml"
+
+auth:
+  session_timeout: 3600             # seconds
+  max_password_length: 64
+  max_username_length: 32
+  recovery_questions:
+    - "What is your favorite color?"
+    - "What was your first pet's name?"
+    - "Who was your favorite teacher?"
+
+transport:
+  serial_port: "/dev/ttyUSB0"       # (restart required)
+  baud_rate: 9600                   # (restart required)
+
+database:
+  db_path: "citadel.db"             # (restart required)
+
+logging:
+  log_level: "INFO"
+  log_file_path: "citadel.log"
