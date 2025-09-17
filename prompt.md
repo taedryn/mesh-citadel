@@ -75,6 +75,18 @@ the config object should be passed in, rather than instantiated within
 a separate module.  this helps simplify testing, and makes it clear
 what each module depends upon.
 
+# UI STANDARDS
+
+the nature of mesh communications is that a packet is sent, and a
+response can be sent.  packets are limited to 184 characters or less.
+this differs from the modems and direct communications originally used by
+Citadel systems, so we will need to adopt some different UI conventions.
+
+* where the original Citadel would have used a CR, use a single period (.)
+* all interactions scoped with the understanding of room server packet
+  length
+* expect that long output will be chunked by the transport layer
+
 # ARCHITECTURE
 
 the software architecture is split into multiple conceptual domains.
@@ -145,12 +157,20 @@ the rooms system should be able to perform the following actions:
 * update a room's state
 * delete a room (which also deletes messages associated with a room)
 
-### Authentication and Users Subsystem
+the following rooms must exist, and can't be deleted:
 
-the authentication subsystem will maintain knowledge and methods for
-authenticating users.  authentication will involve a username and
-password combination.  users will be stored in a database, which
-includes the following information:
+* Lobby (name can be changed via config file)
+* Mail
+* Aides
+
+### Users Subsystem
+
+the users system maintains knowledge about users.  it doesn't deal with
+authentication or authorization directly, though it provides
+information that may be used in those systems.
+
+users will be stored in a database, which includes the following
+information:
 
 * username
 * display name
@@ -161,38 +181,74 @@ includes the following information:
 * blocked users
 
 passwords must be stored in a one-way hash which is secure, with a
-secondary goal of being computationally lightweight.  display name will default to username, if one is not specified.
+secondary goal of being computationally lightweight.  display name will
+default to username, if one is not specified.
 
-the auth and users system should be able to provide the following
-functions:
+the users system should be able to provide the following functions:
 
-* log a user in with a username and password
 * update a user's password
 * update a user's display name
 * register a new user
-* log a user out
-* report whether a user is logged in or not
 * update a user's permission level
 * report a user's permission level
 * add someone to the user's block list
 * remove someone from the block list
 
+#### User Blocking
+
+the system should allow users to block other users.  this would have
+the effect of preventing the blocked user from seeing the messages of
+the person who blocked them, without notifying the user who's been
+blocked.  if a blocked user sends a private message to the user who
+blocked them, the message will be recorded as normal, but the blocking
+user won't receive a notification, and won't see the message in their
+PM list unless they unblock the user.  users who have aide
+or sysop access cannot be blocked, and cannot block anyone themselves.
+
+### Authorization/Authentication Subsystem
+
+the authx subsystem will maintain knowledge and methods for authenticating
+and authorizing users.  authentication will involve a username and
+password combination.  it most likely won't store any data directly,
+but rather will leverage other systems to provide data, with which it
+will make decisions and give answers.  this system should be able to:
+
+* log a user in with a username and password
+* log a user out
+* report whether a user is logged in or not
+* validate a user's permission to perform an action
+* maintain the map of which actions are allowed under which permission
+  level
+* handle a single permission level, but be expandable so a user may
+  have multiple permissions in the future
+
 #### Permissions
 
 the system will have the following permission levels:
 
+* unverified -- basically no access
 * twit -- limited access
 * user -- normal access
-* aide -- user level, plus can create rooms and delete messages
+* aide -- moderator access
 * sysop -- all permissions
 
-#### User Blocks
+the system will also maintain a list of actions in the config file, and
+which permission levels allow which actions.  we will certainly want to
+keep track of the following actions, in relationship to permission
+levels:
 
-the system should allow users to block other users.  this would have
-the effect of preventing the blocked user from seeing the messages of
-the person who blocked them, as well as preventing the blocking user
-from seeing messages from anyone they've blocked.  users who have aide
-or sysop access cannot be blocked, and cannot block anyone themselves.
+* post messages
+* post messages in a specific room
+* post private messages
+* read all messages
+* read messages in a specific room
+* see other users' last login time and currently logged-in state
+* create new rooms
+* delete own messages
+* delete others' messages
+* edit rooms
+* block other users
+* modify other users' permission level
 
 ### Sessions Subsystem
 
@@ -240,9 +296,25 @@ the message system should be able to perform the following actions:
 * create a new message
 * delete a message
 
-messages should contain whether a sender is blocked or not, though it
+messages should be transmitted to the transport layer as a data
+structure, and contain whether a sender is blocked or not, though it
 will be the responsibility of the transport layer to decide how to act
-on this information.
+on this information.  some will simply not display it, some will show
+it with some kind of obscuring technique, some will choose to display
+that a message from a blocked sender is not being displayed.
+
+deleted messages, whether deleted by the sender or an aide/sysop,
+should be completely removed, without any attempt to save a backup.
+
+#### Private Messages
+
+private messages are a special form of message, which contains a
+recipient, and may only be sent and read in the Mail room.  private
+messages may only be read by the recipient (this means the sysop also
+can't read private messages which aren't addressed to them).  they
+should still be stored in plaintext, and the help text for new users
+should make it clear that private messages are accessible to the sysop
+via the database if necessary.
 
 ### Database Subsystem
 
@@ -262,15 +334,23 @@ database, itself, but it should provide the following services:
 * execute a given SQL statement/query
 * report number of queued requests
 
+write requests which arrive while the database is already locked for
+write will be queued, and processed in the background, so that calling
+code may be reasonably assured that any write call will be processed no
+matter the system load.  read calls which occur while the database is
+locked should be added to the queue, and returned in the order of
+arrival, interleaved with write calls, so that a given read receives
+data which was current as of when it was made.
+
 ### User Interaction Subsystem
 
 the interaction system handles actual interactions with the user, in a
 split fashion -- the presentation of information to the user, and
 reception of commands and message contents from the user will be
-handled in the protocol layer, but the UI system should execute user
-commands once they're parsed and sanitized by the protocol layer.  it
-should include the ability to give the user hints and menus if
-requested, as well as manage entering messages.  the UI system
+handled in the transport protocol layer, but the UI system should
+execute user commands once they're parsed and sanitized by the protocol
+layer.  it should include the ability to give the user hints and menus
+if requested, as well as manage entering messages.  the UI system
 shouldn't need to store much in the database (this is up for
 discussion), but should provide the following services:
 
@@ -284,7 +364,8 @@ the command structure of a citadel BBS is based on single-charater
 commands, which sometimes take an argument.  commands are not case
 sensitive.  the commands we will implement are as follows:
 
-G — Go to the next room (advances to the next room in the room list)
+G — Go to the next room (advances to the next room in the room list
+which has unread messages)
 E — Enter a new message (compose and post a message to the current room)
 R — Read messages in the current room (read a specific message if ID
 provided)
@@ -294,17 +375,23 @@ Q — Quit or log off
 S — Scan messages (shows message headers or summaries)
 C — Change rooms (choose a room by name or number)
 H — Help (display command help)
-M — Mail (send private mail/message to another user)
+M — Mail (go to the Mail room to send/receive private messages)
 W — Who’s online (list active users)
 D — Delete a message
+B - Block or unblock another user
 
-in addition, we will have some whole-word commands for actions which
+in addition, we will have some dot commands for actions which
 are less common, or more associated with administration than daily use
 of the board:
 
-CREATE - create a new room
-ROOM - modify a room's characteristics
-USER - modify a user's characteristics
+.C - create a new room
+.ER - edit a room's characteristics
+.EU - edit a user's characteristics
+
+some commands will take arguments if they're provided -- for instance,
+the E command will take the new message to be entered after a space
+character, or the .EU command will take a username/display name.  if a
+command needs further input, it will issue a prompt for what's needed.
 
 ### Configuration Subsystem
 
