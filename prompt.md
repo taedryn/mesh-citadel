@@ -77,10 +77,11 @@ what each module depends upon.
 
 # UI STANDARDS
 
-the nature of mesh communications is that a packet is sent, and a
-response can be sent.  packets are limited to 184 characters or less.
+the nature of mesh communications is that a all communications are
+packet-based.  packets are limited to 184 characters or less.
 this differs from the modems and direct communications originally used by
-Citadel systems, so we will need to adopt some different UI conventions.
+Citadel systems, which were more interactive, so we will need to adopt
+some different UI conventions.
 
 * where the original Citadel would have used a CR, use a single period (.)
 * all interactions scoped with the understanding of room server packet
