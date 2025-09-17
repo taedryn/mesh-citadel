@@ -21,7 +21,7 @@ class DatabaseManager:
             return
         self._initialized = True
 
-        self.db_path = config.DATABASE_PATH
+        self.db_path = config.database['db_path']
         self.conn = sqlite3.connect(self.db_path)
         self.lock = threading.Lock()
         self.write_queue = deque()
