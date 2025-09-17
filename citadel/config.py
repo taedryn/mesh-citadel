@@ -1,14 +1,12 @@
 import os
 import yaml
+import copy
 
-class ConfigSection:
-    def __init__(self, data, section_name):
-        for key, value in data.items():
-            setattr(self, key, value)
-        self._section_name = section_name
+ENV_PREFIX = "CITADEL_"
 
 class Config:
     _instance = None
+    _initialized = False
 
     _defaults = {
         "bbs": {
@@ -43,70 +41,109 @@ class Config:
         }
     }
 
-    @classmethod
-    def get(cls):
+    _reboot_only_keys = {
+        "bbs.max_messages_per_room",
+        "bbs.max_rooms",
+        "bbs.max_users",
+    }
+
+    def __new__(cls, path="config.yaml"):
         if cls._instance is None:
-            cls._instance = cls()
+            cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
-        self.config_path = os.getenv("CITADEL_CONFIG_PATH", "config.yaml")
-        self.reload()
+    def __init__(self, path="config.yaml"):
+        if self.__class__._initialized:
+            return
+        self._path = path
+        self._load()
+        self.__class__._initialized = True
+
+    def _load(self):
+        with open(self._path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+
+        raw = self._deep_merge(copy.deepcopy(self._defaults), raw)
+        raw = self._apply_env_overrides(raw)
+        self._validate(raw)
+
+        self._raw = raw
+
+        self.bbs = raw["bbs"]
+        self.auth = raw["auth"]
+        self.transport = raw["transport"]
+        self.database = raw["database"]
+        self.logging = raw["logging"]
+
+        self._reboot_snapshot = {
+            key: self._get_nested(raw, key.split("."))
+            for key in self._reboot_only_keys
+        }
 
     def reload(self):
-        config_data = self._load_yaml(self.config_path)
-        # Merge defaults, YAML, environment
-        merged = self._merge_dicts(self._defaults, config_data)
-        merged = self._apply_env_vars(merged)
-        # Set sections as attributes
-        for section, values in merged.items():
-            setattr(self, section, ConfigSection(values, section))
-        # Check for missing/incomplete config
-        self._validate_config(merged)
+        with open(self._path, "r", encoding="utf-8") as f:
+            new_raw = yaml.safe_load(f) or {}
 
-    def _load_yaml(self, path):
+        new_raw = self._deep_merge(copy.deepcopy(self._defaults), new_raw)
+        new_raw = self._apply_env_overrides(new_raw)
+        self._validate(new_raw)
+
+        for key, old_val in self._reboot_snapshot.items():
+            new_val = self._get_nested(new_raw, key.split("."))
+            if new_val != old_val:
+                raise RuntimeError(f"Cannot change reboot-only config key '{key}' at runtime")
+
+        self._raw = new_raw
+
+        self.bbs = new_raw["bbs"]
+        self.auth = new_raw["auth"]
+        self.transport = new_raw["transport"]
+        self.database = new_raw["database"]
+        self.logging = new_raw["logging"]
+
+    def _apply_env_overrides(self, raw):
+        overrides = {}
+        for key, val in os.environ.items():
+            if not key.startswith(ENV_PREFIX):
+                continue
+            path = key[len(ENV_PREFIX):].lower().split("__")
+            self._set_nested(overrides, path, self._coerce(val))
+        return self._deep_merge(raw, overrides)
+
+    def _set_nested(self, d, path, value):
+        for key in path[:-1]:
+            d = d.setdefault(key, {})
+        d[path[-1]] = value
+
+    def _get_nested(self, d, path):
+        for key in path:
+            d = d.get(key, {})
+        return d if not isinstance(d, dict) else copy.deepcopy(d)
+
+    def _coerce(self, val):
+        if val.lower() in ("true", "false"):
+            return val.lower() == "true"
+        if val.isdigit():
+            return int(val)
         try:
-            with open(path, "r") as f:
-                return yaml.safe_load(f) or {}
-        except FileNotFoundError:
-            print(f"[WARNING] Config file {path} not found. Using defaults.")
-            return {}
-        except yaml.YAMLError as e:
-            print(f"[WARNING] YAML error in {path}: {e}. Using defaults.")
-            return {}
+            return float(val)
+        except ValueError:
+            return val
 
-    def _merge_dicts(self, base, update):
-        result = {}
-        for key, value in base.items():
-            if key in update:
-                if isinstance(value, dict) and isinstance(update[key], dict):
-                    result[key] = self._merge_dicts(value, update[key])
-                else:
-                    result[key] = update[key]
+    def _deep_merge(self, base, extra):
+        merged = dict(base)
+        for k, v in extra.items():
+            if isinstance(v, dict) and isinstance(merged.get(k), dict):
+                merged[k] = self._deep_merge(merged[k], v)
             else:
-                result[key] = value
-        # Add any keys in update not in base
-        for key, value in update.items():
-            if key not in result:
-                result[key] = value
-        return result
+                merged[k] = v
+        return merged
 
-    def _apply_env_vars(self, config):
-        # For each nested config value, override with CITADEL_SECTION_KEY env var
-        def apply_env(section, prefix=""):
-            for key, value in section.items():
-                env_var = f"CITADEL_{prefix}{key}".upper()
-                if isinstance(value, dict):
-                    section[key] = apply_env(value, prefix=f"{key}_")
-                else:
-                    if env_var in os.environ:
-                        section[key] = os.environ[env_var]
-            return section
-        return apply_env(config)
+    def _validate(self, cfg):
+        assert cfg["bbs"]["system_name"], "bbs.system_name is required"
+        assert isinstance(cfg["bbs"]["max_messages_per_room"], int), "bbs.max_messages_per_room must be int"
+        assert isinstance(cfg["auth"]["session_timeout"], int), "auth.session_timeout must be int"
+        assert cfg["transport"]["baud_rate"], "transport.baud_rate is required"
+        assert cfg["transport"]["serial_port"], "transport.serial_port is required"
+        assert cfg["database"]["db_path"], "database.db_path is required"
 
-    def _validate_config(self, config):
-        # Print warnings for missing/poorly configured values
-        def check(section, path=""):
-            for key, value in section.items():
-                full_key = f"{path}.{key}" if path else key
-                if value is None or value == 
