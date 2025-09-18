@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, UTC
 from typing import Optional
 
-from citadel.user import User  # Assumes User is defined in citadel.user
+from citadel.user.user import User
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
