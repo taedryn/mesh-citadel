@@ -12,7 +12,7 @@ will be uncovered in this process.
 
 the name of this project is Mesh-Citadel.  the system will be a bulletin
 board system, but designed in such a way that the protocol layer will
-intially communicate with users via a MeshCore room server.  the look
+intially communicate with users via a MeshCore USB companion.  the look
 and feel will be inspired by the Citadel BBS system from the 1980s.
 the goal is to produce a small, efficient message-sharing system which
 can be easily and conveniently accessed over a low-bandwidth connection
@@ -22,7 +22,7 @@ the system will be written in python, in strict adherence to PEP8
 standards, utilizing a minimal number of external modules and libraries.
 it will run on a raspberry pi zero with minimal resources, and will
 utilize solar power, so power efficiency is important.  the first
-targeted communication protocol will utilize a MeshCore room server
+targeted communication protocol will utilize a MeshCore USB companion
 connected by serial port to the pi.  it will use SQLite databases, with
 enough abstraction that Postgres or MySQL could be swapped in later.
 depending on design choices yet to be made, it may make sense to keep
@@ -49,6 +49,16 @@ code must be under test, if doing so would result in very complex or
 fragile tests.  we want the tests, just like the code itself, to be
 flexible where possible, and as lightweight as possible.
 
+as much as is possible, each module or manager should have a clean
+separation of concerns to simplify testing and reasoning about code
+execution: the User object only concerns itself with a single user, the
+MessageManager only deals with messages, not rooms, the Config
+singleton only parses and dispenses configuration information, and so
+on, for all the modules in the system.  where concerns are mixed, the
+module which needs a service from an external module should use that
+module's API.  direct database access outside a module's main area of
+concern is to be avoided wherever possible.
+
 security is important to this project, but it should be considered
 carefully against the implicit security of MeshCore.  striving for
 security beyond that provided by the underlying protocol is wasted effort.
@@ -68,12 +78,14 @@ which require internet access must be secondary to the system.
 # CODING STANDARDS
 
 always follow PEP8, and in particular, never catch Exception unless
-it's absolutely necessary.  always catch specific exceptions.  this
-project follows the pattern of instantiating objects in the entrypoint,
-and then passing objects to other functions and objects.  for instance,
-the config object should be passed in, rather than instantiated within
-a separate module.  this helps simplify testing, and makes it clear
-what each module depends upon.
+it's absolutely necessary.  always catch specific exceptions. code
+inside try blocks should be only the code we expect to throw
+exceptions, nothing more.  this project follows the pattern of
+instantiating objects in the entrypoint, and then passing objects to
+other functions and objects.  for instance, the config object should be
+passed in, rather than instantiated within a separate module.  this
+helps simplify testing, and makes it clear what each module depends
+upon.
 
 # UI STANDARDS
 
@@ -84,7 +96,7 @@ Citadel systems, which were more interactive, so we will need to adopt
 some different UI conventions.
 
 * where the original Citadel would have used a CR, use a single period (.)
-* all interactions scoped with the understanding of room server packet
+* all interactions scoped with the understanding of USB companion packet
   length
 * expect that long output will be chunked by the transport layer
 
@@ -131,18 +143,26 @@ rooms also have a description associated with them.  rooms always appear
 in the same order, and the order should be editable and selectable upon
 room creation.
 
+the rooms system is solely responsible for handling the relationship
+between messages and rooms, utilizing the messages system to post,
+read, and delete messages, but handling the room association of those
+messages itself.
+
 the rooms system should track the following data in a database:
 
 * room id (integer)
 * room name
 * description
 * last-read message per user
-* messages
+* messages in the room
 * room state (read-only or read-write)
 
 this list of information to track does not constitute a single table in
 a database.  rather, we should use the relational features of SQL to
-link from one table to another.
+link from one table to another where appropriate.  the rooms manager
+should utilize the User, MessageManager, and Config objects (and any
+others which end up being needed) where appropriate, to enforce the
+separation of concerns.
 
 the rooms system should be able to perform the following actions:
 
@@ -157,6 +177,10 @@ the rooms system should be able to perform the following actions:
 * update a room's description
 * update a room's state
 * delete a room (which also deletes messages associated with a room)
+
+in the case where a user's last-read message has been deleted, it
+should automatically default to the next message after the one which
+has been deleted.
 
 the following rooms must exist, and can't be deleted:
 
@@ -280,7 +304,9 @@ actions.  all actions should be indexed on username.
 messages in a citadel BBS are in a circular buffer, so there is a set
 limit to the number of messages in a room, and a new message overwrites
 the oldest message.  this saves storage, and honors the low-bandwidth,
-resource-constrained nature of old BBSes.  each message includes
+resource-constrained nature of old BBSes.  the messages system is only
+concerned with message handling, and leaves the room:message
+association and handling to the rooms system.  each message includes
 metadata, as described below.  the message system should track the
 following information:
 
@@ -289,7 +315,6 @@ following information:
 * message recipient (for private messages)
 * message contents
 * timestamp
-* associated room
 
 the message system should be able to perform the following actions:
 
@@ -305,7 +330,16 @@ it with some kind of obscuring technique, some will choose to display
 that a message from a blocked sender is not being displayed.
 
 deleted messages, whether deleted by the sender or an aide/sysop,
-should be completely removed, without any attempt to save a backup.
+should have their contents completely removed, without any attempt to
+save a backup.  there should be two levels of message deletion: if a
+user still exists, and the room still exists, a deleted message should
+just contains the text "[deleted]" but otherwise remain in place, with
+sender and timestamp intact.  if a room is deleted, the messages
+associated with that room should be completely removed from the
+messages table.  the message manager should provide two different
+message-delete functions, a soft delete which leaves the [deleted]
+marker behind, and a hard delete which completely removes the message
+from the system.
 
 #### Private Messages
 

@@ -3,7 +3,8 @@
 This project aims to create a MeshCore-connected BBS, heavily inspired
 by the Citadel BBS from the 1980s.  This system is lightweight,
 designed to run on a solar-powered Raspberry Pi Zero and a low-power
-nRF52-based LoRa node running the room server firmware.
+nRF52-based LoRa node running the USB companion firmware via
+py-meshcore.
 
 # In Progress
 
