@@ -1,0 +1,4 @@
+*.db
+.mesh-citadel
+*.swp
+__pycache__
