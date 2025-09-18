@@ -20,13 +20,39 @@ def initialize_database(db_manager):
     );
     """
 
-    # Future tables like messages, rooms, etc. can be added here
-    tables = [user_table]
+    user_blocks_table = """
+    CREATE TABLE IF NOT EXISTS user_blocks (
+        blocker TEXT NOT NULL,
+        blocked TEXT NOT NULL,
+        PRIMARY KEY (blocker, blocked),
+        FOREIGN KEY (blocker) REFERENCES users(username) ON DELETE CASCADE,
+        FOREIGN KEY (blocked) REFERENCES users(username) ON DELETE CASCADE
+    );
+    """
+
+    messages_table = """
+    CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender TEXT NOT NULL,
+        recipient TEXT,  -- nullable for public messages
+        content TEXT NOT NULL,
+        timestamp TEXT NOT NULL
+    );
+    """
+
+
+    # all tables to be initialized
+    tables = [
+        user_table,
+        user_blocks_table,
+        messages_table,
+    ]
 
     for sql in tables:
         try:
             db_manager.execute(sql)
-            log.info("Table initialized successfully.")
         except RuntimeError as e:
             log.error(f"Failed to initialize table: {e}")
+
+    log.info("Tables initialized successfully")
 
