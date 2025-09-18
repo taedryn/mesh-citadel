@@ -3,6 +3,7 @@ from datetime import datetime, UTC
 from typing import Optional
 
 from citadel.user.user import User
+from citadel.message.errors import InvalidRecipientError, InvalidContentError
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
@@ -12,7 +13,14 @@ class MessageManager:
         self.db = db_manager
 
     def post_message(self, sender: str, content: str, recipient: Optional[str] = None) -> int:
-        """Creates a new message. Room linkage is handled externally."""
+        if not content or not isinstance(content, str) or content.strip() == "":
+            raise InvalidContentError("Message content is empty or invalid.")
+
+        if recipient:
+            result = self.db.execute("SELECT 1 FROM users WHERE username = ?", (recipient,))
+            if not result:
+                raise InvalidRecipientError(f"Recipient '{recipient}' does not exist.")
+
         timestamp = datetime.now(UTC).isoformat()
         query = """
             INSERT INTO messages (sender, recipient, content, timestamp)
