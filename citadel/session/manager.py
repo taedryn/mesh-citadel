@@ -1,12 +1,12 @@
 import threading
 import secrets
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from config import Config
 from citadel.db.manager import DatabaseManager
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 
 class SessionManager:
@@ -22,10 +22,10 @@ class SessionManager:
             raise ValueError(f"Username '{username}' does not exist")
 
         token = secrets.token_urlsafe(24)
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         with self.lock:
             self.sessions[token] = (username, now)
-        logger.info(f"Session created for username='{username}'")
+        log.info(f"Session created for username='{username}'")
         return token
 
     def validate_session(self, token: str) -> str | None:
@@ -37,7 +37,7 @@ class SessionManager:
             return username  # Always valid until sweeper expires it
 
     def touch_session(self, token: str) -> bool:
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         with self.lock:
             if token not in self.sessions:
                 return False
@@ -50,22 +50,25 @@ class SessionManager:
             if token in self.sessions:
                 username, _ = self.sessions[token]
                 del self.sessions[token]
-                logger.info(f"Session manually expired for username='{username}'")
+                log.info(f"Session manually expired for username='{username}'")
                 return True
             return False
+
+    def sweep_expired_sessions(self):
+        now = datetime.now(UTC)
+        with self.lock:
+            expired = [t for t, (_, ts) in self.sessions.items() if now - ts > self.timeout]
+            for t in expired:
+                username, _ = self.sessions[t]
+                del self.sessions[t]
+                log.info(f"Session auto-expired for username='{username}'")
+                # TODO: Send logout announcement
 
     def _start_sweeper(self):
         def sweep():
             while True:
                 threading.Event().wait(60)
-                now = datetime.utcnow()
-                with self.lock:
-                    expired = [t for t, (_, ts) in self.sessions.items() if now - ts > self.timeout]
-                    for t in expired:
-                        username, _ = self.sessions[t]
-                        del self.sessions[t]
-                        logger.info(f"Session auto-expired for username='{username}'")
-                        # TODO: Send logout announcement to user via message router or transport layer
+                self.sweep_expired_sessions()
         threading.Thread(target=sweep, daemon=True).start()
 
     def _user_exists(self, username: str) -> bool:
@@ -73,6 +76,6 @@ class SessionManager:
             result = self.db.execute("SELECT 1 FROM users WHERE username = ?", (username,))
             return bool(result)
         except RuntimeError as e:
-            logger.warning(f"Database error while checking username existence: {e}")
+            log.warning(f"Database error while checking username existence: {e}")
             return False
 

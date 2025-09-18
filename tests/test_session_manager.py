@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from session.manager import SessionManager
 
 class MockConfig:
@@ -45,7 +45,10 @@ def test_validate_returns_username_even_if_stale(session_mgr):
     # Simulate staleness
     with session_mgr.lock:
         username, _ = session_mgr.sessions[token]
-        session_mgr.sessions[token] = (username, datetime.utcnow() - timedelta(seconds=999))
+        session_mgr.sessions[token] = (
+                username,
+                datetime.now(UTC) - timedelta(seconds=999)
+        )
     # Should still return username until sweeper runs
     assert session_mgr.validate_session(token) == "bob"
 

@@ -35,9 +35,7 @@ def test_sweeper_expires_stale_sessions(session_mgr):
 
         # Advance time past timeout
         frozen.move_to("2025-09-17 00:00:11")
-        # Manually trigger sweeper (since it's threaded)
-        session_mgr._start_sweeper()
-        threading.Event().wait(0.1)  # Give thread time to run
+        session_mgr.sweep_expired_sessions()  # Direct call
 
         assert session_mgr.validate_session(token) is None
 

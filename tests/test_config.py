@@ -2,7 +2,9 @@ import os
 import tempfile
 import shutil
 import pytest
-from config import Config
+from yaml.parser import ParserError
+
+from citadel.config import Config
 
 
 @pytest.fixture
@@ -51,7 +53,7 @@ def test_bad_yaml_format(temp_config_dir):
     reset_config_singleton()
     config_path = os.path.join(temp_config_dir, "config.yaml")
     write_config(config_path, "bbs: [unclosed")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ParserError):
         Config(config_path)
 
 

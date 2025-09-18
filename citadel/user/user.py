@@ -1,9 +1,9 @@
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 PERMISSIONS = {"unverified", "twit", "user", "aide", "sysop"}
 
@@ -60,7 +60,7 @@ class User:
     @last_login.setter
     def last_login(self, timestamp: Optional[datetime | str]):
         if timestamp == "now":
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(UTC)
         elif isinstance(timestamp, str):
             raise ValueError("Use 'now' or a datetime object for
 last_login.")

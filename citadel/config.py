@@ -1,6 +1,10 @@
 import os
 import yaml
 import copy
+import logging
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 ENV_PREFIX = "CITADEL_"
 
@@ -60,8 +64,14 @@ class Config:
         self.__class__._initialized = True
 
     def _load(self):
-        with open(self._path, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
+        try:
+            with open(self._path, "r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            msg = "Failed to open config file {self._path}, reverting to defaults"
+            log.warning(msg)
+            print(msg)
+            raw = {}
 
         raw = self._deep_merge(copy.deepcopy(self._defaults), raw)
         raw = self._apply_env_overrides(raw)

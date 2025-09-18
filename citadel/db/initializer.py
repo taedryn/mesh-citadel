@@ -1,10 +1,10 @@
 import logging
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 def initialize_database(db_manager):
-    logger.info("Initializing database schema...")
+    log.info("Initializing database schema...")
 
     user_table = """
     CREATE TABLE IF NOT EXISTS users (
@@ -26,7 +26,7 @@ def initialize_database(db_manager):
     for sql in tables:
         try:
             db_manager.execute(sql)
-            logger.info("Table initialized successfully.")
+            log.info("Table initialized successfully.")
         except RuntimeError as e:
-            logger.error(f"Failed to initialize table: {e}")
+            log.error(f"Failed to initialize table: {e}")
 
