@@ -8,6 +8,7 @@ from citadel.message.errors import InvalidRecipientError, InvalidContentError
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
+
 class MessageManager:
     def __init__(self, config, db_manager):
         self.db = db_manager
@@ -17,9 +18,11 @@ class MessageManager:
             raise InvalidContentError("Message content is empty or invalid.")
 
         if recipient:
-            result = self.db.execute("SELECT 1 FROM users WHERE username = ?", (recipient,))
+            result = self.db.execute(
+                "SELECT 1 FROM users WHERE username = ?", (recipient,))
             if not result:
-                raise InvalidRecipientError(f"Recipient '{recipient}' does not exist.")
+                raise InvalidRecipientError(
+                    f"Recipient '{recipient}' does not exist.")
 
         timestamp = datetime.now(UTC).isoformat()
         query = """
@@ -38,10 +41,12 @@ class MessageManager:
         if not result:
             return None
 
-        msg = dict(zip(["id", "sender", "recipient", "content", "timestamp"], result[0]))
+        msg = dict(
+            zip(["id", "sender", "recipient", "content", "timestamp"], result[0]))
         sender_user = User(self.db, msg["sender"])
         msg["display_name"] = sender_user.display_name or msg["sender"]
-        msg["blocked"] = recipient_user.is_blocked(msg["sender"]) if recipient_user else False
+        msg["blocked"] = recipient_user.is_blocked(
+            msg["sender"]) if recipient_user else False
         return msg
 
     def delete_message(self, message_id: int) -> bool:
@@ -69,10 +74,12 @@ class MessageManager:
         results = self.db.execute(query, tuple(message_ids))
         messages = []
         for row in results:
-            msg = dict(zip(["id", "sender", "recipient", "content", "timestamp"], row))
+            msg = dict(
+                zip(["id", "sender", "recipient", "content", "timestamp"], row))
             sender_user = User(self.db, msg["sender"])
             msg["display_name"] = sender_user.display_name or msg["sender"]
-            msg["blocked"] = recipient_user.is_blocked(msg["sender"]) if recipient_user else False
+            msg["blocked"] = recipient_user.is_blocked(
+                msg["sender"]) if recipient_user else False
             messages.append(msg)
         return messages
 
@@ -92,4 +99,3 @@ class MessageManager:
 
         summary = content[:max_summary_len]
         return summary
-

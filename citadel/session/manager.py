@@ -57,7 +57,8 @@ class SessionManager:
     def sweep_expired_sessions(self):
         now = datetime.now(UTC)
         with self.lock:
-            expired = [t for t, (_, ts) in self.sessions.items() if now - ts > self.timeout]
+            expired = [t for t, (_, ts) in self.sessions.items()
+                       if now - ts > self.timeout]
             for t in expired:
                 username, _ = self.sessions[t]
                 del self.sessions[t]
@@ -73,9 +74,10 @@ class SessionManager:
 
     def _user_exists(self, username: str) -> bool:
         try:
-            result = self.db.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+            result = self.db.execute(
+                "SELECT 1 FROM users WHERE username = ?", (username,))
             return bool(result)
         except RuntimeError as e:
-            log.warning(f"Database error while checking username existence: {e}")
+            log.warning(
+                f"Database error while checking username existence: {e}")
             return False
-

@@ -5,6 +5,7 @@ from typing import Optional, Callable
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
+
 class DatabaseManager:
     _instance = None
 
@@ -68,10 +69,10 @@ class DatabaseManager:
             raise RuntimeError("Unexpected error during database read.")
 
     def _is_write_query(self, query: str) -> bool:
-        write_keywords = ("INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP", "ALTER")
+        write_keywords = ("INSERT", "UPDATE", "DELETE",
+                          "REPLACE", "CREATE", "DROP", "ALTER")
         return query.strip().upper().startswith(write_keywords)
 
     def shutdown(self):
         self.conn.close()
         log.info("DatabaseManager shut down cleanly.")
-

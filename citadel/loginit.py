@@ -1,5 +1,6 @@
 import logging
 
+
 def initialize_logging(config):
     log_path = config.logging["log_file_path"]
     log_level = config.logging.get("log_level", "INFO").upper()
@@ -25,4 +26,3 @@ def initialize_logging(config):
         logger.addHandler(console_handler)
 
         logger.info("Logging initialized")
-

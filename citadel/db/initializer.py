@@ -3,6 +3,7 @@ import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
+
 def initialize_database(db_manager):
     log.info("Initializing database schema...")
 
@@ -40,7 +41,6 @@ def initialize_database(db_manager):
     );
     """
 
-
     # all tables to be initialized
     tables = [
         user_table,
@@ -55,4 +55,3 @@ def initialize_database(db_manager):
             log.error(f"Failed to initialize table: {e}")
 
     log.info("Tables initialized successfully")
-

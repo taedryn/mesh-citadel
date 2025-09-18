@@ -8,6 +8,7 @@ log.setLevel(logging.INFO)
 
 ENV_PREFIX = "CITADEL_"
 
+
 class Config:
     _instance = None
     _initialized = False
@@ -101,7 +102,8 @@ class Config:
         for key, old_val in self._reboot_snapshot.items():
             new_val = self._get_nested(new_raw, key.split("."))
             if new_val != old_val:
-                raise RuntimeError(f"Cannot change reboot-only config key '{key}' at runtime")
+                raise RuntimeError(
+                    f"Cannot change reboot-only config key '{key}' at runtime")
 
         self._raw = new_raw
 
@@ -151,9 +153,10 @@ class Config:
 
     def _validate(self, cfg):
         assert cfg["bbs"]["system_name"], "bbs.system_name is required"
-        assert isinstance(cfg["bbs"]["max_messages_per_room"], int), "bbs.max_messages_per_room must be int"
-        assert isinstance(cfg["auth"]["session_timeout"], int), "auth.session_timeout must be int"
+        assert isinstance(cfg["bbs"]["max_messages_per_room"],
+                          int), "bbs.max_messages_per_room must be int"
+        assert isinstance(cfg["auth"]["session_timeout"],
+                          int), "auth.session_timeout must be int"
         assert cfg["transport"]["baud_rate"], "transport.baud_rate is required"
         assert cfg["transport"]["serial_port"], "transport.serial_port is required"
         assert cfg["database"]["db_path"], "database.db_path is required"
-

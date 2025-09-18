@@ -7,6 +7,7 @@ log.setLevel(logging.DEBUG)
 
 PERMISSIONS = {"unverified", "twit", "user", "aide", "sysop"}
 
+
 class User:
     def __init__(self, db_manager, username: str):
         self.db = db_manager
@@ -93,4 +94,3 @@ class User:
         query = "SELECT 1 FROM user_blocks WHERE blocker = ? AND blocked = ?"
         result = self.db.execute(query, (self.username, sender_username))
         return bool(result)
-
