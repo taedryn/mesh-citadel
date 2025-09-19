@@ -399,20 +399,21 @@ the command structure of a citadel BBS is based on single-charater
 commands, which sometimes take an argument.  commands are not case
 sensitive.  the commands we will implement are as follows:
 
-G — Go to the next room (advances to the next room in the room list
+G - Go to the next room (advances to the next room in the room list
 which has unread messages)
-E — Enter a new message (compose and post a message to the current room)
-R — Read messages in the current room (read a specific message if ID
+E - Enter a new message (compose and post a message to the current room)
+R - Read messages in the current room (read a specific message if ID
 provided)
-N — Read new messages since last visit
-L — List rooms (see the available rooms)
-Q — Quit or log off
-S — Scan messages (shows message headers or summaries)
-C — Change rooms (choose a room by name or number)
-H — Help (display command help)
-M — Mail (go to the Mail room to send/receive private messages)
-W — Who’s online (list active users)
-D — Delete a message
+N - Read new messages since last visit
+L - List rooms (see the available rooms)
+I - Ignore or unignore current room
+Q - Quit or log off
+S - Scan messages (shows message headers or summaries)
+C - Change rooms (choose a room by name or number)
+H - Help (display command help)
+M - Mail (go to the Mail room to send/receive private messages)
+W - Who’s online (list active users)
+D - Delete a message
 B - Block or unblock another user
 
 in addition, we will have some dot commands for actions which
@@ -422,6 +423,7 @@ of the board:
 .C - create a new room
 .ER - edit a room's characteristics
 .EU - edit a user's characteristics
+.FF - fast-forward to the latest message in a room
 
 some commands will take arguments if they're provided -- for instance,
 the E command will take the new message to be entered after a space

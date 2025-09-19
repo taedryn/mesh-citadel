@@ -5,6 +5,7 @@ bbs:
   max_users: 300                    # (restart required)
   mail_message_limit: 50
   starting_room: "Lobby"
+  system_events_room: "System"
   export_format: "json"             # "csv", "json", or "yaml"
 
 auth:
