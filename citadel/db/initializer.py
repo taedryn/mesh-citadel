@@ -83,7 +83,7 @@ def initialize_database(db_manager):
 
     for sql in tables:
         try:
-            db_manager.execute(sql)
+            await db_manager.execute(sql)
         except RuntimeError as e:
             log.error(f"Failed to initialize table: {e}")
 
