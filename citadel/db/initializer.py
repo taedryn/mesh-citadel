@@ -41,11 +41,44 @@ def initialize_database(db_manager):
     );
     """
 
+    rooms_table = """
+    CREATE TABLE IF NOT EXISTS rooms (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        read_only BOOLEAN DEFAULT FALSE,
+        permission_level TEXT DEFAULT 'user', -- unverified/twit/user/aide/sysop
+        next_neighbor INTEGER REFERENCES rooms(id),
+        prev_neighbor INTEGER REFERENCES rooms(id)
+    );
+    """
+
+    room_messages_table = """
+    CREATE TABLE IF NOT EXISTS room_messages (
+        room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        timestamp TEXT NOT NULL,
+        PRIMARY KEY (room_id, message_id)
+    );
+    """
+
+    user_room_state_table = """
+    CREATE TABLE IF NOT EXISTS user_room_state (
+        username TEXT NOT NULL REFERENCES users(username) ON DELETE CASCADE,
+        room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+        last_seen_message_id INTEGER REFERENCES messages(id),
+        PRIMARY KEY (username, room_id)
+    );
+    """
+
     # all tables to be initialized
     tables = [
         user_table,
         user_blocks_table,
         messages_table,
+        rooms_table,
+        room_messages_table,
+        user_room_state_table,
     ]
 
     for sql in tables:
