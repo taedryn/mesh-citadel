@@ -25,7 +25,7 @@ class Room:
         self._load_metadata()
 
     def _load_metadata(self):
-        result = self.db.execute(
+        result = await self.db.execute(
             "SELECT name, description, read_only, permission_level, next_neighbor, prev_neighbor FROM rooms WHERE id = ?",
             (self.room_id,)
         )
@@ -35,7 +35,7 @@ class Room:
             0]
 
     def get_id_by_name(self, name: str) -> int:
-        result = self.db.execute(
+        result = await self.db.execute(
             "SELECT id FROM rooms WHERE name = ? COLLATE NOCASE",
             (name,)
         )
@@ -64,20 +64,20 @@ class Room:
     # ignore management
     # ------------------------------------------------------------
     def is_ignored_by(self, user: User) -> bool:
-        result = self.db.execute(
+        result = await self.db.execute(
             "SELECT 1 FROM room_ignores WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
         )
         return bool(result)
 
     def ignore_for_user(self, user: User):
-        self.db.execute(
+        await self.db.execute(
             "INSERT OR IGNORE INTO room_ignores (username, room_id) VALUES (?, ?)",
             (user.username, self.room_id)
         )
 
     def unignore_for_user(self, user: User):
-        self.db.execute(
+        await self.db.execute(
             "DELETE FROM room_ignores WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
         )
@@ -115,7 +115,7 @@ class Room:
         if not newest:
             return False
 
-        pointer = self.db.execute(
+        pointer = await self.db.execute(
             "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
         )
@@ -140,21 +140,21 @@ class Room:
     # message handling
     # ------------------------------------------------------------
     def get_message_ids(self) -> list[int]:
-        rows = self.db.execute(
+        rows = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id",
             (self.room_id,)
         )
         return [row[0] for row in rows]
 
     def get_oldest_message_id(self) -> int | None:
-        result = self.db.execute(
+        result = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id LIMIT 1",
             (self.room_id,)
         )
         return result[0][0] if result else None
 
     def get_newest_message_id(self) -> int | None:
-        result = self.db.execute(
+        result = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id DESC LIMIT 1",
             (self.room_id,)
         )
@@ -168,7 +168,7 @@ class Room:
         msg_mgr = MessageManager(self.config, self.db)
 
         # Prune if needed
-        current_count = self.db.execute(
+        current_count = await self.db.execute(
             "SELECT COUNT(*) FROM room_messages WHERE room_id = ?", (self.room_id,)
         )[0][0]
         max_messages = self.config.bbs["max_messages_per_room"]
@@ -180,14 +180,14 @@ class Room:
         # Post and link
         msg_id = msg_mgr.post_message(sender, content)
         timestamp = datetime.now(UTC).isoformat()
-        self.db.execute(
+        await self.db.execute(
             "INSERT INTO room_messages (room_id, message_id, timestamp) VALUES (?, ?, ?)",
             (self.room_id, msg_id, timestamp)
         )
         return msg_id
 
     def get_next_unread_message(self, user: User) -> dict | None:
-        pointer = self.db.execute(
+        pointer = await self.db.execute(
             "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
         )
@@ -199,7 +199,7 @@ class Room:
 
         # First visit
         if last_seen is None:
-            self.db.execute(
+            await self.db.execute(
                 "INSERT OR REPLACE INTO user_room_state (username, room_id, last_seen_message_id) VALUES (?, ?, ?)",
                 (user.username, self.room_id, message_ids[0])
             )
@@ -216,7 +216,7 @@ class Room:
         msg = msg_mgr.get_message(next_id, recipient_user=user)
 
         # Advance pointer
-        self.db.execute(
+        await self.db.execute(
             "UPDATE user_room_state SET last_seen_message_id = ? WHERE username = ? AND room_id = ?",
             (next_id, user.username, self.room_id)
         )
@@ -225,7 +225,7 @@ class Room:
     def skip_to_latest(self, user: User):
         latest_id = self.get_newest_message_id()
         if latest_id:
-            self.db.execute(
+            await self.db.execute(
                 "INSERT OR REPLACE INTO user_room_state (username, room_id, last_seen_message_id) VALUES (?, ?, ?)",
                 (user.username, self.room_id, latest_id)
             )
@@ -257,7 +257,7 @@ class Room:
                 sys_user, f"Room '{self.name}' was deleted.")
 
         # Delete room and cascade
-        self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))
+        await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))
         Room._room_order.clear()
 
     @classmethod

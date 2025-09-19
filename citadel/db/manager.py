@@ -1,10 +1,11 @@
+import aiosqlite
+import asyncio
 import logging
 import sqlite3
+import threading
 from typing import Optional, Callable
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
-
 
 class DatabaseManager:
     _instance = None
@@ -20,11 +21,15 @@ class DatabaseManager:
             return
 
         self.db_path = config.database['db_path']
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.lock = None  # Optional: add threading.Lock() if you expect concurrent access
+        self.conn = None
+        self.lock = threading.Lock()
+        await self.start()
 
         self._initialized = True
         log.info("DatabaseManager initialized with blocking mode")
+
+    async def start(self):
+        self.conn = await aiosqlite.connect(self.db_path)
 
     @classmethod
     def reset(cls):
@@ -39,10 +44,11 @@ class DatabaseManager:
     def _process_write(self, query: str, params: tuple, callback: Optional[Callable]):
         try:
             cursor = self.conn.cursor()
-            cursor.execute(query, params)
+            await cursor.execute(query, params)
             self.conn.commit()
             if callback:
                 callback(cursor)
+            return cursor.rowcount
         except sqlite3.OperationalError as e:
             log.error(f"SQLite operational error during write: {e}")
             raise RuntimeError("Database write failed. Please try again.")
@@ -56,7 +62,7 @@ class DatabaseManager:
     def _process_read(self, query: str, params: tuple):
         try:
             cursor = self.conn.cursor()
-            cursor.execute(query, params)
+            await cursor.execute(query, params)
             return cursor.fetchall()
         except sqlite3.OperationalError as e:
             log.error(f"SQLite operational error during read: {e}")

@@ -24,9 +24,9 @@ def db():
     initialize_database(db_mgr)
 
     # Insert test users
-    db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
+    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
                    ("alice", "hash", b"salt", "Alice", "2025-09-17T00:00:00Z", "user"))
-    db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
+    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
                    ("bob", "hash", b"salt", "Bob", "2025-09-17T00:00:00Z", "user"))
 
     yield db_mgr
