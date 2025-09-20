@@ -1,21 +1,21 @@
 import logging
 
 from citadel.user.user import User
-from citadel.messages.manager import MessageManager
-from citadel.messages.errors import InvalidContentError
-from citadel.rooms.errors import RoomNotFoundError, PermissionDeniedError
+from citadel.message.manager import MessageManager
+from citadel.message.errors import InvalidContentError
+from citadel.room.errors import RoomNotFoundError, PermissionDeniedError
 from datetime import datetime, UTC
 
-log = logger.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class Room:
     _room_order = []
 
-    def __init__(self, db, config, room_id: int):
+    def __init__(self, db, config, identifier: int | str):
         self.db = db
         self.config = config
-        self.room_id = room_id
+        self.room_id = self.get_room_id(identifier)
         self.name = None
         self.description = None
         self.read_only = False
@@ -122,19 +122,22 @@ class Room:
         last_seen = pointer[0][0] if pointer else None
         return last_seen != newest
 
-    def go_to_room(self, identifier: int | str) -> Room:
+    def get_room_id(self, identifier: int | str) -> int:
         if isinstance(identifier, int):
-            return Room(self.db, self.config, identifier)
+            return identifier
 
         if isinstance(identifier, str):
             if identifier.isdigit():
-                return Room(self.db, self.config, int(identifier))
+                return int(identifier)
             room_id = self.get_id_by_name(identifier)
             if not room_id:
                 raise RoomNotFoundError(f"No room named {identifier} found")
-            return Room(self.db, self.config, room_id)
+            return room_id
 
         raise RoomNotFoundError("No room matching identifier {identifier} found")
+    
+    def go_to_room(self, identifier: int | str) -> "Room":
+        return Room(self.db, self.config, self.get_room_id(identifier))
 
     # ------------------------------------------------------------
     # message handling
