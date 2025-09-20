@@ -235,7 +235,7 @@ class Room:
             return None
 
         msg_mgr = MessageManager(self.config, self.db)
-        msg = msg_mgr.get_message(next_id, recipient_user=user)
+        msg = await msg_mgr.get_message(next_id, recipient_user=user)
 
         # Advance pointer
         await self.db.execute(
@@ -256,16 +256,17 @@ class Room:
     # room management
     # ------------------------------------------------------------
     @classmethod
-    def insert_room_between(cls, db, config, name: str, description: str, read_only: bool,
+    async def insert_room_between(cls, db, config, name: str, description: str, read_only: bool,
                             permission_level: str, prev_id: int, next_id: int) -> int:
-        db.execute(
+        await db.execute(
             "INSERT INTO rooms (name, description, read_only, permission_level, prev_neighbor, next_neighbor) VALUES (?, ?, ?, ?, ?, ?)",
             (name, description, read_only, permission_level, prev_id, next_id)
         )
-        new_id = db.execute("SELECT last_insert_rowid()")[0][0]
-        db.execute("UPDATE rooms SET next_neighbor = ? WHERE id = ?",
+        new_id_result = await db.execute("SELECT last_insert_rowid()")
+        new_id = new_id_result[0][0]
+        await db.execute("UPDATE rooms SET next_neighbor = ? WHERE id = ?",
                    (new_id, prev_id))
-        db.execute("UPDATE rooms SET prev_neighbor = ? WHERE id = ?",
+        await db.execute("UPDATE rooms SET prev_neighbor = ? WHERE id = ?",
                    (new_id, next_id))
         cls._room_order.clear()
         return new_id

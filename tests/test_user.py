@@ -19,6 +19,7 @@ async def db():
     config = DummyConfig(temp_db.name)
     DatabaseManager._instance = None
     db_mgr = DatabaseManager(config)
+    await db_mgr.start()
     await initialize_database(db_mgr)
 
     # Insert test users
@@ -48,7 +49,7 @@ async def test_user_loads_correctly(db):
 async def test_display_name_update(db):
     user = User(db, "alice")
     await user.load()
-    user.display_name = "Alicia"
+    await user.set_display_name("Alicia")
     reloaded = User(db, "alice")
     await reloaded.load()
     assert reloaded.display_name == "Alicia"
@@ -57,7 +58,7 @@ async def test_display_name_update(db):
 async def test_permission_update(db):
     user = User(db, "alice")
     await user.load()
-    user.permission = "aide"
+    await user.set_permission("aide")
     reloaded = User(db, "alice")
     await reloaded.load()
     assert reloaded.permission == "aide"
@@ -65,8 +66,9 @@ async def test_permission_update(db):
 @pytest.mark.asyncio
 async def test_last_login_update(db):
     user = User(db, "alice")
+    await user.load()
     now = datetime(2025, 9, 17, 21, 0, tzinfo=UTC)
-    user.last_login = now
+    await user.set_last_login(now)
     reloaded = User(db, "alice")
     await reloaded.load()
     assert reloaded.last_login == now.isoformat()
@@ -75,7 +77,7 @@ async def test_last_login_update(db):
 async def test_password_update(db):
     user = User(db, "alice")
     await user.load()
-    user.update_password("newhash", b"newsalt")
+    await user.update_password("newhash", b"newsalt")
     reloaded = User(db, "alice")
     await reloaded.load()
     assert reloaded.password_hash == "newhash"
@@ -92,24 +94,24 @@ async def test_block_and_unblock_user(db):
     bob = User(db, "bob")
     await bob.load()
 
-    assert not alice.is_blocked("bob")
-    alice.block_user("bob")
-    assert alice.is_blocked("bob")
-    alice.unblock_user("bob")
-    assert not alice.is_blocked("bob")
+    assert not await alice.is_blocked("bob")
+    await alice.block_user("bob")
+    assert await alice.is_blocked("bob")
+    await alice.unblock_user("bob")
+    assert not await alice.is_blocked("bob")
 
 @pytest.mark.asyncio
 async def test_blocking_persists_across_sessions(db):
     alice = User(db, "alice")
     await alice.load()
-    alice.block_user("bob")
+    await alice.block_user("bob")
     reloaded = User(db, "alice")
     await reloaded.load()
-    assert reloaded.is_blocked("bob")
+    assert await reloaded.is_blocked("bob")
 
 @pytest.mark.asyncio
 async def test_unblock_nonexistent_user_does_not_error(db):
     alice = User(db, "alice")
     await alice.load()
-    alice.unblock_user("charlie")  # Should not raise
+    await alice.unblock_user("charlie")  # Should not raise
 

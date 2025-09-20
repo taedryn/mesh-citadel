@@ -41,8 +41,7 @@ class User:
             raise RuntimeError('_display_name not initialized, ensure '
             'load() has been called on this object')
 
-    @display_name.setter
-    async def display_name(self, new_name: str):
+    async def set_display_name(self, new_name: str):
         query = "UPDATE users SET display_name = ? WHERE username = ?"
         await self.db.execute(query, (new_name, self.username))
         self._display_name = new_name
@@ -55,8 +54,7 @@ class User:
             raise RuntimeError('_permissions not initialized, ensure '
             'load() has been called on this object')
 
-    @permission.setter
-    async def permission(self, new_permission: str):
+    async def set_permission(self, new_permission: str):
         if new_permission not in PERMISSIONS:
             raise ValueError(f"Invalid permission level: {new_permission}")
         query = "UPDATE users SET permission = ? WHERE username = ?"
@@ -71,8 +69,7 @@ class User:
             raise RuntimeError('_last_login not initialized, ensure '
             'load() has been called on this object')
 
-    @last_login.setter
-    async def last_login(self, timestamp: Optional[datetime | str]):
+    async def set_last_login(self, timestamp: Optional[datetime | str]):
         if timestamp == "now":
             timestamp = datetime.now(UTC)
         elif isinstance(timestamp, str):

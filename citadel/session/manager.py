@@ -16,8 +16,8 @@ class SessionManager:
         self.lock = threading.Lock()
         self._start_sweeper()
 
-    def create_session(self, username: str) -> str:
-        if not self._user_exists(username):
+    async def create_session(self, username: str) -> str:
+        if not await self._user_exists(username):
             raise ValueError(f"Username '{username}' does not exist")
 
         token = secrets.token_urlsafe(24)

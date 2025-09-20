@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timedelta
-from session.manager import SessionManager
+from citadel.session.manager import SessionManager
 from freezegun import freeze_time
 import threading
 
@@ -28,9 +28,10 @@ def session_mgr():
     mgr = SessionManager(config, db)
     return mgr
 
-def test_sweeper_expires_stale_sessions(session_mgr):
+@pytest.mark.asyncio
+async def test_sweeper_expires_stale_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
-        token = session_mgr.create_session("alice")
+        token = await session_mgr.create_session("alice")
         assert session_mgr.validate_session(token) == "alice"
 
         # Advance time past timeout
@@ -39,9 +40,10 @@ def test_sweeper_expires_stale_sessions(session_mgr):
 
         assert session_mgr.validate_session(token) is None
 
-def test_sweeper_preserves_active_sessions(session_mgr):
+@pytest.mark.asyncio
+async def test_sweeper_preserves_active_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
-        token = session_mgr.create_session("bob")
+        token = await session_mgr.create_session("bob")
         assert session_mgr.validate_session(token) == "bob"
 
         # Advance time just before timeout

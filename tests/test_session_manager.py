@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from datetime import datetime, timedelta, UTC
-from session.manager import SessionManager
+from citadel.session.manager import SessionManager
 
 class MockConfig:
     def __init__(self, timeout=3600):
@@ -26,23 +26,27 @@ def session_mgr():
     db = MockDB()
     return SessionManager(config, db)
 
-def test_create_and_validate_session(session_mgr):
-    token = session_mgr.create_session("alice")
+@pytest.mark.asyncio
+async def test_create_and_validate_session(session_mgr):
+    token = await session_mgr.create_session("alice")
     assert isinstance(token, str)
     assert session_mgr.validate_session(token) == "alice"
 
-def test_touch_session_extends_activity(session_mgr):
-    token = session_mgr.create_session("bob")
+@pytest.mark.asyncio
+async def test_touch_session_extends_activity(session_mgr):
+    token = await session_mgr.create_session("bob")
     assert session_mgr.touch_session(token) is True
     assert session_mgr.validate_session(token) == "bob"
 
-def test_expire_session_manually(session_mgr):
-    token = session_mgr.create_session("alice")
+@pytest.mark.asyncio
+async def test_expire_session_manually(session_mgr):
+    token = await session_mgr.create_session("alice")
     assert session_mgr.expire_session(token) is True
     assert session_mgr.validate_session(token) is None
 
-def test_validate_returns_username_even_if_stale(session_mgr):
-    token = session_mgr.create_session("bob")
+@pytest.mark.asyncio
+async def test_validate_returns_username_even_if_stale(session_mgr):
+    token = await session_mgr.create_session("bob")
     # Simulate staleness
     with session_mgr.lock:
         username, _ = session_mgr.sessions[token]
@@ -53,23 +57,28 @@ def test_validate_returns_username_even_if_stale(session_mgr):
     # Should still return username until sweeper runs
     assert session_mgr.validate_session(token) == "bob"
 
-def test_create_session_invalid_username(session_mgr):
+@pytest.mark.asyncio
+async def test_create_session_invalid_username(session_mgr):
     with pytest.raises(ValueError):
-        session_mgr.create_session("charlie")  # not in mock DB
+        await session_mgr.create_session("charlie")  # not in mock DB
 
-def test_db_failure_during_user_check():
+@pytest.mark.asyncio
+async def test_db_failure_during_user_check():
     config = MockConfig()
     db = MockDB(fail=True)
     mgr = SessionManager(config, db)
     with pytest.raises(ValueError):
-        mgr.create_session("alice")
+        await mgr.create_session("alice")
 
-def test_expire_session_nonexistent_token(session_mgr):
+@pytest.mark.asyncio
+async def test_expire_session_nonexistent_token(session_mgr):
     assert session_mgr.expire_session("invalid-token") is False
 
-def test_touch_session_invalid_token(session_mgr):
+@pytest.mark.asyncio
+async def test_touch_session_invalid_token(session_mgr):
     assert session_mgr.touch_session("invalid-token") is False
 
-def test_validate_session_invalid_token(session_mgr):
+@pytest.mark.asyncio
+async def test_validate_session_invalid_token(session_mgr):
     assert session_mgr.validate_session("invalid-token") is None
 
