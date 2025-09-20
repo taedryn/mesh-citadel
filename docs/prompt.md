@@ -475,7 +475,9 @@ specific transport in use.
 
 we will use a MeshCore room server node as our communication method.
 this comes with specific communications protools, and will be connected
-via a serial connection over Bluetooth.  because of name ambiguity,
+via a serial connection over Bluetooth, connected through the
+serial_asyncio module in python.  note that this means the entire
+package must be set up for async operations.  because of name ambiguity,
 please refer to this as the meshcore section, and leave the term "room"
 to be used by the BBS layer.
 
