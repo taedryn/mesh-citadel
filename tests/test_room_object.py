@@ -18,7 +18,13 @@ def config():
     dummy_config = Config()
     dummy_config.bbs = {
         "max_messages_per_room": 3,
-        "system_events_room_id": 999
+        'room_names': {
+            'lobby': 'Lobby',
+            'mail': 'Mail',
+            'aides': 'Aides',
+            'sysop': 'Sysop',
+            'system': 'System'
+        }
     }
     dummy_config.database = {
         "db_path": path.name,
@@ -37,7 +43,7 @@ async def db(config):
     DatabaseManager._instance = None
     db_mgr = DatabaseManager(config)
     await db_mgr.start()
-    await initialize_database(db_mgr)
+    await initialize_database(db_mgr, config)
 
     yield db_mgr
 
@@ -45,10 +51,9 @@ async def db(config):
 
 @pytest_asyncio.fixture
 async def setup_rooms(db):
-    # Create a chain of 3 rooms
-    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (1, 'Lobby', 'Main room', 'user', NULL, 2)")
-    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (2, 'Tech', 'Tech talk', 'user', 1, 3)")
-    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (3, 'Aides', 'Private aide room', 'aide', 2, NULL)")
+    # System rooms (1-5) are automatically created by initialize_database
+    # Update room 2 name for the tests that expect "Tech" room
+    await db.execute("UPDATE rooms SET name = 'Tech', description = 'Tech talk' WHERE id = 2")
 
 @pytest_asyncio.fixture
 async def setup_users(db):
@@ -159,21 +164,23 @@ async def test_skip_to_latest(db, config, setup_rooms, setup_users):
 
 @pytest.mark.asyncio
 async def test_room_deletion_logs_event(db, config, setup_rooms, setup_users):
-    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (999, 'System', 'System events', 'sysop', NULL, NULL)")
-    system_room = Room(db, config, 999)
-    await system_room.load()
-    room = Room(db, config, 1)
-    await room.load()
-    await room.delete_room("sysop")
+    # Create a non-system room to delete (ID 100)
+    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (100, 'Test Room', 'Room for deletion test', 'user', NULL, NULL)")
 
+    # Delete the test room - it should log to System room (ID 5)
+    test_room = Room(db, config, 100)
+    await test_room.load()
+    await test_room.delete_room("sysop")
+
+    # Check that deletion was logged to System room (ID 5)
     messages = await db.execute("""
-        SELECT m.content 
-        FROM room_messages rm 
-        JOIN messages m ON rm.message_id = m.id 
-        WHERE rm.room_id = 999
-    """)
+        SELECT m.content
+        FROM room_messages rm
+        JOIN messages m ON rm.message_id = m.id
+        WHERE rm.room_id = ?
+    """, (Room.SYSTEM_ID,))
 
-    assert any("Room 'Lobby' was deleted." in msg[0] for msg in messages)
+    assert any("Room 'Test Room' was deleted." in msg[0] for msg in messages)
 
 @pytest.mark.asyncio
 async def test_get_id_by_name(db, config, setup_rooms):
@@ -198,4 +205,57 @@ async def test_go_to_room_by_name_or_id(db, config, setup_rooms):
 
     with pytest.raises(RoomNotFoundError):
         await room.go_to_room("NoSuchRoom")
+
+@pytest.mark.asyncio
+async def test_system_rooms_initialization(db, config, setup_rooms, setup_users):
+    """Test that all system rooms are properly initialized."""
+    # Check that all system rooms exist with correct IDs
+    for room_id in Room.SYSTEM_ROOM_IDS:
+        result = await db.execute('SELECT id, name, prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (room_id,))
+        assert result, f"System room {room_id} should exist"
+        room_data = result[0]
+        assert room_data[0] == room_id, f"Room should have ID {room_id}"
+
+    # Check room chain structure is correct
+    lobby = await db.execute('SELECT prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (Room.LOBBY_ID,))
+    assert lobby[0][0] is None, "Lobby should be first room (prev_neighbor = NULL)"
+    assert lobby[0][1] == Room.MAIL_ID, "Lobby should link to Mail room"
+
+    system = await db.execute('SELECT prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (Room.SYSTEM_ID,))
+    assert system[0][0] == Room.SYSOP_ID, "System room should link back to Sysop room"
+    assert system[0][1] is None, "System should be last room (next_neighbor = NULL)"
+
+@pytest.mark.asyncio
+async def test_system_rooms_cannot_be_deleted(db, config, setup_rooms, setup_users):
+    """Test that system rooms are protected from deletion."""
+    # Try to delete each system room - should fail
+    for room_id in Room.SYSTEM_ROOM_IDS:
+        room = Room(db, config, room_id)
+        await room.load()
+
+        with pytest.raises(PermissionDeniedError):
+            await room.delete_room("sysop")
+
+@pytest.mark.asyncio
+async def test_user_room_id_constraint(db, config, setup_rooms, setup_users):
+    """Test that user-created rooms get IDs >= 100."""
+    # Create first user room
+    room_id1 = await Room.insert_room_between(db, config, 'Test Room 1', 'First test room', False, 'user', Room.SYSTEM_ID, None)
+
+    # Create second user room
+    room_id2 = await Room.insert_room_between(db, config, 'Test Room 2', 'Second test room', False, 'user', room_id1, None)
+
+    # Verify both rooms get IDs >= MIN_USER_ROOM_ID (100)
+    assert room_id1 >= Room.MIN_USER_ROOM_ID, f"First room ID {room_id1} should be >= {Room.MIN_USER_ROOM_ID}"
+    assert room_id2 >= Room.MIN_USER_ROOM_ID, f"Second room ID {room_id2} should be >= {Room.MIN_USER_ROOM_ID}"
+
+    # Verify sequential assignment
+    assert room_id2 > room_id1, f"Second room ID {room_id2} should be greater than first {room_id1}"
+
+    # Verify rooms were actually created with correct IDs
+    result1 = await db.execute("SELECT id, name FROM rooms WHERE id = ?", (room_id1,))
+    assert result1[0][0] == room_id1 and result1[0][1] == 'Test Room 1'
+
+    result2 = await db.execute("SELECT id, name FROM rooms WHERE id = ?", (room_id2,))
+    assert result2[0][0] == room_id2 and result2[0][1] == 'Test Room 2'
 

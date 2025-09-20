@@ -20,6 +20,9 @@ class Room:
     # Set of all system room IDs for easy checking
     SYSTEM_ROOM_IDS = {LOBBY_ID, MAIL_ID, AIDES_ID, SYSOP_ID, SYSTEM_ID}
 
+    # Minimum ID for user-created rooms (leaves room for future system rooms)
+    MIN_USER_ROOM_ID = 100
+
     _room_order = []
 
     @classmethod
@@ -283,18 +286,29 @@ class Room:
     # room management
     # ------------------------------------------------------------
     @classmethod
+    async def _get_next_available_room_id(cls, db) -> int:
+        """Get the next available room ID >= MIN_USER_ROOM_ID."""
+        result = await db.execute("SELECT MAX(id) FROM rooms WHERE id >= ?", (cls.MIN_USER_ROOM_ID,))
+        max_id = result[0][0] if result and result[0][0] is not None else cls.MIN_USER_ROOM_ID - 1
+        return max_id + 1
+
+    @classmethod
     async def insert_room_between(cls, db, config, name: str, description: str, read_only: bool,
                             permission_level: str, prev_id: int, next_id: int) -> int:
+        # Get next available room ID >= 100
+        new_id = await cls._get_next_available_room_id(db)
+
         await db.execute(
-            "INSERT INTO rooms (name, description, read_only, permission_level, prev_neighbor, next_neighbor) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, description, read_only, permission_level, prev_id, next_id)
+            "INSERT INTO rooms (id, name, description, read_only, permission_level, prev_neighbor, next_neighbor) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (new_id, name, description, read_only, permission_level, prev_id, next_id)
         )
-        new_id_result = await db.execute("SELECT last_insert_rowid()")
-        new_id = new_id_result[0][0]
-        await db.execute("UPDATE rooms SET next_neighbor = ? WHERE id = ?",
-                   (new_id, prev_id))
-        await db.execute("UPDATE rooms SET prev_neighbor = ? WHERE id = ?",
-                   (new_id, next_id))
+
+        # Update room chain links
+        if prev_id:
+            await db.execute("UPDATE rooms SET next_neighbor = ? WHERE id = ?", (new_id, prev_id))
+        if next_id:
+            await db.execute("UPDATE rooms SET prev_neighbor = ? WHERE id = ?", (new_id, next_id))
+
         cls._room_order.clear()
         return new_id
 
