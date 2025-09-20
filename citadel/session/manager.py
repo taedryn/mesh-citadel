@@ -74,7 +74,7 @@ class SessionManager:
 
     def _user_exists(self, username: str) -> bool:
         try:
-            result = self.db.execute(
+            result = await self.db.execute(
                 "SELECT 1 FROM users WHERE username = ?", (username,))
             return bool(result)
         except RuntimeError as e:

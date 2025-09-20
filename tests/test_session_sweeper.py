@@ -13,7 +13,7 @@ class MockDB:
         self.existing_usernames = existing_usernames or {"alice", "bob"}
         self.fail = fail
 
-    def execute(self, query, params):
+    async def execute(self, query, params):
         if self.fail:
             raise RuntimeError("Simulated DB failure")
         username = params[0]

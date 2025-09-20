@@ -18,7 +18,7 @@ class MessageManager:
             raise InvalidContentError("Message content is empty or invalid.")
 
         if recipient:
-            result = self.db.execute(
+            result = await self.db.execute(
                 "SELECT 1 FROM users WHERE username = ?", (recipient,))
             if not result:
                 raise InvalidRecipientError(
@@ -29,15 +29,15 @@ class MessageManager:
             INSERT INTO messages (sender, recipient, content, timestamp)
             VALUES (?, ?, ?, ?)
         """
-        self.db.execute(query, (sender, recipient, content, timestamp))
-        msg_id = self.db.execute("SELECT last_insert_rowid()")[0][0]
+        await self.db.execute(query, (sender, recipient, content, timestamp))
+        msg_id = await self.db.execute("SELECT last_insert_rowid()")[0][0]
         log.debug(f"Posted message {msg_id} from sender '{sender}'")
         return msg_id
 
     def get_message(self, message_id: int, recipient_user: Optional["User"] = None) -> Optional[dict]:
         """Returns message data structure, including blocked status and sender's display name."""
         query = "SELECT id, sender, recipient, content, timestamp FROM messages WHERE id = ?"
-        result = self.db.execute(query, (message_id,))
+        result = await self.db.execute(query, (message_id,))
         if not result:
             return None
 
@@ -52,7 +52,7 @@ class MessageManager:
     def delete_message(self, message_id: int) -> bool:
         """Deletes a message permanently. Room linkage must be cleaned up externally."""
         try:
-            self.db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+            await self.db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
             log.info(f"Deleted message {message_id}")
             return True
         except Exception as e:
@@ -71,7 +71,7 @@ class MessageManager:
             WHERE id IN ({placeholders})
             ORDER BY timestamp ASC
         """
-        results = self.db.execute(query, tuple(message_ids))
+        results = await self.db.execute(query, tuple(message_ids))
         messages = []
         for row in results:
             msg = dict(
@@ -86,7 +86,7 @@ class MessageManager:
     def get_message_summary(self, message_id: int) -> Optional[str]:
         """Returns a truncated summary of the message, accounting for timestamp and display name."""
         query = "SELECT sender, content, timestamp FROM messages WHERE id = ?"
-        result = self.db.execute(query, (message_id,))
+        result = await self.db.execute(query, (message_id,))
         if not result:
             return None
 
