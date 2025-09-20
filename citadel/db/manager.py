@@ -7,6 +7,7 @@ from typing import Optional, Callable
 
 log = logging.getLogger(__name__)
 
+
 class DatabaseManager:
     _instance = None
 

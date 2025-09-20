@@ -7,6 +7,7 @@ from citadel.message.errors import InvalidRecipientError, InvalidContentError
 
 log = logging.getLogger(__name__)
 
+
 class MessageManager:
     def __init__(self, config, db_manager):
         self.db = db_manager

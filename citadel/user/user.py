@@ -39,7 +39,7 @@ class User:
             return self._display_name
         except AttributeError:
             raise RuntimeError('_display_name not initialized, ensure '
-            'load() has been called on this object')
+                               'load() has been called on this object')
 
     async def set_display_name(self, new_name: str):
         query = "UPDATE users SET display_name = ? WHERE username = ?"
@@ -52,7 +52,7 @@ class User:
             return self._permission
         except AttributeError:
             raise RuntimeError('_permissions not initialized, ensure '
-            'load() has been called on this object')
+                               'load() has been called on this object')
 
     async def set_permission(self, new_permission: str):
         if new_permission not in PERMISSIONS:
@@ -67,7 +67,7 @@ class User:
             return self._last_login
         except AttributeError:
             raise RuntimeError('_last_login not initialized, ensure '
-            'load() has been called on this object')
+                               'load() has been called on this object')
 
     async def set_last_login(self, timestamp: Optional[datetime | str]):
         if timestamp == "now":
@@ -84,7 +84,7 @@ class User:
             return self._password_hash
         except AttributeError:
             raise RuntimeError('_password_hash not initialized, ensure '
-            'load() has been called on this object')
+                               'load() has been called on this object')
 
     @property
     def salt(self) -> bytes:
@@ -92,7 +92,7 @@ class User:
             return self._salt
         except AttributeError:
             raise RuntimeError('_permissions not initialized, ensure '
-            'load() has been called on this object')
+                               'load() has been called on this object')
 
     async def update_password(self, new_hash: str, new_salt: bytes):
         query = "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?"

@@ -114,17 +114,24 @@ async def initialize_system_rooms(db_manager, config):
 
     # System room definitions: (id, name, description, permission_level)
     system_rooms = [
-        (Room.LOBBY_ID, room_names[Room.LOBBY_ID], "Main discussion area", "user"),
-        (Room.MAIL_ID, room_names[Room.MAIL_ID], "Private message area", "user"),
-        (Room.AIDES_ID, room_names[Room.AIDES_ID], "Aide discussion room", "aide"),
-        (Room.SYSOP_ID, room_names[Room.SYSOP_ID], "Sysop discussion room", "sysop"),
-        (Room.SYSTEM_ID, room_names[Room.SYSTEM_ID], "System events and logs", "sysop")
+        (Room.LOBBY_ID, room_names[Room.LOBBY_ID],
+         "Main discussion area", "user"),
+        (Room.MAIL_ID, room_names[Room.MAIL_ID],
+         "Private message area", "user"),
+        (Room.AIDES_ID, room_names[Room.AIDES_ID],
+         "Aide discussion room", "aide"),
+        (Room.SYSOP_ID, room_names[Room.SYSOP_ID],
+         "Sysop discussion room", "sysop"),
+        (Room.SYSTEM_ID, room_names[Room.SYSTEM_ID],
+         "System events and logs", "sysop")
     ]
 
     # Set up linear room chain: NULL <- 1 <-> 2 <-> 3 <-> 4 <-> 5 -> NULL
     for i, (room_id, name, description, permission_level) in enumerate(system_rooms):
-        prev_id = system_rooms[i-1][0] if i > 0 else None  # NULL for first room
-        next_id = system_rooms[i+1][0] if i < len(system_rooms)-1 else None  # NULL for last room
+        # NULL for first room
+        prev_id = system_rooms[i-1][0] if i > 0 else None
+        # NULL for last room
+        next_id = system_rooms[i+1][0] if i < len(system_rooms)-1 else None
 
         # Insert or update room
         await db_manager.execute("""

@@ -60,7 +60,8 @@ class Room:
         )
         if not result:
             raise RoomNotFoundError(f"Room {self.room_id} does not exist.")
-        self.name, self.description, self.read_only, self.permission_level, self.next_neighbor, self.prev_neighbor = result[0]
+        self.name, self.description, self.read_only, self.permission_level, self.next_neighbor, self.prev_neighbor = result[
+            0]
         self._loaded = True
 
     async def get_id_by_name(self, name: str) -> int:
@@ -85,7 +86,6 @@ class Room:
         if self.permission_level == "twit":
             return True
         return False
-
 
     def can_user_post(self, user: User) -> bool:
         if self.read_only:
@@ -170,8 +170,9 @@ class Room:
                 raise RoomNotFoundError(f"No room named {identifier} found")
             return room_id
 
-        raise RoomNotFoundError("No room matching identifier {identifier} found")
-    
+        raise RoomNotFoundError(
+            "No room matching identifier {identifier} found")
+
     async def go_to_room(self, identifier: int | str) -> "Room":
         room_id = await self.get_room_id(identifier)
         room = Room(self.db, self.config, room_id)
@@ -294,13 +295,14 @@ class Room:
 
     @classmethod
     async def insert_room_between(cls, db, config, name: str, description: str, read_only: bool,
-                            permission_level: str, prev_id: int, next_id: int) -> int:
+                                  permission_level: str, prev_id: int, next_id: int) -> int:
         # Get next available room ID >= 100
         new_id = await cls._get_next_available_room_id(db)
 
         await db.execute(
             "INSERT INTO rooms (id, name, description, read_only, permission_level, prev_neighbor, next_neighbor) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (new_id, name, description, read_only, permission_level, prev_id, next_id)
+            (new_id, name, description, read_only,
+             permission_level, prev_id, next_id)
         )
 
         # Update room chain links
@@ -315,7 +317,8 @@ class Room:
     async def delete_room(self, sys_user: str):
         # Prevent deletion of system rooms
         if self.room_id in self.SYSTEM_ROOM_IDS:
-            raise PermissionDeniedError(f"Cannot delete system room '{self.name}' (ID: {self.room_id})")
+            raise PermissionDeniedError(
+                f"Cannot delete system room '{self.name}' (ID: {self.room_id})")
 
         # Log to system events room (always ID 5)
         try:
@@ -324,7 +327,8 @@ class Room:
             await system_room.post_message(
                 sys_user, f"Room '{self.name}' was deleted.")
         except Exception as e:
-            log.warning(f"Failed to log room deletion to system events room: {e}")
+            log.warning(
+                f"Failed to log room deletion to system events room: {e}")
 
         # Delete room and cascade
         await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))
