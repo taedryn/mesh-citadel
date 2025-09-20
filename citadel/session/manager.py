@@ -2,7 +2,6 @@ import threading
 import secrets
 import logging
 from datetime import datetime, timedelta, UTC
-from config import Config
 from citadel.db.manager import DatabaseManager
 
 log = logging.getLogger(__name__)
@@ -10,7 +9,7 @@ log.setLevel(logging.INFO)
 
 
 class SessionManager:
-    def __init__(self, config: Config, db: DatabaseManager):
+    def __init__(self, config: "Config", db: DatabaseManager):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
         self.db = db
         self.sessions = {}  # token -> (username, last_active: datetime)
@@ -72,7 +71,7 @@ class SessionManager:
                 self.sweep_expired_sessions()
         threading.Thread(target=sweep, daemon=True).start()
 
-    def _user_exists(self, username: str) -> bool:
+    async def _user_exists(self, username: str) -> bool:
         try:
             result = await self.db.execute(
                 "SELECT 1 FROM users WHERE username = ?", (username,))

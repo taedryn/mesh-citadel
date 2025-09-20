@@ -13,7 +13,7 @@ class DummyConfig:
         self.logging = {'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
 
 @pytest.fixture(scope="function")
-def db():
+async def db():
     temp_db = tempfile.NamedTemporaryFile(delete=False)
     config = DummyConfig(temp_db.name)
     DatabaseManager._instance = None

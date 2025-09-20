@@ -4,7 +4,7 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
 
-def initialize_database(db_manager):
+async def initialize_database(db_manager):
     log.info("Initializing database schema...")
 
     user_table = """

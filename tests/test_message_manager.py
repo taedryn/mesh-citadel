@@ -16,7 +16,7 @@ class DummyConfig:
         self.bbs = {'max_messages_per_room': 100}  # For reference only
 
 @pytest.fixture(scope="function")
-def db():
+async def db():
     temp_db = tempfile.NamedTemporaryFile(delete=False)
     config = DummyConfig(temp_db.name)
     DatabaseManager._instance = None

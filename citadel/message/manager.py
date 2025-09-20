@@ -6,14 +6,12 @@ from citadel.user.user import User
 from citadel.message.errors import InvalidRecipientError, InvalidContentError
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
-
 
 class MessageManager:
     def __init__(self, config, db_manager):
         self.db = db_manager
 
-    def post_message(self, sender: str, content: str, recipient: Optional[str] = None) -> int:
+    async def post_message(self, sender: str, content: str, recipient: Optional[str] = None) -> int:
         if not content or not isinstance(content, str) or content.strip() == "":
             raise InvalidContentError("Message content is empty or invalid.")
 
@@ -34,7 +32,7 @@ class MessageManager:
         log.debug(f"Posted message {msg_id} from sender '{sender}'")
         return msg_id
 
-    def get_message(self, message_id: int, recipient_user: Optional["User"] = None) -> Optional[dict]:
+    async def get_message(self, message_id: int, recipient_user: Optional["User"] = None) -> Optional[dict]:
         """Returns message data structure, including blocked status and sender's display name."""
         query = "SELECT id, sender, recipient, content, timestamp FROM messages WHERE id = ?"
         result = await self.db.execute(query, (message_id,))
@@ -49,7 +47,7 @@ class MessageManager:
             msg["sender"]) if recipient_user else False
         return msg
 
-    def delete_message(self, message_id: int) -> bool:
+    async def delete_message(self, message_id: int) -> bool:
         """Deletes a message permanently. Room linkage must be cleaned up externally."""
         try:
             await self.db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
@@ -59,7 +57,7 @@ class MessageManager:
             log.error(f"Failed to delete message {message_id}: {e}")
             return False
 
-    def get_messages(self, message_ids: list[int], recipient_user: Optional["User"] = None) -> list[dict]:
+    async def get_messages(self, message_ids: list[int], recipient_user: Optional["User"] = None) -> list[dict]:
         """Returns a list of messages by ID, optionally annotated with blocked status and display name."""
         if not message_ids:
             return []
@@ -83,7 +81,7 @@ class MessageManager:
             messages.append(msg)
         return messages
 
-    def get_message_summary(self, message_id: int) -> Optional[str]:
+    async def get_message_summary(self, message_id: int) -> Optional[str]:
         """Returns a truncated summary of the message, accounting for timestamp and display name."""
         query = "SELECT sender, content, timestamp FROM messages WHERE id = ?"
         result = await self.db.execute(query, (message_id,))

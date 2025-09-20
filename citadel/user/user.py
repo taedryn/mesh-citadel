@@ -3,7 +3,6 @@ from datetime import datetime, UTC
 from typing import Optional
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
 
 PERMISSIONS = {"unverified", "twit", "user", "aide", "sysop"}
 
@@ -14,7 +13,7 @@ class User:
         self.username = username
         self._load_user()
 
-    def _load_user(self):
+    async def _load_user(self):
         query = "SELECT * FROM users WHERE username = ?"
         result = await self.db.execute(query, (self.username,))
         if not result:
@@ -35,7 +34,7 @@ class User:
         return self._display_name
 
     @display_name.setter
-    def display_name(self, new_name: str):
+    async def display_name(self, new_name: str):
         query = "UPDATE users SET display_name = ? WHERE username = ?"
         await self.db.execute(query, (new_name, self.username))
         self._display_name = new_name
@@ -45,7 +44,7 @@ class User:
         return self._permission
 
     @permission.setter
-    def permission(self, new_permission: str):
+    async def permission(self, new_permission: str):
         if new_permission not in PERMISSIONS:
             raise ValueError(f"Invalid permission level: {new_permission}")
         query = "UPDATE users SET permission = ? WHERE username = ?"
@@ -57,7 +56,7 @@ class User:
         return self._last_login
 
     @last_login.setter
-    def last_login(self, timestamp: Optional[datetime | str]):
+    async def last_login(self, timestamp: Optional[datetime | str]):
         if timestamp == "now":
             timestamp = datetime.now(UTC)
         elif isinstance(timestamp, str):
@@ -74,23 +73,23 @@ class User:
     def salt(self) -> bytes:
         return self._salt
 
-    def update_password(self, new_hash: str, new_salt: bytes):
+    async def update_password(self, new_hash: str, new_salt: bytes):
         query = "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?"
         await self.db.execute(query, (new_hash, new_salt, self.username))
         self._password_hash = new_hash
         self._salt = new_salt
 
-    def block_user(self, target_username: str):
+    async def block_user(self, target_username: str):
         query = "INSERT OR IGNORE INTO user_blocks (blocker, blocked) VALUES (?, ?)"
         await self.db.execute(query, (self.username, target_username))
         log.info(f"{self.username} blocked {target_username}")
 
-    def unblock_user(self, target_username: str):
+    async def unblock_user(self, target_username: str):
         query = "DELETE FROM user_blocks WHERE blocker = ? AND blocked = ?"
         await self.db.execute(query, (self.username, target_username))
         log.info(f"{self.username} unblocked {target_username}")
 
-    def is_blocked(self, sender_username: str) -> bool:
+    async def is_blocked(self, sender_username: str) -> bool:
         query = "SELECT 1 FROM user_blocks WHERE blocker = ? AND blocked = ?"
         result = await self.db.execute(query, (self.username, sender_username))
         return bool(result)

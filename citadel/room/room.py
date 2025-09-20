@@ -24,7 +24,7 @@ class Room:
         self.prev_neighbor = None
         self._load_metadata()
 
-    def _load_metadata(self):
+    async def _load_metadata(self):
         result = await self.db.execute(
             "SELECT name, description, read_only, permission_level, next_neighbor, prev_neighbor FROM rooms WHERE id = ?",
             (self.room_id,)
@@ -34,7 +34,7 @@ class Room:
         self.name, self.description, self.read_only, self.permission_level, self.next_neighbor, self.prev_neighbor = result[
             0]
 
-    def get_id_by_name(self, name: str) -> int:
+    async def get_id_by_name(self, name: str) -> int:
         result = await self.db.execute(
             "SELECT id FROM rooms WHERE name = ? COLLATE NOCASE",
             (name,)
@@ -63,20 +63,20 @@ class Room:
     # ------------------------------------------------------------
     # ignore management
     # ------------------------------------------------------------
-    def is_ignored_by(self, user: User) -> bool:
+    async def is_ignored_by(self, user: User) -> bool:
         result = await self.db.execute(
             "SELECT 1 FROM room_ignores WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
         )
         return bool(result)
 
-    def ignore_for_user(self, user: User):
+    async def ignore_for_user(self, user: User):
         await self.db.execute(
             "INSERT OR IGNORE INTO room_ignores (username, room_id) VALUES (?, ?)",
             (user.username, self.room_id)
         )
 
-    def unignore_for_user(self, user: User):
+    async def unignore_for_user(self, user: User):
         await self.db.execute(
             "DELETE FROM room_ignores WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
@@ -110,7 +110,7 @@ class Room:
             current = candidate.prev_neighbor
         return None
 
-    def has_unread_messages(self, user: User) -> bool:
+    async def has_unread_messages(self, user: User) -> bool:
         newest = self.get_newest_message_id()
         if not newest:
             return False
@@ -142,28 +142,28 @@ class Room:
     # ------------------------------------------------------------
     # message handling
     # ------------------------------------------------------------
-    def get_message_ids(self) -> list[int]:
+    async def get_message_ids(self) -> list[int]:
         rows = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id",
             (self.room_id,)
         )
         return [row[0] for row in rows]
 
-    def get_oldest_message_id(self) -> int | None:
+    async def get_oldest_message_id(self) -> int | None:
         result = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id LIMIT 1",
             (self.room_id,)
         )
         return result[0][0] if result else None
 
-    def get_newest_message_id(self) -> int | None:
+    async def get_newest_message_id(self) -> int | None:
         result = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id DESC LIMIT 1",
             (self.room_id,)
         )
         return result[0][0] if result else None
 
-    def post_message(self, sender: str, content: str) -> int:
+    async def post_message(self, sender: str, content: str) -> int:
         if not self.can_user_post(User(self.db, sender)):
             raise PermissionDeniedError(
                 f"User {sender} cannot post in room {self.name}")
@@ -189,7 +189,7 @@ class Room:
         )
         return msg_id
 
-    def get_next_unread_message(self, user: User) -> dict | None:
+    async def get_next_unread_message(self, user: User) -> dict | None:
         pointer = await self.db.execute(
             "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
@@ -225,7 +225,7 @@ class Room:
         )
         return msg
 
-    def skip_to_latest(self, user: User):
+    async def skip_to_latest(self, user: User):
         latest_id = self.get_newest_message_id()
         if latest_id:
             await self.db.execute(
@@ -251,7 +251,7 @@ class Room:
         cls._room_order.clear()
         return new_id
 
-    def delete_room(self, sys_user: str):
+    async def delete_room(self, sys_user: str):
         # Log to system events room
         system_room_name = self.config.bbs.get("system_events_room")
         if system_room_name:

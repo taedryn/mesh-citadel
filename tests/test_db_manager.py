@@ -19,7 +19,7 @@ config = DummyConfig('foo')
 initialize_logging(config)
 
 @pytest.fixture(scope="function")
-def db_manager():
+async def db_manager():
     # reset the db manager
     DatabaseManager.reset()
 
@@ -45,13 +45,13 @@ def db_manager():
 # ✅ Happy Path Tests
 # -------------------------------
 
-def test_insert_and_read(db_manager):
+async def test_insert_and_read(db_manager):
     await db_manager.execute("INSERT INTO test (value) VALUES (?)", ("hello",))
     results = await db_manager.execute("SELECT * FROM test")
     assert len(results) == 1
     assert results[0][1] == "hello"
 
-def test_multiple_writes_queued(db_manager):
+async def test_multiple_writes_queued(db_manager):
     for i in range(5):
         await db_manager.execute("INSERT INTO test (value) VALUES (?)", (f"msg{i}",))
     results = await db_manager.execute("SELECT * FROM test")
@@ -63,15 +63,15 @@ def test_multiple_writes_queued(db_manager):
 # ❌ Unhappy Path Tests
 # -------------------------------
 
-def test_invalid_sql_raises(db_manager):
+async def test_invalid_sql_raises(db_manager):
     with pytest.raises(RuntimeError, match="Database read failed"):
         await db_manager.execute("SELEC * FROM test")  # typo in SELECT
 
-def test_invalid_params_raises(db_manager):
+async def test_invalid_params_raises(db_manager):
     with pytest.raises(RuntimeError, match="Database error occurred"):
         await db_manager.execute("INSERT INTO test (value) VALUES (?)", ())  # missing param
 
-def test_shutdown_closes_connection(db_manager):
+async def test_shutdown_closes_connection(db_manager):
     db_manager.shutdown()
     with pytest.raises(RuntimeError):
         await db_manager.execute("SELECT * FROM test")

@@ -16,7 +16,7 @@ class DatabaseManager:
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, config):
+    async def __init__(self, config):
         if self._initialized:
             return
 
@@ -41,7 +41,7 @@ class DatabaseManager:
         else:
             return self._process_read(query, params)
 
-    def _process_write(self, query: str, params: tuple, callback: Optional[Callable]):
+    async def _process_write(self, query: str, params: tuple, callback: Optional[Callable]):
         try:
             cursor = self.conn.cursor()
             await cursor.execute(query, params)
@@ -59,7 +59,7 @@ class DatabaseManager:
             log.exception(f"Unexpected error during write: {e}")
             raise RuntimeError("Unexpected error during database write.")
 
-    def _process_read(self, query: str, params: tuple):
+    async def _process_read(self, query: str, params: tuple):
         try:
             cursor = self.conn.cursor()
             await cursor.execute(query, params)
