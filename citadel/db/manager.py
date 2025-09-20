@@ -16,14 +16,13 @@ class DatabaseManager:
             cls._instance._initialized = False
         return cls._instance
 
-    async def __init__(self, config):
+    def __init__(self, config):
         if self._initialized:
             return
 
         self.db_path = config.database['db_path']
         self.conn = None
         self.lock = threading.Lock()
-        await self.start()
 
         self._initialized = True
         log.info("DatabaseManager initialized with blocking mode")
@@ -35,20 +34,19 @@ class DatabaseManager:
     def reset(cls):
         cls._instance = None
 
-    def execute(self, query: str, params: tuple = (), callback: Optional[Callable] = None):
+    async def execute(self, query: str, params: tuple = (), callback: Optional[Callable] = None):
         if self._is_write_query(query):
-            return self._process_write(query, params, callback)
+            return await self._process_write(query, params, callback)
         else:
-            return self._process_read(query, params)
+            return await self._process_read(query, params)
 
     async def _process_write(self, query: str, params: tuple, callback: Optional[Callable]):
         try:
-            cursor = self.conn.cursor()
-            await cursor.execute(query, params)
-            self.conn.commit()
-            if callback:
-                callback(cursor)
-            return cursor.rowcount
+            async with self.conn.execute(query, params) as cursor:
+                await self.conn.commit()
+                if callback:
+                    callback(cursor)
+                return cursor.rowcount
         except sqlite3.OperationalError as e:
             log.error(f"SQLite operational error during write: {e}")
             raise RuntimeError("Database write failed. Please try again.")
@@ -61,9 +59,9 @@ class DatabaseManager:
 
     async def _process_read(self, query: str, params: tuple):
         try:
-            cursor = self.conn.cursor()
-            await cursor.execute(query, params)
-            return cursor.fetchall()
+            async with self.conn.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+                return rows
         except sqlite3.OperationalError as e:
             log.error(f"SQLite operational error during read: {e}")
             raise RuntimeError("Database read failed. Please try again.")
@@ -79,6 +77,6 @@ class DatabaseManager:
                           "REPLACE", "CREATE", "DROP", "ALTER")
         return query.strip().upper().startswith(write_keywords)
 
-    def shutdown(self):
-        self.conn.close()
+    async def shutdown(self):
+        await self.conn.close()
         log.info("DatabaseManager shut down cleanly.")

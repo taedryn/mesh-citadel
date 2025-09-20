@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import tempfile
 import os
 from datetime import datetime, UTC
@@ -12,13 +13,13 @@ class DummyConfig:
         self.database = {'db_path': path}
         self.logging = {'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db():
     temp_db = tempfile.NamedTemporaryFile(delete=False)
     config = DummyConfig(temp_db.name)
     DatabaseManager._instance = None
     db_mgr = DatabaseManager(config)
-    initialize_database(db_mgr)
+    await initialize_database(db_mgr)
 
     # Insert test users
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
@@ -28,42 +29,55 @@ async def db():
 
     yield db_mgr
 
-    db_mgr.shutdown()
+    await db_mgr.shutdown()
     os.unlink(temp_db.name)
 
 # -------------------------------
 # ✅ Core User Tests
 # -------------------------------
 
-def test_user_loads_correctly(db):
+@pytest.mark.asyncio
+async def test_user_loads_correctly(db):
     user = User(db, "alice")
+    await user.load()
     assert user.display_name == "Alice"
     assert user.permission == "user"
     assert user.last_login == "2025-09-17T00:00:00Z"
 
-def test_display_name_update(db):
+@pytest.mark.asyncio
+async def test_display_name_update(db):
     user = User(db, "alice")
+    await user.load()
     user.display_name = "Alicia"
     reloaded = User(db, "alice")
+    await reloaded.load()
     assert reloaded.display_name == "Alicia"
 
-def test_permission_update(db):
+@pytest.mark.asyncio
+async def test_permission_update(db):
     user = User(db, "alice")
+    await user.load()
     user.permission = "aide"
     reloaded = User(db, "alice")
+    await reloaded.load()
     assert reloaded.permission == "aide"
 
-def test_last_login_update(db):
+@pytest.mark.asyncio
+async def test_last_login_update(db):
     user = User(db, "alice")
     now = datetime(2025, 9, 17, 21, 0, tzinfo=UTC)
     user.last_login = now
     reloaded = User(db, "alice")
+    await reloaded.load()
     assert reloaded.last_login == now.isoformat()
 
-def test_password_update(db):
+@pytest.mark.asyncio
+async def test_password_update(db):
     user = User(db, "alice")
+    await user.load()
     user.update_password("newhash", b"newsalt")
     reloaded = User(db, "alice")
+    await reloaded.load()
     assert reloaded.password_hash == "newhash"
     assert reloaded.salt == b"newsalt"
 
@@ -71,9 +85,12 @@ def test_password_update(db):
 # ✅ Blocking Tests
 # -------------------------------
 
-def test_block_and_unblock_user(db):
+@pytest.mark.asyncio
+async def test_block_and_unblock_user(db):
     alice = User(db, "alice")
+    await alice.load()
     bob = User(db, "bob")
+    await bob.load()
 
     assert not alice.is_blocked("bob")
     alice.block_user("bob")
@@ -81,13 +98,18 @@ def test_block_and_unblock_user(db):
     alice.unblock_user("bob")
     assert not alice.is_blocked("bob")
 
-def test_blocking_persists_across_sessions(db):
+@pytest.mark.asyncio
+async def test_blocking_persists_across_sessions(db):
     alice = User(db, "alice")
+    await alice.load()
     alice.block_user("bob")
     reloaded = User(db, "alice")
+    await reloaded.load()
     assert reloaded.is_blocked("bob")
 
-def test_unblock_nonexistent_user_does_not_error(db):
+@pytest.mark.asyncio
+async def test_unblock_nonexistent_user_does_not_error(db):
     alice = User(db, "alice")
+    await alice.load()
     alice.unblock_user("charlie")  # Should not raise
 

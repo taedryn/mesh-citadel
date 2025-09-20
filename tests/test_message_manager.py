@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 import tempfile
 import os
 from datetime import datetime, UTC
@@ -15,13 +16,14 @@ class DummyConfig:
         self.logging = {'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
         self.bbs = {'max_messages_per_room': 100}  # For reference only
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def db():
     temp_db = tempfile.NamedTemporaryFile(delete=False)
     config = DummyConfig(temp_db.name)
     DatabaseManager._instance = None
     db_mgr = DatabaseManager(config)
-    initialize_database(db_mgr)
+    await db_mgr.start()
+    await initialize_database(db_mgr)
 
     # Insert test users
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
@@ -31,7 +33,7 @@ async def db():
 
     yield db_mgr
 
-    db_mgr.shutdown()
+    await db_mgr.shutdown()
     os.unlink(temp_db.name)
 
 @pytest.fixture
@@ -43,10 +45,12 @@ def msg_mgr(db):
 # ✅ Core MessageManager Tests
 # -------------------------------
 
-def test_post_and_get_message(msg_mgr, db):
-    msg_id = msg_mgr.post_message("alice", "Hello world!")
+@pytest.mark.asyncio
+async def test_post_and_get_message(msg_mgr, db):
+    msg_id = await msg_mgr.post_message("alice", "Hello world!")
     user = User(db, "bob")
-    msg = msg_mgr.get_message(msg_id, recipient_user=user)
+    await user.load()
+    msg = await msg_mgr.get_message(msg_id, recipient_user=user)
 
     assert msg["id"] == msg_id
     assert msg["sender"] == "alice"
@@ -54,51 +58,63 @@ def test_post_and_get_message(msg_mgr, db):
     assert msg["display_name"] == "Alice"
     assert msg["blocked"] is False
 
-def test_blocked_message(msg_mgr, db):
-    msg_id = msg_mgr.post_message("alice", "Secret message")
+@pytest.mark.asyncio
+async def test_blocked_message(msg_mgr, db):
+    msg_id = await msg_mgr.post_message("alice", "Secret message")
     bob = User(db, "bob")
-    bob.block_user("alice")
+    await bob.load()
+    await bob.block_user("alice")
 
-    msg = msg_mgr.get_message(msg_id, recipient_user=bob)
+    msg = await msg_mgr.get_message(msg_id, recipient_user=bob)
     assert msg["blocked"] is True
 
-def test_delete_message(msg_mgr, db):
-    msg_id = msg_mgr.post_message("alice", "Temporary message")
-    assert msg_mgr.delete_message(msg_id) is True
-    assert msg_mgr.get_message(msg_id) is None
+@pytest.mark.asyncio
+async def test_delete_message(msg_mgr, db):
+    msg_id = await msg_mgr.post_message("alice", "Temporary message")
+    del_result = await msg_mgr.delete_message(msg_id)
+    assert del_result is True
+    get_result = await msg_mgr.get_message(msg_id)
+    assert get_result is None
 
-def test_get_messages_batch(msg_mgr, db):
+@pytest.mark.asyncio
+async def test_get_messages_batch(msg_mgr, db):
     ids = [
-        msg_mgr.post_message("alice", f"Message {i}")
+        await msg_mgr.post_message("alice", f"Message {i}")
         for i in range(3)
     ]
     user = User(db, "bob")
-    messages = msg_mgr.get_messages(ids, recipient_user=user)
+    await user.load()
+    messages = await msg_mgr.get_messages(ids, recipient_user=user)
 
     assert len(messages) == 3
     assert all(msg["sender"] == "alice" for msg in messages)
     assert all("display_name" in msg for msg in messages)
-    assert all(msg["blocked"] is False for msg in messages)
+    for msg in messages:
+        assert msg["blocked"] is False
 
-def test_message_summary_respects_packet_limit(msg_mgr, db):
+@pytest.mark.asyncio
+async def test_message_summary_respects_packet_limit(msg_mgr, db):
     long_text = "X" * 500
-    msg_id = msg_mgr.post_message("alice", long_text)
-    summary = msg_mgr.get_message_summary(msg_id)
+    msg_id = await msg_mgr.post_message("alice", long_text)
+    summary = await msg_mgr.get_message_summary(msg_id)
 
     display_name = "Alice"
     timestamp_len = len(datetime.now(UTC).isoformat())
     reserved = len(display_name) + timestamp_len
     assert len(summary) <= 184 - reserved
 
-def test_post_message_with_empty_content(msg_mgr):
+@pytest.mark.asyncio
+async def test_post_message_with_empty_content(msg_mgr):
     with pytest.raises(InvalidContentError):
-        msg_mgr.post_message("alice", "")
+        await msg_mgr.post_message("alice", "")
 
-def test_post_message_with_none_content(msg_mgr):
+@pytest.mark.asyncio
+async def test_post_message_with_none_content(msg_mgr):
     with pytest.raises(InvalidContentError):
-        msg_mgr.post_message("alice", None)
+        await msg_mgr.post_message("alice", None)
 
-def test_post_private_message_to_unknown_recipient(msg_mgr):
+@pytest.mark.asyncio
+async def test_post_private_message_to_unknown_recipient(msg_mgr):
     with pytest.raises(InvalidRecipientError):
-        msg_mgr.post_message("alice", "Hi there", recipient="charlie")
+        await msg_mgr.post_message("alice", "Hi there", recipient="charlie")
 

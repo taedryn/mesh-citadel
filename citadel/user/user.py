@@ -11,14 +11,18 @@ class User:
     def __init__(self, db_manager, username: str):
         self.db = db_manager
         self.username = username
-        self._load_user()
+        self._loaded = False
 
-    async def _load_user(self):
+    # this must be called for every User invocation
+    async def load(self, force=False):
+        if self._loaded and not force:
+            return
         query = "SELECT * FROM users WHERE username = ?"
         result = await self.db.execute(query, (self.username,))
         if not result:
             raise RuntimeError(f"User '{self.username}' not found.")
         self._row_to_fields(result[0])
+        self._loaded = True
 
     def _row_to_fields(self, row: tuple):
         self.id = row[0]
@@ -31,7 +35,11 @@ class User:
 
     @property
     def display_name(self) -> Optional[str]:
-        return self._display_name
+        try:
+            return self._display_name
+        except AttributeError:
+            raise RuntimeError('_display_name not initialized, ensure '
+            'load() has been called on this object')
 
     @display_name.setter
     async def display_name(self, new_name: str):
@@ -41,7 +49,11 @@ class User:
 
     @property
     def permission(self) -> str:
-        return self._permission
+        try:
+            return self._permission
+        except AttributeError:
+            raise RuntimeError('_permissions not initialized, ensure '
+            'load() has been called on this object')
 
     @permission.setter
     async def permission(self, new_permission: str):
@@ -53,7 +65,11 @@ class User:
 
     @property
     def last_login(self) -> Optional[str]:
-        return self._last_login
+        try:
+            return self._last_login
+        except AttributeError:
+            raise RuntimeError('_last_login not initialized, ensure '
+            'load() has been called on this object')
 
     @last_login.setter
     async def last_login(self, timestamp: Optional[datetime | str]):
@@ -67,11 +83,19 @@ class User:
 
     @property
     def password_hash(self) -> str:
-        return self._password_hash
+        try:
+            return self._password_hash
+        except AttributeError:
+            raise RuntimeError('_password_hash not initialized, ensure '
+            'load() has been called on this object')
 
     @property
     def salt(self) -> bytes:
-        return self._salt
+        try:
+            return self._salt
+        except AttributeError:
+            raise RuntimeError('_permissions not initialized, ensure '
+            'load() has been called on this object')
 
     async def update_password(self, new_hash: str, new_salt: bytes):
         query = "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?"

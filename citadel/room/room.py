@@ -15,24 +15,28 @@ class Room:
     def __init__(self, db, config, identifier: int | str):
         self.db = db
         self.config = config
-        self.room_id = self.get_room_id(identifier)
+        self.room_id = identifier
         self.name = None
         self.description = None
         self.read_only = False
         self.permission_level = "user"
         self.next_neighbor = None
         self.prev_neighbor = None
-        self._load_metadata()
+        self._loaded = False
 
-    async def _load_metadata(self):
+    # this must be called on every object after instantiation
+    async def load(self, force=False):
+        if self._loaded and not force:
+            return
+        self.room_id = await self.get_room_id(self.room_id)
         result = await self.db.execute(
             "SELECT name, description, read_only, permission_level, next_neighbor, prev_neighbor FROM rooms WHERE id = ?",
             (self.room_id,)
         )
         if not result:
             raise RoomNotFoundError(f"Room {self.room_id} does not exist.")
-        self.name, self.description, self.read_only, self.permission_level, self.next_neighbor, self.prev_neighbor = result[
-            0]
+        self.name, self.description, self.read_only, self.permission_level, self.next_neighbor, self.prev_neighbor = result[0]
+        self._loaded = True
 
     async def get_id_by_name(self, name: str) -> int:
         result = await self.db.execute(
@@ -51,9 +55,12 @@ class Room:
             return True
         if self.permission_level == "aide":
             return user.permission in ("aide", "sysop")
+        if self.permission_level == "user":
+            return user.permission in ("user", "aide", "sysop")
         if self.permission_level == "twit":
-            return user.permission == "twit"
-        return True
+            return True
+        return False
+
 
     def can_user_post(self, user: User) -> bool:
         if self.read_only:
@@ -85,33 +92,37 @@ class Room:
     # ------------------------------------------------------------
     # navigation
     # ------------------------------------------------------------
-    def go_to_next_room(self, user: User, with_unread: bool = True) -> "Room | None":
+    async def go_to_next_room(self, user: User, with_unread: bool = True) -> "Room | None":
         current = self.next_neighbor
         while current:
             candidate = Room(self.db, self.config, current)
+            await candidate.load()
             if not candidate.can_user_read(user):
                 current = candidate.next_neighbor
                 continue
-            if candidate.is_ignored_by(user):
+            is_ignored = await candidate.is_ignored_by(user)
+            if is_ignored:
                 current = candidate.next_neighbor
                 continue
-            if with_unread and not candidate.has_unread_messages(user):
+            has_unread = await candidate.has_unread_messages(user)
+            if with_unread and not has_unread:
                 current = candidate.next_neighbor
                 continue
             return candidate
         return None
 
-    def go_to_previous_room(self, user: User) -> "Room | None":
+    async def go_to_previous_room(self, user: User) -> "Room | None":
         current = self.prev_neighbor
         while current:
             candidate = Room(self.db, self.config, current)
-            if candidate.can_user_read(user) and not candidate.is_ignored_by(user):
+            await candidate.load()
+            if candidate.can_user_read(user) and not await candidate.is_ignored_by(user):
                 return candidate
             current = candidate.prev_neighbor
         return None
 
     async def has_unread_messages(self, user: User) -> bool:
-        newest = self.get_newest_message_id()
+        newest = await self.get_newest_message_id()
         if not newest:
             return False
 
@@ -122,22 +133,24 @@ class Room:
         last_seen = pointer[0][0] if pointer else None
         return last_seen != newest
 
-    def get_room_id(self, identifier: int | str) -> int:
+    async def get_room_id(self, identifier: int | str) -> int:
         if isinstance(identifier, int):
             return identifier
 
         if isinstance(identifier, str):
             if identifier.isdigit():
                 return int(identifier)
-            room_id = self.get_id_by_name(identifier)
+            room_id = await self.get_id_by_name(identifier)
             if not room_id:
                 raise RoomNotFoundError(f"No room named {identifier} found")
             return room_id
 
         raise RoomNotFoundError("No room matching identifier {identifier} found")
     
-    def go_to_room(self, identifier: int | str) -> "Room":
-        return Room(self.db, self.config, self.get_room_id(identifier))
+    async def go_to_room(self, identifier: int | str) -> "Room":
+        room_id = await self.get_room_id(identifier)
+        room = Room(self.db, self.config, room_id)
+        return room
 
     # ------------------------------------------------------------
     # message handling
@@ -164,24 +177,30 @@ class Room:
         return result[0][0] if result else None
 
     async def post_message(self, sender: str, content: str) -> int:
-        if not self.can_user_post(User(self.db, sender)):
+        user = User(self.db, sender)
+        await user.load()
+        if not self.can_user_post(user):
             raise PermissionDeniedError(
                 f"User {sender} cannot post in room {self.name}")
 
         msg_mgr = MessageManager(self.config, self.db)
 
         # Prune if needed
-        current_count = await self.db.execute(
+        count_result = await self.db.execute(
             "SELECT COUNT(*) FROM room_messages WHERE room_id = ?", (self.room_id,)
-        )[0][0]
+        )
+        current_count = count_result[0][0]
         max_messages = self.config.bbs["max_messages_per_room"]
+        print(f'count is: {current_count}, max is: {max_messages}')
         if current_count >= max_messages:
-            oldest_id = self.get_oldest_message_id()
+            oldest_id = await self.get_oldest_message_id()
             if oldest_id:
-                msg_mgr.delete_message(oldest_id)
+                print(f'deleting {oldest_id}')
+                await msg_mgr.delete_message(oldest_id)
+                await self.db.execute("DELETE FROM room_messages WHERE room_id = ? AND message_id = ?", (self.room_id, oldest_id))
 
         # Post and link
-        msg_id = msg_mgr.post_message(sender, content)
+        msg_id = await msg_mgr.post_message(sender, content)
         timestamp = datetime.now(UTC).isoformat()
         await self.db.execute(
             "INSERT INTO room_messages (room_id, message_id, timestamp) VALUES (?, ?, ?)",
@@ -196,7 +215,7 @@ class Room:
         )
         last_seen = pointer[0][0] if pointer else None
 
-        message_ids = self.get_message_ids()
+        message_ids = await self.get_message_ids()
         if not message_ids:
             return None
 
@@ -226,7 +245,7 @@ class Room:
         return msg
 
     async def skip_to_latest(self, user: User):
-        latest_id = self.get_newest_message_id()
+        latest_id = await self.get_newest_message_id()
         if latest_id:
             await self.db.execute(
                 "INSERT OR REPLACE INTO user_room_state (username, room_id, last_seen_message_id) VALUES (?, ?, ?)",
@@ -256,7 +275,8 @@ class Room:
         system_room_name = self.config.bbs.get("system_events_room")
         if system_room_name:
             system_room = Room(self.db, self.config, system_room_name)
-            system_room.post_message(
+            await system_room.load()
+            await system_room.post_message(
                 sys_user, f"Room '{self.name}' was deleted.")
 
         # Delete room and cascade
@@ -264,9 +284,9 @@ class Room:
         Room._room_order.clear()
 
     @classmethod
-    def initialize_room_order(cls, db, config):
+    async def initialize_room_order(cls, db, config):
         cls._room_order.clear()
-        head = db.execute("SELECT id FROM rooms WHERE prev_neighbor IS NULL")
+        head = await db.execute("SELECT id FROM rooms WHERE prev_neighbor IS NULL")
         if not head:
             log.warning(
                 "No room with prev_neighbor=NULL found. Room chain may be broken.")
@@ -284,21 +304,22 @@ class Room:
             visited.add(current)
             chain.append(current)
 
-            next_row = db.execute(
+            next_row = await db.execute(
                 "SELECT next_neighbor FROM rooms WHERE id = ?", (current,))
             current = next_row[0][0] if next_row and next_row[0][0] else None
 
         cls._room_order.extend(chain)
 
         # Check for orphaned rooms
-        all_rooms = set(r[0] for r in db.execute("SELECT id FROM rooms"))
+        rooms_result = await db.execute("SELECT id FROM rooms")
+        all_rooms = set(r[0] for r in rooms_result)
         unreachable = all_rooms - visited
         if unreachable:
             log.warning(f"Orphaned rooms detected: {sorted(unreachable)}")
 
         # Optional: check for broken links
         for room_id in all_rooms:
-            neighbors = db.execute(
+            neighbors = await db.execute(
                 "SELECT next_neighbor, prev_neighbor FROM rooms WHERE id = ?",
                 (room_id,)
             )

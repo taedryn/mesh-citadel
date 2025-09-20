@@ -28,7 +28,8 @@ class MessageManager:
             VALUES (?, ?, ?, ?)
         """
         await self.db.execute(query, (sender, recipient, content, timestamp))
-        msg_id = await self.db.execute("SELECT last_insert_rowid()")[0][0]
+        msg_result = await self.db.execute("SELECT last_insert_rowid()")
+        msg_id = msg_result[0][0]
         log.debug(f"Posted message {msg_id} from sender '{sender}'")
         return msg_id
 
@@ -42,9 +43,10 @@ class MessageManager:
         msg = dict(
             zip(["id", "sender", "recipient", "content", "timestamp"], result[0]))
         sender_user = User(self.db, msg["sender"])
+        await sender_user.load()
         msg["display_name"] = sender_user.display_name or msg["sender"]
-        msg["blocked"] = recipient_user.is_blocked(
-            msg["sender"]) if recipient_user else False
+        is_blocked = await recipient_user.is_blocked(msg['sender'])
+        msg["blocked"] = is_blocked if recipient_user else False
         return msg
 
     async def delete_message(self, message_id: int) -> bool:
@@ -75,9 +77,13 @@ class MessageManager:
             msg = dict(
                 zip(["id", "sender", "recipient", "content", "timestamp"], row))
             sender_user = User(self.db, msg["sender"])
-            msg["display_name"] = sender_user.display_name or msg["sender"]
-            msg["blocked"] = recipient_user.is_blocked(
-                msg["sender"]) if recipient_user else False
+            await sender_user.load()
+            try:
+                msg["display_name"] = sender_user.display_name
+            except RuntimeError:
+                msg["display_name"] = msg["sender"]
+            is_blocked = await recipient_user.is_blocked(msg["sender"])
+            msg["blocked"] = is_blocked if recipient_user else False
             messages.append(msg)
         return messages
 
@@ -90,7 +96,11 @@ class MessageManager:
 
         sender, content, timestamp = result[0]
         sender_user = User(self.db, sender)
-        display_name = sender_user.display_name or sender
+        await sender_user.load()
+        try:
+            display_name = sender_user.display_name
+        except RuntimeError:
+            display_name = sender
 
         reserved = len(timestamp) + len(display_name)
         max_summary_len = max(0, 184 - reserved)

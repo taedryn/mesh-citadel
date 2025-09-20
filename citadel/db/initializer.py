@@ -71,6 +71,14 @@ async def initialize_database(db_manager):
     );
     """
 
+    room_ignores_table = """
+    CREATE TABLE IF NOT EXISTS room_ignores (
+        username INTEGER NOT NULL REFERENCES users(username),
+        room_id INTEGER NOT NULL REFERENCES rooms(id),
+        PRIMARY KEY (username, room_id)
+    );
+    """
+
     # all tables to be initialized
     tables = [
         user_table,
@@ -79,6 +87,7 @@ async def initialize_database(db_manager):
         rooms_table,
         room_messages_table,
         user_room_state_table,
+        room_ignores_table,
     ]
 
     for sql in tables:
