@@ -219,13 +219,18 @@ class Room:
         if not message_ids:
             return None
 
-        # First visit
+        # First visit - return the first message without marking it as seen yet
         if last_seen is None:
+            first_id = message_ids[0]
+            msg_mgr = MessageManager(self.config, self.db)
+            msg = await msg_mgr.get_message(first_id, recipient_user=user)
+
+            # Mark this message as seen
             await self.db.execute(
                 "INSERT OR REPLACE INTO user_room_state (username, room_id, last_seen_message_id) VALUES (?, ?, ?)",
-                (user.username, self.room_id, message_ids[0])
+                (user.username, self.room_id, first_id)
             )
-            last_seen = message_ids[0]
+            return msg
 
         # Find next unread
         try:
