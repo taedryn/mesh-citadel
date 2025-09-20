@@ -7,6 +7,13 @@ bbs:
   starting_room: "Lobby"
   system_events_room: "System"
   export_format: "json"             # "csv", "json", or "yaml"
+  # System room names (changeable but rooms IDs 1-5 are reserved)
+  room_names:
+    lobby: "Lobby"                  # Room ID 1
+    mail: "Mail"                    # Room ID 2
+    aides: "Aides"                  # Room ID 3
+    sysop: "Sysop"                  # Room ID 4
+    system: "System"                # Room ID 5
 
 auth:
   session_timeout: 3600             # seconds

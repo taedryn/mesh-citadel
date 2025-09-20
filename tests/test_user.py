@@ -12,6 +12,15 @@ class DummyConfig:
     def __init__(self, path):
         self.database = {'db_path': path}
         self.logging = {'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
+        self.bbs = {
+            'room_names': {
+                'lobby': 'Lobby',
+                'mail': 'Mail',
+                'aides': 'Aides',
+                'sysop': 'Sysop',
+                'system': 'System'
+            }
+        }
 
 @pytest_asyncio.fixture(scope="function")
 async def db():
@@ -20,7 +29,7 @@ async def db():
     DatabaseManager._instance = None
     db_mgr = DatabaseManager(config)
     await db_mgr.start()
-    await initialize_database(db_mgr)
+    await initialize_database(db_mgr, config)
 
     # Insert test users
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",

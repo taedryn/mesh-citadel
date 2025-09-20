@@ -10,7 +10,29 @@ log = logging.getLogger(__name__)
 
 
 class Room:
+    # Reserved system room IDs (1-5)
+    LOBBY_ID = 1
+    MAIL_ID = 2
+    AIDES_ID = 3
+    SYSOP_ID = 4
+    SYSTEM_ID = 5
+
+    # Set of all system room IDs for easy checking
+    SYSTEM_ROOM_IDS = {LOBBY_ID, MAIL_ID, AIDES_ID, SYSOP_ID, SYSTEM_ID}
+
     _room_order = []
+
+    @classmethod
+    def get_system_room_names(cls, config):
+        """Get system room names from config with fallback defaults."""
+        room_names = config.bbs.get('room_names', {})
+        return {
+            cls.LOBBY_ID: room_names.get('lobby', 'Lobby'),
+            cls.MAIL_ID: room_names.get('mail', 'Mail'),
+            cls.AIDES_ID: room_names.get('aides', 'Aides'),
+            cls.SYSOP_ID: room_names.get('sysop', 'Sysop'),
+            cls.SYSTEM_ID: room_names.get('system', 'System')
+        }
 
     def __init__(self, db, config, identifier: int | str):
         self.db = db
@@ -277,13 +299,18 @@ class Room:
         return new_id
 
     async def delete_room(self, sys_user: str):
-        # Log to system events room
-        system_room_name = self.config.bbs.get("system_events_room")
-        if system_room_name:
-            system_room = Room(self.db, self.config, system_room_name)
+        # Prevent deletion of system rooms
+        if self.room_id in self.SYSTEM_ROOM_IDS:
+            raise PermissionDeniedError(f"Cannot delete system room '{self.name}' (ID: {self.room_id})")
+
+        # Log to system events room (always ID 5)
+        try:
+            system_room = Room(self.db, self.config, self.SYSTEM_ID)
             await system_room.load()
             await system_room.post_message(
                 sys_user, f"Room '{self.name}' was deleted.")
+        except Exception as e:
+            log.warning(f"Failed to log room deletion to system events room: {e}")
 
         # Delete room and cascade
         await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))

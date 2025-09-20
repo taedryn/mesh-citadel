@@ -4,7 +4,7 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
 
-async def initialize_database(db_manager):
+async def initialize_database(db_manager, config=None):
     log.info("Initializing database schema...")
 
     user_table = """
@@ -97,3 +97,40 @@ async def initialize_database(db_manager):
             log.error(f"Failed to initialize table: {e}")
 
     log.info("Tables initialized successfully")
+
+    # Initialize system rooms if config is provided
+    if config:
+        await initialize_system_rooms(db_manager, config)
+
+
+async def initialize_system_rooms(db_manager, config):
+    """Initialize the five core system rooms that must always exist."""
+    from citadel.room.room import Room
+
+    log.info("Initializing system rooms...")
+
+    # Get room names from config
+    room_names = Room.get_system_room_names(config)
+
+    # System room definitions: (id, name, description, permission_level)
+    system_rooms = [
+        (Room.LOBBY_ID, room_names[Room.LOBBY_ID], "Main discussion area", "user"),
+        (Room.MAIL_ID, room_names[Room.MAIL_ID], "Private message area", "user"),
+        (Room.AIDES_ID, room_names[Room.AIDES_ID], "Aide discussion room", "aide"),
+        (Room.SYSOP_ID, room_names[Room.SYSOP_ID], "Sysop discussion room", "sysop"),
+        (Room.SYSTEM_ID, room_names[Room.SYSTEM_ID], "System events and logs", "sysop")
+    ]
+
+    # Set up linear room chain: NULL <- 1 <-> 2 <-> 3 <-> 4 <-> 5 -> NULL
+    for i, (room_id, name, description, permission_level) in enumerate(system_rooms):
+        prev_id = system_rooms[i-1][0] if i > 0 else None  # NULL for first room
+        next_id = system_rooms[i+1][0] if i < len(system_rooms)-1 else None  # NULL for last room
+
+        # Insert or update room
+        await db_manager.execute("""
+            INSERT OR REPLACE INTO rooms
+            (id, name, description, read_only, permission_level, prev_neighbor, next_neighbor)
+            VALUES (?, ?, ?, FALSE, ?, ?, ?)
+        """, (room_id, name, description, permission_level, prev_id, next_id))
+
+    log.info("System rooms initialized successfully")
