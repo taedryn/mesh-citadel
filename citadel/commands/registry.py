@@ -3,6 +3,7 @@
 from typing import Dict, Type
 from citadel.commands.base import BaseCommand
 
+
 class CommandRegistry:
     def __init__(self):
         self._commands: Dict[str, Type[BaseCommand]] = {}
@@ -13,7 +14,8 @@ class CommandRegistry:
         if not getattr(command_cls, "code", None):
             raise ValueError("BaseCommand class must define a code")
         if not getattr(command_cls, "permission", None):
-            raise ValueError("BaseCommand class must define a permission level")
+            raise ValueError(
+                "BaseCommand class must define a permission level")
         self._commands[command_cls.code] = command_cls
 
     def get(self, code: str) -> Type[BaseCommand]:
@@ -37,7 +39,7 @@ class CommandRegistry:
 # Global singleton
 registry = CommandRegistry()
 
+
 def register_command(cls: Type[BaseCommand]) -> Type[BaseCommand]:
     registry.register(cls)
     return cls
-

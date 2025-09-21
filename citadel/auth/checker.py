@@ -1,34 +1,52 @@
 # citadel/auth/checker.py
 
-from citadel.auth.permissions import PermissionLevel
+from citadel.auth.permissions import PermissionLevel, ACTION_REQUIREMENTS
 from citadel.commands.responses import ErrorResponse
+from citadel.room.room import SystemRoomIDs
 
-# Map actions to the minimum permission level required
-ACTION_REQUIREMENTS = {
-    "read": PermissionLevel.UNVERIFIED,
-    "quit": PermissionLevel.UNVERIFIED,
-    "post": PermissionLevel.USER,
-    "delete": PermissionLevel.AIDE,
-    "moderate": PermissionLevel.AIDE,
-    "admin": PermissionLevel.SYSOP,
-}
 
 def is_allowed(action: str, user, room=None) -> bool:
-    required = ACTION_REQUIREMENTS.get(action)
-    if required is None: # permission type not set up
+    permission = ACTION_REQUIREMENTS.get(action)
+
+    if permission is None:  # permission type not set up
         return False
-    if user.permission_level < required:
+
+    # Special case: twit room is visible to twits but not most users
+    if action in ["read_messages", "read_new_messages", "enter_message"] \
+            and room \
+            and room.room_id == SystemRoomIDs.TWIT_ID:
+        return user.permission_level in {
+            PermissionLevel.TWIT,
+            PermissionLevel.AIDE,
+            PermissionLevel.SYSOP,
+        }
+
+    min_permission = permission.level
+    if user.permission_level < min_permission:
         return False
-    if room: # extend this if there are other room-specific perms
-        if action == "read" and not room.can_user_read(user):
+
+    if room:  # extend this if there are other room-specific perms
+        read_actions = [
+            "read_messages",
+            "read_new_messages",
+            "scan_messages",
+            "ignore_room",
+        ]
+        if action in read_actions and not room.can_user_read(user):
             return False
-        if action == "post" and not room.can_user_post(user):
+        if action == "enter_message" and not room.can_user_post(user):
             return False
+
     return True
 
+
 def permission_denied(action: str, user, room=None):
+    requirement = ACTION_REQUIREMENTS.get(action)
+    if requirement:
+        do_action = requirement.description
+    else:
+        do_action = action
     return ErrorResponse(
         code="permission_denied",
-        text=f"You do not have permission to {action} in {room.name if room else 'this context'}."
+        text=f"You do not have permission to {do_action} in {room.name if room else 'this context'}."
     )
-

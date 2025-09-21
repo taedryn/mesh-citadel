@@ -115,4 +115,3 @@ class SessionManager:
         state = self.validate_session(token)
         if state:
             state.workflow = None
-

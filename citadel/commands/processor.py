@@ -11,6 +11,7 @@ from citadel.workflows import registry as workflow_registry
 
 log = logging.getLogger(__name__)
 
+
 class CommandProcessor:
     def __init__(self, config, db, session_mgr: SessionManager):
         self.config = config
@@ -22,7 +23,7 @@ class CommandProcessor:
             "quit": self._handle_quit,
             "goto": self._handle_goto,
             "next": self._handle_next_room,
-            #"previous": self._handle_previous_room,
+            # "previous": self._handle_previous_room,
             "post": self._handle_post,
             "read": self._handle_read,
             # add more commands here
@@ -66,14 +67,14 @@ class CommandProcessor:
             return ErrorResponse(code="internal_error", text=str(e))
 
     # ------------------------------------------------------------
-    # Inline handler example
+    # Simple, auth-free handlers
     # ------------------------------------------------------------
     async def _handle_quit(self, token, state, command):
         self.sessions.expire_session(token)
         return CommandResponse(success=True, code="quit", text="Goodbye!")
 
     # ------------------------------------------------------------
-    # External handler examples
+    # External handlers
     # ------------------------------------------------------------
     async def _handle_goto(self, token, state, command):
         room = Room(self.db, self.config, command.args[0])
@@ -121,4 +122,3 @@ class CommandProcessor:
             content=msg["content"],
             blocked=msg["blocked"]
         )
-

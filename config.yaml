@@ -14,6 +14,7 @@ bbs:
     aides: "Aides"                  # Room ID 3
     sysop: "Sysop"                  # Room ID 4
     system: "System"                # Room ID 5
+    twit: "Purgatory"               # Room ID 6
 
 auth:
   session_timeout: 3600             # seconds

@@ -103,7 +103,7 @@ async def initialize_database(db_manager, config=None):
 
 async def initialize_system_rooms(db_manager, config):
     """Initialize the five core system rooms that must always exist."""
-    from citadel.room.room import Room
+    from citadel.room.room import Room, SystemRoomIDs
 
     log.info("Initializing system rooms...")
 
@@ -112,16 +112,18 @@ async def initialize_system_rooms(db_manager, config):
 
     # System room definitions: (id, name, description, permission_level)
     system_rooms = [
-        (Room.LOBBY_ID, room_names[Room.LOBBY_ID],
+        (SystemRoomIDs.LOBBY_ID, room_names[SystemRoomIDs.LOBBY_ID],
          "Main discussion area", "user"),
-        (Room.MAIL_ID, room_names[Room.MAIL_ID],
+        (SystemRoomIDs.MAIL_ID, room_names[SystemRoomIDs.MAIL_ID],
          "Private message area", "user"),
-        (Room.AIDES_ID, room_names[Room.AIDES_ID],
+        (SystemRoomIDs.AIDES_ID, room_names[SystemRoomIDs.AIDES_ID],
          "Aide discussion room", "aide"),
-        (Room.SYSOP_ID, room_names[Room.SYSOP_ID],
+        (SystemRoomIDs.SYSOP_ID, room_names[SystemRoomIDs.SYSOP_ID],
          "Sysop discussion room", "sysop"),
-        (Room.SYSTEM_ID, room_names[Room.SYSTEM_ID],
-         "System events and logs", "sysop")
+        (SystemRoomIDs.SYSTEM_ID, room_names[SystemRoomIDs.SYSTEM_ID],
+         "System events and logs", "sysop"),
+        (SystemRoomIDs.TWIT_ID, room_names[SystemRoomIDs.TWIT_ID],
+         "Limited access room", "twit"),
     ]
 
     # Set up linear room chain: NULL <- 1 <-> 2 <-> 3 <-> 4 <-> 5 -> NULL

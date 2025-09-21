@@ -3,7 +3,7 @@ import pytest
 import pytest_asyncio
 import tempfile
 
-from citadel.room.room import Room
+from citadel.room.room import Room, SystemRoomIDs
 from citadel.user.user import User
 from citadel.message.manager import MessageManager
 from citadel.room.errors import RoomNotFoundError, PermissionDeniedError
@@ -178,7 +178,7 @@ async def test_room_deletion_logs_event(db, config, setup_rooms, setup_users):
         FROM room_messages rm
         JOIN messages m ON rm.message_id = m.id
         WHERE rm.room_id = ?
-    """, (Room.SYSTEM_ID,))
+    """, (SystemRoomIDs.SYSTEM_ID,))
 
     assert any("Room 'Test Room' was deleted." in msg[0] for msg in messages)
 
@@ -217,13 +217,13 @@ async def test_system_rooms_initialization(db, config, setup_rooms, setup_users)
         assert room_data[0] == room_id, f"Room should have ID {room_id}"
 
     # Check room chain structure is correct
-    lobby = await db.execute('SELECT prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (Room.LOBBY_ID,))
+    lobby = await db.execute('SELECT prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (SystemRoomIDs.LOBBY_ID,))
     assert lobby[0][0] is None, "Lobby should be first room (prev_neighbor = NULL)"
-    assert lobby[0][1] == Room.MAIL_ID, "Lobby should link to Mail room"
+    assert lobby[0][1] == SystemRoomIDs.MAIL_ID, "Lobby should link to Mail room"
 
-    system = await db.execute('SELECT prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (Room.SYSTEM_ID,))
-    assert system[0][0] == Room.SYSOP_ID, "System room should link back to Sysop room"
-    assert system[0][1] is None, "System should be last room (next_neighbor = NULL)"
+    twit = await db.execute('SELECT prev_neighbor, next_neighbor FROM rooms WHERE id = ?', (SystemRoomIDs.TWIT_ID,))
+    assert twit[0][0] == SystemRoomIDs.SYSTEM_ID, "Twit room should link back to System room"
+    assert twit[0][1] is None, "Twit should be last room (next_neighbor = NULL)"
 
 @pytest.mark.asyncio
 async def test_system_rooms_cannot_be_deleted(db, config, setup_rooms, setup_users):
@@ -240,7 +240,7 @@ async def test_system_rooms_cannot_be_deleted(db, config, setup_rooms, setup_use
 async def test_user_room_id_constraint(db, config, setup_rooms, setup_users):
     """Test that user-created rooms get IDs >= 100."""
     # Create first user room
-    room_id1 = await Room.insert_room_between(db, config, 'Test Room 1', 'First test room', False, 'user', Room.SYSTEM_ID, None)
+    room_id1 = await Room.insert_room_between(db, config, 'Test Room 1', 'First test room', False, 'user', SystemRoomIDs.SYSTEM_ID, None)
 
     # Create second user room
     room_id2 = await Room.insert_room_between(db, config, 'Test Room 2', 'Second test room', False, 'user', room_id1, None)

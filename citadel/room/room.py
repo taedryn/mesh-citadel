@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import logging
 
 from citadel.user.user import User
@@ -9,16 +10,23 @@ from datetime import datetime, UTC
 log = logging.getLogger(__name__)
 
 
-class Room:
-    # Reserved system room IDs (1-5)
+@dataclass
+class SystemRoomIDs:
+    # Reserved system room IDs (1-6)
     LOBBY_ID = 1
     MAIL_ID = 2
     AIDES_ID = 3
     SYSOP_ID = 4
     SYSTEM_ID = 5
+    TWIT_ID = 6
 
+    @classmethod
+    def as_set(cls):
+        return {v for k, v in vars(cls).items() if k.endswith("_ID")}
+
+class Room:
     # Set of all system room IDs for easy checking
-    SYSTEM_ROOM_IDS = {LOBBY_ID, MAIL_ID, AIDES_ID, SYSOP_ID, SYSTEM_ID}
+    SYSTEM_ROOM_IDS = SystemRoomIDs.as_set()
 
     # Minimum ID for user-created rooms (leaves room for future system rooms)
     MIN_USER_ROOM_ID = 100
@@ -30,11 +38,12 @@ class Room:
         """Get system room names from config with fallback defaults."""
         room_names = config.bbs.get('room_names', {})
         return {
-            cls.LOBBY_ID: room_names.get('lobby', 'Lobby'),
-            cls.MAIL_ID: room_names.get('mail', 'Mail'),
-            cls.AIDES_ID: room_names.get('aides', 'Aides'),
-            cls.SYSOP_ID: room_names.get('sysop', 'Sysop'),
-            cls.SYSTEM_ID: room_names.get('system', 'System')
+            SystemRoomIDs.LOBBY_ID: room_names.get('lobby', 'Lobby'),
+            SystemRoomIDs.MAIL_ID: room_names.get('mail', 'Mail'),
+            SystemRoomIDs.AIDES_ID: room_names.get('aides', 'Aides'),
+            SystemRoomIDs.SYSOP_ID: room_names.get('sysop', 'Sysop'),
+            SystemRoomIDs.SYSTEM_ID: room_names.get('system', 'System'),
+            SystemRoomIDs.TWIT_ID: room_names.get('twit', 'Purgatory'),
         }
 
     def __init__(self, db, config, identifier: int | str):
@@ -322,7 +331,7 @@ class Room:
 
         # Log to system events room (always ID 5)
         try:
-            system_room = Room(self.db, self.config, self.SYSTEM_ID)
+            system_room = Room(self.db, self.config, SystemRoomIDs.SYSTEM_ID)
             await system_room.load()
             await system_room.post_message(
                 sys_user, f"Room '{self.name}' was deleted.")

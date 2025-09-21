@@ -8,6 +8,7 @@ from citadel.auth.permissions import PermissionLevel
 # Core user commands
 # -------------------
 
+
 @register_command
 class GoNextUnreadCommand(BaseCommand):
     code = "G"
@@ -32,6 +33,7 @@ class EnterMessageCommand(BaseCommand):
         super().validate(context)
         if context and context.get("room") == "Mail" and "recipient" not in self.args:
             raise ValueError("Recipient required in Mail room")
+
 
 @register_command
 class ReadMessagesCommand(BaseCommand):
@@ -207,4 +209,3 @@ class FastForwardCommand(BaseCommand):
     permission = PermissionLevel.USER
     help_text = "Fast-forward to the latest message in the current room."
     arg_schema = {}
-

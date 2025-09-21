@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Optional, Any
 
+
 @dataclass
 class MessageResponse:
     """Represents a BBS message to display to the user."""
@@ -14,6 +15,7 @@ class MessageResponse:
     content: str
     blocked: bool = False
 
+
 @dataclass
 class CommandResponse:
     """Represents the outcome of a command (not a full message)."""
@@ -22,9 +24,10 @@ class CommandResponse:
     text: Optional[str] = None
     payload: Optional[dict[str, Any]] = None
 
+
 @dataclass
 class ErrorResponse(CommandResponse):
     """Specialization of CommandResponse for errors."""
+
     def __init__(self, code: str, text: str, payload: Optional[dict[str, Any]] = None):
         super().__init__(success=False, code=code, text=text, payload=payload)
-

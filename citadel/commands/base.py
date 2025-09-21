@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 from citadel.auth.permissions import PermissionLevel
 
+
 class BaseCommand(ABC):
     """
     Base class for all BBS commands.
@@ -19,7 +20,7 @@ class BaseCommand(ABC):
     # Human‑readable description
     help_text: str = ""
 
-    # Argument schema: dict of arg_name → 
+    # Argument schema: dict of arg_name →
     # { "required": bool, "type": str, "help": str }
     arg_schema: Dict[str, Dict[str, Any]] = {}
 
@@ -34,7 +35,8 @@ class BaseCommand(ABC):
     ):
         # username must always be supplied (can be empty string, but not None)
         if username is None:
-            raise ValueError("username must be supplied (can be empty string, but not None)")
+            raise ValueError(
+                "username must be supplied (can be empty string, but not None)")
         self.username = username
         self.room = room
         self.args: Dict[str, Any] = args or {}

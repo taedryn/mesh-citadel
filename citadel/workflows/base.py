@@ -2,6 +2,7 @@
 
 from citadel.commands.responses import CommandResponse, ErrorResponse
 
+
 class Workflow:
     """Abstract base for all workflows."""
     kind: str
@@ -11,4 +12,3 @@ class Workflow:
         Must return a CommandResponse or MessageResponse.
         """
         raise NotImplementedError
-
