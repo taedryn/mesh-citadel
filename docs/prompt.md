@@ -257,7 +257,7 @@ the system will have the following permission levels:
 * aide -- moderator access
 * sysop -- all permissions
 
-the system will also maintain a list of actions in the config file, and
+the system will also maintain a list of actions internally, and
 which permission levels allow which actions.  we will certainly want to
 keep track of the following actions, in relationship to permission
 levels:
@@ -274,6 +274,10 @@ levels:
 * edit rooms
 * block other users
 * modify other users' permission level
+
+there will be some mechanism whereby a sysop (or possibly an aide) can
+interact with BBS commands to verify users, as well as modify the
+permissions of existing users.
 
 ### Sessions Subsystem
 
@@ -399,22 +403,21 @@ the command structure of a citadel BBS is based on single-charater
 commands, which sometimes take an argument.  commands are not case
 sensitive.  the commands we will implement are as follows:
 
-G - Go to the next room (advances to the next room in the room list
-which has unread messages)
-E - Enter a new message (compose and post a message to the current room)
-R - Read messages in the current room (read a specific message if ID
-provided)
-N - Read new messages since last visit
-L - List rooms (see the available rooms)
-I - Ignore or unignore current room
-Q - Quit or log off
-S - Scan messages (shows message headers or summaries)
-C - Change rooms (choose a room by name or number)
-H - Help (display command help)
-M - Mail (go to the Mail room to send/receive private messages)
-W - Who’s online (list active users)
-D - Delete a message
 B - Block or unblock another user
+C - Change rooms (choose a room by name or number)
+D - Delete a message
+E - Enter a new message (compose and post a message to the current room)
+G - Go to the next room (advances to the next room in the room list which has unread messages)
+H - Help (display command help)
+I - Ignore or unignore current room
+L - List rooms (see the available rooms)
+M - Mail (go to the Mail room to send/receive private messages)
+N - Read new messages since last visit
+Q - Quit or log off
+R - Read messages in the current room (read a specific message if ID provided)
+S - Scan messages (shows message headers or summaries)
+V - Validate users (aide and sysop only)
+W - Who’s online (list active users)
 
 in addition, we will have some dot commands for actions which
 are less common, or more associated with administration than daily use

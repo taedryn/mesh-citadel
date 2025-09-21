@@ -1,8 +1,10 @@
-import threading
-import secrets
-import logging
 from datetime import datetime, timedelta, UTC
+import logging
+import secrets
+import threading
+
 from citadel.db.manager import DatabaseManager
+from citadel.session.state import SessionState, WorkflowState
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -16,32 +18,36 @@ class SessionManager:
         self.lock = threading.Lock()
         self._start_sweeper()
 
+    def create_session_state(self, username: str) -> SessionState:
+        return SessionState(username=username, current_room="Lobby")
+
     async def create_session(self, username: str) -> str:
         if not await self._user_exists(username):
             raise ValueError(f"Username '{username}' does not exist")
 
         token = secrets.token_urlsafe(24)
         now = datetime.now(UTC)
+        state = self.create_session_state(username)
         with self.lock:
-            self.sessions[token] = (username, now)
+            self.sessions[token] = (state, now)
         log.info(f"Session created for username='{username}'")
         return token
 
-    def validate_session(self, token: str) -> str | None:
+    def validate_session(self, token: str) -> SessionState | None:
         with self.lock:
             data = self.sessions.get(token)
             if not data:
                 return None
-            username, _ = data
-            return username  # Always valid until sweeper expires it
+            state, _ = data
+            return state
 
     def touch_session(self, token: str) -> bool:
         now = datetime.now(UTC)
         with self.lock:
             if token not in self.sessions:
                 return False
-            username, _ = self.sessions[token]
-            self.sessions[token] = (username, now)
+            state, _ = self.sessions[token]
+            self.sessions[token] = (state, now)
             return True
 
     def expire_session(self, token: str) -> bool:
@@ -80,3 +86,33 @@ class SessionManager:
             log.warning(
                 f"Database error while checking username existence: {e}")
             return False
+
+    # --- New helpers for richer state ---
+
+    def get_username(self, token: str) -> str | None:
+        state = self.validate_session(token)
+        return state.username if state else None
+
+    def get_current_room(self, token: str) -> str | None:
+        state = self.validate_session(token)
+        return state.current_room if state else None
+
+    def set_current_room(self, token: str, room: str) -> None:
+        state = self.validate_session(token)
+        if state:
+            state.current_room = room
+
+    def get_workflow(self, token: str) -> WorkflowState | None:
+        state = self.validate_session(token)
+        return state.workflow if state else None
+
+    def set_workflow(self, token: str, wf: WorkflowState) -> None:
+        state = self.validate_session(token)
+        if state:
+            state.workflow = wf
+
+    def clear_workflow(self, token: str) -> None:
+        state = self.validate_session(token)
+        if state:
+            state.workflow = None
+
