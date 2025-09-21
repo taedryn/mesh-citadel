@@ -2,6 +2,8 @@ import logging
 from datetime import datetime, UTC
 from typing import Optional
 
+from citadel.auth.permissions import PermissionLevel
+
 log = logging.getLogger(__name__)
 
 PERMISSIONS = {"unverified", "twit", "user", "aide", "sysop"}
@@ -32,6 +34,14 @@ class User:
         self._display_name = row[4]
         self._last_login = row[5]
         self._permission = row[6]
+
+    @classmethod
+    async def create(cls, config, db_mgr, username, password_hash,
+                     salt, display_name=None):
+        query = "INSERT INTO users (username, password_hash, salt, display_name, permission) VALUES (?, ?, ?, ?, ?)"
+        await db_mgr.execute(query, (username, password_hash, salt,
+                                     display_name,
+                                     PermissionLevel.UNVERIFIED.value))
 
     @property
     def display_name(self) -> Optional[str]:

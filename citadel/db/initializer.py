@@ -15,9 +15,7 @@ async def initialize_database(db_manager, config=None):
         salt BLOB NOT NULL,
         display_name TEXT,
         last_login TIMESTAMP,
-        permission TEXT NOT NULL CHECK(permission IN (
-            'unverified', 'twit', 'user', 'aide', 'sysop'
-        ))
+        permission INT NOT NULL
     );
     """
 

@@ -2,6 +2,7 @@ import asyncio
 import pytest
 from datetime import datetime, timedelta, UTC
 from citadel.session.manager import SessionManager
+from citadel.session.state import WorkflowState
 
 class MockConfig:
     def __init__(self, timeout=3600):
@@ -30,19 +31,23 @@ def session_mgr():
 async def test_create_and_validate_session(session_mgr):
     token = await session_mgr.create_session("alice")
     assert isinstance(token, str)
-    assert session_mgr.validate_session(token) == "alice"
+    state = session_mgr.validate_session(token)
+    assert state.username == "alice"
+
 
 @pytest.mark.asyncio
 async def test_touch_session_extends_activity(session_mgr):
     token = await session_mgr.create_session("bob")
     assert session_mgr.touch_session(token) is True
-    assert session_mgr.validate_session(token) == "bob"
+    state = session_mgr.validate_session(token)
+    assert state.username == "bob"
 
 @pytest.mark.asyncio
 async def test_expire_session_manually(session_mgr):
     token = await session_mgr.create_session("alice")
     assert session_mgr.expire_session(token) is True
-    assert session_mgr.validate_session(token) is None
+    state = session_mgr.validate_session(token)
+    assert state is None
 
 @pytest.mark.asyncio
 async def test_validate_returns_username_even_if_stale(session_mgr):
@@ -55,7 +60,8 @@ async def test_validate_returns_username_even_if_stale(session_mgr):
                 datetime.now(UTC) - timedelta(seconds=999)
         )
     # Should still return username until sweeper runs
-    assert session_mgr.validate_session(token) == "bob"
+    state = session_mgr.validate_session(token)
+    assert state.username == "bob"
 
 @pytest.mark.asyncio
 async def test_create_session_invalid_username(session_mgr):
@@ -80,5 +86,47 @@ async def test_touch_session_invalid_token(session_mgr):
 
 @pytest.mark.asyncio
 async def test_validate_session_invalid_token(session_mgr):
-    assert session_mgr.validate_session("invalid-token") is None
+    state = session_mgr.validate_session("invalid-token")
+    assert state is None
+
+
+@pytest.mark.asyncio
+async def test_current_room_helpers(session_mgr):
+    token = await session_mgr.create_session("alice")
+
+    # Default should be Lobby (or None, depending on your SessionState default)
+    room = session_mgr.get_current_room(token)
+    assert room in (None, "Lobby")
+
+    # Change room and verify
+    session_mgr.set_current_room(token, "TechTalk")
+    assert session_mgr.get_current_room(token) == "TechTalk"
+
+    # Invalid token should return None and not raise
+    assert session_mgr.get_current_room("invalid") is None
+    session_mgr.set_current_room("invalid", "Nowhere")  # should be a no-op
+
+@pytest.mark.asyncio
+async def test_workflow_state_lifecycle(session_mgr):
+    token = await session_mgr.create_session("bob")
+
+    # Initially no workflow
+    assert session_mgr.get_workflow(token) is None
+
+    # Set a workflow
+    wf = WorkflowState(kind="validate_users", step=1, data={"pending": ["alice"]})
+    session_mgr.set_workflow(token, wf)
+    got = session_mgr.get_workflow(token)
+    assert got.kind == "validate_users"
+    assert got.step == 1
+    assert got.data["pending"] == ["alice"]
+
+    # Clear workflow
+    session_mgr.clear_workflow(token)
+    assert session_mgr.get_workflow(token) is None
+
+    # Invalid token should be safe
+    assert session_mgr.get_workflow("invalid") is None
+    session_mgr.set_workflow("invalid", wf)  # should be a no-op
+    session_mgr.clear_workflow("invalid")    # should be a no-op
 

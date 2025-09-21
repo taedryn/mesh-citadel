@@ -32,7 +32,8 @@ def session_mgr():
 async def test_sweeper_expires_stale_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
         token = await session_mgr.create_session("alice")
-        assert session_mgr.validate_session(token) == "alice"
+        state = session_mgr.validate_session(token)
+        assert state.username == "alice"
 
         # Advance time past timeout
         frozen.move_to("2025-09-17 00:00:11")
@@ -44,7 +45,8 @@ async def test_sweeper_expires_stale_sessions(session_mgr):
 async def test_sweeper_preserves_active_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
         token = await session_mgr.create_session("bob")
-        assert session_mgr.validate_session(token) == "bob"
+        state = session_mgr.validate_session(token)
+        assert state.username == "bob"
 
         # Advance time just before timeout
         frozen.move_to("2025-09-17 00:00:09")
@@ -52,5 +54,6 @@ async def test_sweeper_preserves_active_sessions(session_mgr):
         threading.Event().wait(0.1)
 
         # Should still be valid
-        assert session_mgr.validate_session(token) == "bob"
+        state = session_mgr.validate_session(token)
+        assert state.username == "bob"
 

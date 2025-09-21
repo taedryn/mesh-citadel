@@ -1,7 +1,8 @@
-from enum import Enum
+from enum import IntEnum
 
-class PermissionLevel(Enum):
-    TWIT = "twit"
-    USER = "user"
-    AIDE = "aide"
-    SYSOP = "sysop"
+class PermissionLevel(IntEnum):
+    UNVERIFIED = 0
+    TWIT = 1
+    USER = 2
+    AIDE = 3
+    SYSOP = 4
