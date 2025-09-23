@@ -3,6 +3,7 @@ import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
+from citadel.auth.permissions import PermissionLevel
 
 async def initialize_database(db_manager, config=None):
     log.info("Initializing database schema...")
@@ -45,7 +46,7 @@ async def initialize_database(db_manager, config=None):
         name TEXT UNIQUE NOT NULL,
         description TEXT,
         read_only BOOLEAN DEFAULT FALSE,
-        permission_level TEXT DEFAULT 'user', -- unverified/twit/user/aide/sysop
+        permission_level INTEGER DEFAULT 2,
         next_neighbor INTEGER REFERENCES rooms(id),
         prev_neighbor INTEGER REFERENCES rooms(id)
     );
@@ -113,17 +114,17 @@ async def initialize_system_rooms(db_manager, config):
     # System room definitions: (id, name, description, permission_level)
     system_rooms = [
         (SystemRoomIDs.LOBBY_ID, room_names[SystemRoomIDs.LOBBY_ID],
-         "Main discussion area", "user"),
+         "Main discussion area", PermissionLevel.USER.value),
         (SystemRoomIDs.MAIL_ID, room_names[SystemRoomIDs.MAIL_ID],
-         "Private message area", "user"),
+         "Private message area", PermissionLevel.USER.value),
         (SystemRoomIDs.AIDES_ID, room_names[SystemRoomIDs.AIDES_ID],
-         "Aide discussion room", "aide"),
+         "Aide discussion room", PermissionLevel.AIDE.value),
         (SystemRoomIDs.SYSOP_ID, room_names[SystemRoomIDs.SYSOP_ID],
-         "Sysop discussion room", "sysop"),
+         "Sysop discussion room", PermissionLevel.SYSOP.value),
         (SystemRoomIDs.SYSTEM_ID, room_names[SystemRoomIDs.SYSTEM_ID],
-         "System events and logs", "sysop"),
+         "System events and logs", PermissionLevel.SYSOP.value),
         (SystemRoomIDs.TWIT_ID, room_names[SystemRoomIDs.TWIT_ID],
-         "Limited access room", "twit"),
+         "Limited access room", PermissionLevel.TWIT.value),
     ]
 
     # Set up linear room chain: NULL <- 1 <-> 2 <-> 3 <-> 4 <-> 5 -> NULL
