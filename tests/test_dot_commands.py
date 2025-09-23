@@ -3,7 +3,7 @@
 import pytest
 
 from citadel.commands import builtins
-from citadel.auth.permission_levels import PermissionLevel
+from citadel.auth.permissions import PermissionLevel
 
 
 def test_create_room_requires_room_name():

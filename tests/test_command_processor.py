@@ -39,6 +39,9 @@ async def db(config):
     await initialize_database(db_mgr, config)
 
     await User.create(config, db_mgr, "alice", "hash", "salt", "")
+    #alice = User(db_mgr, 'alice')
+    #await alice.load()
+    #alice.set_permission_level(PermissionLevel.USER)
 
     yield db_mgr
 
@@ -59,7 +62,8 @@ def processor(config, db, session_mgr, monkeypatch):
     # Patch User.load to always set permission_level high enough
     # so we're testing commands, not permissions
     async def fake_load(self):
-        self.permission_level = PermissionLevel.SYSOP
+        self._permission_level = PermissionLevel.SYSOP
+        self._loaded = True
     monkeypatch.setattr("citadel.user.user.User.load", fake_load)
 
     return proc
@@ -81,6 +85,8 @@ async def test_invalid_session(processor):
 @pytest.mark.asyncio
 async def test_quit_expires_session(processor, session_mgr):
     mgr, token = session_mgr
+    alice = User(db, "alice")
+    await alice.load()
     cmd = DummyCommand("quit")
     resp = await processor.process(token, cmd)
     assert isinstance(resp, CommandResponse)

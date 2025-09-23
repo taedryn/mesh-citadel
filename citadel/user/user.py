@@ -45,6 +45,8 @@ class User:
 
     @property
     def display_name(self) -> Optional[str]:
+        if not self._loaded:
+            raise RuntimeError('Call .load() on this object first')
         try:
             return self._display_name
         except AttributeError:
@@ -58,6 +60,8 @@ class User:
 
     @property
     def permission_level(self) -> PermissionLevel:
+        if not self._loaded:
+            raise RuntimeError('Call .load() on this object first')
         try:
             return PermissionLevel(self._permission_level)
         except ValueError:
@@ -73,6 +77,8 @@ class User:
 
     @property
     def last_login(self) -> Optional[str]:
+        if not self._loaded:
+            raise RuntimeError('Call .load() on this object first')
         try:
             return self._last_login
         except AttributeError:
@@ -90,6 +96,8 @@ class User:
 
     @property
     def password_hash(self) -> str:
+        if not self._loaded:
+            raise RuntimeError('Call .load() on this object first')
         try:
             return self._password_hash
         except AttributeError:
@@ -98,6 +106,8 @@ class User:
 
     @property
     def salt(self) -> bytes:
+        if not self._loaded:
+            raise RuntimeError('Call .load() on this object first')
         try:
             return self._salt
         except AttributeError:
