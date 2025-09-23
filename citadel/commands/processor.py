@@ -5,7 +5,7 @@ from citadel.auth.checker import is_allowed, permission_denied
 from citadel.commands.responses import MessageResponse, CommandResponse, ErrorResponse
 from citadel.session.manager import SessionManager
 from citadel.user.user import User
-from citadel.room.room import Room
+from citadel.room.room import Room, SystemRoomIDs
 from citadel.message.manager import MessageManager
 from citadel.workflows import registry as workflow_registry
 
@@ -17,6 +17,7 @@ class CommandProcessor:
         self.config = config
         self.db = db
         self.sessions = session_mgr
+        self.msg_mgr = MessageManager(config, db)
 
         # Normal command dispatch table
         self.dispatch = {
@@ -79,9 +80,12 @@ class CommandProcessor:
     async def _handle_go_next_unread(self, session_id, state, command):
         user = User(self.db, state.username)
         await user.load()
-        room = Room(self.db, self.config, command.args[0])
+        room = Room(self.db, self.config, state.current_room)
         await room.load()
-        new_room = room.go_to_next_room(user, with_unread=True)
+        new_room = await room.go_to_next_room(user, with_unread=True)
+        if not new_room:
+            return ErrorResponse(code="no_unread_rooms",
+                               text="No rooms with unread messages found.")
         await new_room.load()
         self.sessions.set_current_room(session_id, new_room.room_id)
         return CommandResponse(success=True, code="room_changed",
@@ -94,10 +98,10 @@ class CommandProcessor:
         await user.load()
         current_room = Room(self.db, self.config, state.current_room)
         await current_room.load()
-        next_room = await current_room.go_to_room(command.room)
+        next_room = await current_room.go_to_room(command.args["room"])
         if not next_room:
             return ErrorResponse(code="no_next_room",
-                                   text=f"Room {command.room} not found.")
+                                   text=f"Room {command.args['room']} not found.")
         self.sessions.set_current_room(session_id, next_room.room_id)
         return CommandResponse(success=True, code="room_changed",
                                text=f"You are now in room '{next_room.name}'.",
@@ -106,16 +110,16 @@ class CommandProcessor:
     async def _handle_enter_message(self, session_id, state, command):
         room = Room(self.db, self.config, state.current_room)
         await room.load()
-        if room.id == SystemRoomIDs.MAIL_ID:
-            if 'recipient' not in command:
+        if room.room_id == SystemRoomIDs.MAIL_ID:
+            if 'recipient' not in command.args:
                 return ErrorResponse(code="missing_recipient",
                                      text=f"Messages in {room.name} require a recipient")
             else:
                 msg_id = await room.post_message(state.username,
-                                                 command["content"],
-                                                 command["recipient"])
+                                                 command.args["content"],
+                                                 command.args["recipient"])
         else:
-            msg_id = await room.post_message(state.username, command["content"])
+            msg_id = await room.post_message(state.username, command.args["content"])
         return CommandResponse(success=True, code="message_posted",
                                text=f"Message {msg_id} posted in {room.name}.",
                                payload={"message_id": msg_id})
@@ -128,7 +132,7 @@ class CommandProcessor:
             return CommandResponse(success=True, code="no_unread", text="No unread messages.")
         messages = []
         for msg_id in msg_ids:
-            msg = self.msg_mgr.get_message(msg_id)
+            msg = await self.msg_mgr.get_message(msg_id)
             sender = User(self.db, msg["sender"])
             await sender.load()
             messages.append(MessageResponse(

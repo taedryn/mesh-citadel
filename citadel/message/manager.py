@@ -46,8 +46,7 @@ class MessageManager:
         sender_user = User(self.db, msg["sender"])
         await sender_user.load()
         msg["display_name"] = sender_user.display_name or msg["sender"]
-        is_blocked = await recipient_user.is_blocked(msg['sender'])
-        msg["blocked"] = is_blocked if recipient_user else False
+        msg["blocked"] = await recipient_user.is_blocked(msg['sender']) if recipient_user else False
         return msg
 
     async def delete_message(self, message_id: int) -> bool:

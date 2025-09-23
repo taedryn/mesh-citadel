@@ -173,7 +173,9 @@ class Room:
             "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
         )
-        return last_seen[0][0]
+        if not last_read or last_read[0][0] is None:
+            return 0
+        return last_read[0][0]
 
     async def has_unread_messages(self, user: User) -> bool:
         newest = await self.get_newest_message_id()
@@ -217,10 +219,10 @@ class Room:
     async def get_unread_message_ids(self, username: str) -> list[int]:
         """ return a list of message ids which have not yet been seen
         by this user """
-        user = User(username)
+        user = User(self.db, username)
         await user.load()
-        last_read = await self.get_last_unseen_message_id(user)
-        id_list = await db.execute("""
+        last_read = await self.get_last_unread_message_id(user)
+        id_list = await self.db.execute("""
             SELECT message_id FROM room_messages
             WHERE room_id = ?
             AND message_id > ?
@@ -241,7 +243,7 @@ class Room:
         )
         return result[0][0] if result else None
 
-    async def post_message(self, sender: str, content: str) -> int:
+    async def post_message(self, sender: str, content: str, recipient: str = None) -> int:
         user = User(self.db, sender)
         await user.load()
         if not self.can_user_post(user):
@@ -265,7 +267,7 @@ class Room:
                 await self.db.execute("DELETE FROM room_messages WHERE room_id = ? AND message_id = ?", (self.room_id, oldest_id))
 
         # Post and link
-        msg_id = await msg_mgr.post_message(sender, content)
+        msg_id = await msg_mgr.post_message(sender, content, recipient)
         timestamp = datetime.now(UTC).isoformat()
         await self.db.execute(
             "INSERT INTO room_messages (room_id, message_id, timestamp) VALUES (?, ?, ?)",
