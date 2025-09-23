@@ -41,13 +41,13 @@ def test_command_to_dict_includes_username_and_room():
     assert d["args"]["content"] == "Hello"
     assert d["code"] == "E"
     assert d["name"] == "enter_message"
-    assert d["permission"] == PermissionLevel.USER.value
+    assert d["permission_level"] == PermissionLevel.USER.value
 
 
 def test_permission_levels_are_set_correctly():
-    assert builtins.CreateRoomCommand.permission == PermissionLevel.AIDE
-    assert builtins.EditRoomCommand.permission == PermissionLevel.SYSOP
-    assert builtins.FastForwardCommand.permission == PermissionLevel.USER
+    assert builtins.CreateRoomCommand.permission_level == PermissionLevel.AIDE
+    assert builtins.EditRoomCommand.permission_level == PermissionLevel.SYSOP
+    assert builtins.FastForwardCommand.permission_level == PermissionLevel.USER
 
 
 def test_help_text_and_arg_schema_present():
@@ -61,7 +61,7 @@ def test_validate_users_command_metadata():
     cmd_cls = builtins.ValidateUsersCommand
     assert cmd_cls.code == "V"
     assert cmd_cls.name == "validate_users"
-    assert cmd_cls.permission == PermissionLevel.AIDE
+    assert cmd_cls.permission_level == PermissionLevel.AIDE
     assert "validation" in cmd_cls.help_text.lower()
     assert cmd_cls.arg_schema == {}
 

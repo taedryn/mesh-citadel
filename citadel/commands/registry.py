@@ -13,9 +13,9 @@ class CommandRegistry:
             raise TypeError("Only subclasses of BaseCommand can be registered")
         if not getattr(command_cls, "code", None):
             raise ValueError("BaseCommand class must define a code")
-        if not getattr(command_cls, "permission", None):
+        if not getattr(command_cls, "permission_level", None):
             raise ValueError(
-                "BaseCommand class must define a permission level")
+                "BaseCommand class must define a permission_level")
         self._commands[command_cls.code] = command_cls
 
     def get(self, code: str) -> Type[BaseCommand]:
@@ -28,7 +28,7 @@ class CommandRegistry:
         return {
             code: {
                 "name": cls.name,
-                "permission": cls.permission.value,
+                "permission_level": cls.permission_level.value,
                 "help": cls.help_text,
                 "args": cls.arg_schema,
             }

@@ -32,10 +32,10 @@ async def db():
     await initialize_database(db_mgr, config)
 
     # Insert test users
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("alice", "hash1", b"salt1", "Alice", "2025-09-17T00:00:00Z", "user"))
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("bob", "hash2", b"salt2", "Bob", "2025-09-17T00:00:00Z", "user"))
+    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
+                   ("alice", "hash1", b"salt1", "Alice", "2025-09-17T00:00:00Z", 2))
+    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
+                   ("bob", "hash2", b"salt2", "Bob", "2025-09-17T00:00:00Z", 2))
 
     yield db_mgr
 
@@ -51,7 +51,7 @@ async def test_user_loads_correctly(db):
     user = User(db, "alice")
     await user.load()
     assert user.display_name == "Alice"
-    assert user.permission == "user"
+    assert user.permission_level.value == 2
     assert user.last_login == "2025-09-17T00:00:00Z"
 
 @pytest.mark.asyncio
@@ -67,10 +67,11 @@ async def test_display_name_update(db):
 async def test_permission_update(db):
     user = User(db, "alice")
     await user.load()
-    await user.set_permission("aide")
+    from citadel.auth.permissions import PermissionLevel
+    await user.set_permission_level(PermissionLevel.AIDE)
     reloaded = User(db, "alice")
     await reloaded.load()
-    assert reloaded.permission == "aide"
+    assert reloaded.permission_level == PermissionLevel.AIDE
 
 @pytest.mark.asyncio
 async def test_last_login_update(db):

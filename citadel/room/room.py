@@ -91,27 +91,27 @@ class Room:
     # permission methods
     # ------------------------------------------------------------
     def can_user_read(self, user: User) -> bool:
-        if user.permission == PermissionLevel.SYSOP:
+        if user.permission_level == PermissionLevel.SYSOP:
             print('sysop: yes')
             return True
         if self.permission_level == PermissionLevel.AIDE:
-            answer = user.permission >= PermissionLevel.AIDE
+            answer = user.permission_level >= PermissionLevel.AIDE
             print(f'aide: {answer}')
             return answer
         if self.permission_level == PermissionLevel.USER:
-            answer = user.permission >= PermissionLevel.USER
+            answer = user.permission_level >= PermissionLevel.USER
             print(f'user: {answer}')
             return answer
         if self.permission_level == PermissionLevel.TWIT:
             print('twit: yes')
             return True
-        print(f'permission: {user.permission}')
+        print(f'permission: {user.permission_level}')
         print('unknown: False')
         return False
 
     def can_user_post(self, user: User) -> bool:
         if self.read_only:
-            return user.permission >= PermissionLevel.AIDE
+            return user.permission_level >= PermissionLevel.AIDE
         return self.can_user_read(user)
 
     # ------------------------------------------------------------

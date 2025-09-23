@@ -13,7 +13,7 @@ from citadel.auth.permissions import PermissionLevel
 class GoNextUnreadCommand(BaseCommand):
     code = "G"
     name = "go_next_unread"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Go to the next room with unread messages."
     arg_schema = {}
 
@@ -22,7 +22,7 @@ class GoNextUnreadCommand(BaseCommand):
 class EnterMessageCommand(BaseCommand):
     code = "E"
     name = "enter_message"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Compose and post a message to the current room."
     arg_schema = {
         "content": {"required": True, "type": "str", "help": "The body of the message."},
@@ -39,7 +39,7 @@ class EnterMessageCommand(BaseCommand):
 class ReadMessagesCommand(BaseCommand):
     code = "R"
     name = "read_messages"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Read messages in the current room. Provide ID to read a specific message."
     arg_schema = {
         "message_id": {"required": False, "type": "str", "help": "ID of the message to read."}
@@ -50,7 +50,7 @@ class ReadMessagesCommand(BaseCommand):
 class ReadNewMessagesCommand(BaseCommand):
     code = "N"
     name = "read_new_messages"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Read new messages since last visit."
     arg_schema = {}
 
@@ -59,7 +59,7 @@ class ReadNewMessagesCommand(BaseCommand):
 class ListRoomsCommand(BaseCommand):
     code = "L"
     name = "list_rooms"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "List available rooms."
     arg_schema = {}
 
@@ -68,7 +68,7 @@ class ListRoomsCommand(BaseCommand):
 class IgnoreRoomCommand(BaseCommand):
     code = "I"
     name = "ignore_room"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Ignore or unignore the current room."
     arg_schema = {}
 
@@ -77,7 +77,7 @@ class IgnoreRoomCommand(BaseCommand):
 class QuitCommand(BaseCommand):
     code = "Q"
     name = "quit"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Quit or log off."
     arg_schema = {}
 
@@ -86,7 +86,7 @@ class QuitCommand(BaseCommand):
 class ScanMessagesCommand(BaseCommand):
     code = "S"
     name = "scan_messages"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Show message headers or summaries in the current room."
     arg_schema = {}
 
@@ -95,7 +95,7 @@ class ScanMessagesCommand(BaseCommand):
 class ChangeRoomCommand(BaseCommand):
     code = "C"
     name = "change_room"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Change to a room by name or number."
     arg_schema = {
         "room": {"required": True, "type": "str", "help": "Name or number of the room to enter."}
@@ -106,7 +106,7 @@ class ChangeRoomCommand(BaseCommand):
 class HelpCommand(BaseCommand):
     code = "H"
     name = "help"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Display help for available commands."
     arg_schema = {
         "command": {"required": False, "type": "str", "help": "Optional command code for detailed help."}
@@ -117,7 +117,7 @@ class HelpCommand(BaseCommand):
 class MailCommand(BaseCommand):
     code = "M"
     name = "mail"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Go to the Mail room to send/receive private messages."
     arg_schema = {}
 
@@ -126,7 +126,7 @@ class MailCommand(BaseCommand):
 class WhoCommand(BaseCommand):
     code = "W"
     name = "who"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "List active users currently online."
     arg_schema = {}
 
@@ -135,7 +135,7 @@ class WhoCommand(BaseCommand):
 class DeleteMessageCommand(BaseCommand):
     code = "D"
     name = "delete_message"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Delete a message by ID."
     arg_schema = {
         "message_id": {"required": True, "type": "str", "help": "ID of the message to delete."}
@@ -146,7 +146,7 @@ class DeleteMessageCommand(BaseCommand):
 class BlockUserCommand(BaseCommand):
     code = "B"
     name = "block_user"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Block or unblock another user."
     arg_schema = {
         "target_user": {"required": True, "type": "str", "help": "Username of the user to block/unblock."}
@@ -157,7 +157,7 @@ class BlockUserCommand(BaseCommand):
 class ValidateUsersCommand(BaseCommand):
     code = "V"
     name = "validate_users"
-    permission = PermissionLevel.AIDE
+    permission_level = PermissionLevel.AIDE
     help_text = "Enter the user validation workflow to approve new users."
     arg_schema = {}  # no args; interactive workflow
 
@@ -170,7 +170,7 @@ class ValidateUsersCommand(BaseCommand):
 class CreateRoomCommand(BaseCommand):
     code = ".C"
     name = "create_room"
-    permission = PermissionLevel.AIDE
+    permission_level = PermissionLevel.AIDE
     help_text = "Create a new room."
     arg_schema = {
         "room": {"required": True, "type": "str", "help": "Name of the new room."},
@@ -182,7 +182,7 @@ class CreateRoomCommand(BaseCommand):
 class EditRoomCommand(BaseCommand):
     code = ".ER"
     name = "edit_room"
-    permission = PermissionLevel.SYSOP
+    permission_level = PermissionLevel.SYSOP
     help_text = "Edit a room's characteristics."
     arg_schema = {
         "room": {"required": True, "type": "str", "help": "Room to edit."},
@@ -194,7 +194,7 @@ class EditRoomCommand(BaseCommand):
 class EditUserCommand(BaseCommand):
     code = ".EU"
     name = "edit_user"
-    permission = PermissionLevel.SYSOP
+    permission_level = PermissionLevel.SYSOP
     help_text = "Edit a user's characteristics."
     arg_schema = {
         "target_user": {"required": True, "type": "str", "help": "Username of the user to edit."},
@@ -206,6 +206,6 @@ class EditUserCommand(BaseCommand):
 class FastForwardCommand(BaseCommand):
     code = ".FF"
     name = "fast_forward"
-    permission = PermissionLevel.USER
+    permission_level = PermissionLevel.USER
     help_text = "Fast-forward to the latest message in the current room."
     arg_schema = {}

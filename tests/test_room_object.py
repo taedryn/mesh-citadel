@@ -58,10 +58,10 @@ async def setup_rooms(db):
 
 @pytest_asyncio.fixture
 async def setup_users(db):
-    await db.execute("INSERT INTO users (username, permission, password_hash, salt) VALUES ('twit', 'twit', 'hash', 'salt')")
-    await db.execute("INSERT INTO users (username, permission, password_hash, salt) VALUES ('user', 'user', 'hash', 'salt')")
-    await db.execute("INSERT INTO users (username, permission, password_hash, salt) VALUES ('aide', 'aide', 'hash', 'salt')")
-    await db.execute("INSERT INTO users (username, permission, password_hash, salt) VALUES ('sysop', 'sysop', 'hash', 'salt')")
+    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('twit', 1, 'hash', 'salt')")
+    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('user', 2, 'hash', 'salt')")
+    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('aide', 3, 'hash', 'salt')")
+    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('sysop', 4, 'hash', 'salt')")
 
 @pytest.mark.asyncio
 async def test_room_initialization(db, config, setup_rooms):
@@ -166,7 +166,7 @@ async def test_skip_to_latest(db, config, setup_rooms, setup_users):
 @pytest.mark.asyncio
 async def test_room_deletion_logs_event(db, config, setup_rooms, setup_users):
     # Create a non-system room to delete (ID 100)
-    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (100, 'Test Room', 'Room for deletion test', 'user', NULL, NULL)")
+    await db.execute("INSERT INTO rooms (id, name, description, permission_level, prev_neighbor, next_neighbor) VALUES (100, 'Test Room', 'Room for deletion test', 2, NULL, NULL)")
 
     # Delete the test room - it should log to System room (ID 5)
     test_room = Room(db, config, 100)

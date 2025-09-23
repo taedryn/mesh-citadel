@@ -3,7 +3,7 @@
 import pytest
 
 from citadel.commands import builtins
-from citadel.auth.permissions import PermissionLevel
+from citadel.auth.permission_levels import PermissionLevel
 
 
 def test_create_room_requires_room_name():
@@ -59,8 +59,8 @@ def test_fast_forward_has_no_args():
 
 
 def test_permissions_for_dot_commands():
-    assert builtins.CreateRoomCommand.permission == PermissionLevel.AIDE
-    assert builtins.EditRoomCommand.permission == PermissionLevel.SYSOP
-    assert builtins.EditUserCommand.permission == PermissionLevel.SYSOP
-    assert builtins.FastForwardCommand.permission == PermissionLevel.USER
+    assert builtins.CreateRoomCommand.permission_level == PermissionLevel.AIDE
+    assert builtins.EditRoomCommand.permission_level == PermissionLevel.SYSOP
+    assert builtins.EditUserCommand.permission_level == PermissionLevel.SYSOP
+    assert builtins.FastForwardCommand.permission_level == PermissionLevel.USER
 

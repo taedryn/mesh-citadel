@@ -35,10 +35,10 @@ async def db():
     await initialize_database(db_mgr, config)
 
     # Insert test users
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("alice", "hash", b"salt", "Alice", "2025-09-17T00:00:00Z", "user"))
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("bob", "hash", b"salt", "Bob", "2025-09-17T00:00:00Z", "user"))
+    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
+                   ("alice", "hash", b"salt", "Alice", "2025-09-17T00:00:00Z", 2))
+    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
+                   ("bob", "hash", b"salt", "Bob", "2025-09-17T00:00:00Z", 2))
 
     yield db_mgr
 

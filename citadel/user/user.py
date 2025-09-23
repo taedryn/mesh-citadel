@@ -33,12 +33,12 @@ class User:
         self._salt = row[3]
         self._display_name = row[4]
         self._last_login = row[5]
-        self._permission = row[6]
+        self._permission_level = row[6]
 
     @classmethod
     async def create(cls, config, db_mgr, username, password_hash,
                      salt, display_name=None):
-        query = "INSERT INTO users (username, password_hash, salt, display_name, permission) VALUES (?, ?, ?, ?, ?)"
+        query = "INSERT INTO users (username, password_hash, salt, display_name, permission_level) VALUES (?, ?, ?, ?, ?)"
         await db_mgr.execute(query, (username, password_hash, salt,
                                      display_name,
                                      PermissionLevel.UNVERIFIED.value))
@@ -57,19 +57,19 @@ class User:
         self._display_name = new_name
 
     @property
-    def permission(self) -> PermissionLevel:
+    def permission_level(self) -> PermissionLevel:
         try:
-            return PermissionLevel(self._permission)
+            return PermissionLevel(self._permission_level)
         except ValueError:
-            raise RuntimeError('_permissions not initialized, ensure '
+            raise RuntimeError('_permission_level not initialized, ensure '
                                'load() has been called on this object')
 
-    async def set_permission(self, new_permission: PermissionLevel):
-        if not isinstance(new_permission, PermissionLevel):
-            raise ValueError(f"Invalid permission level: {new_permission}")
-        query = "UPDATE users SET permission = ? WHERE username = ?"
-        await self.db.execute(query, (new_permission.value, self.username))
-        self._permission = new_permission
+    async def set_permission_level(self, new_permission_level: PermissionLevel):
+        if not isinstance(new_permission_level, PermissionLevel):
+            raise ValueError(f"Invalid permission level: {new_permission_level}")
+        query = "UPDATE users SET permission_level = ? WHERE username = ?"
+        await self.db.execute(query, (new_permission_level.value, self.username))
+        self._permission_level = new_permission_level
 
     @property
     def last_login(self) -> Optional[str]:

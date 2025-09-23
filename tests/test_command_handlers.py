@@ -65,7 +65,7 @@ async def test_go_next_unread_moves_session(db, config):
     await User.create(config, db, 'alice', 'a', 'b', 'Alice W')
     alice = User(db, 'alice')
     await alice.load()
-    await alice.set_permission(PermissionLevel.USER)
+    await alice.set_permission_level(PermissionLevel.USER)
     token = await session_mgr.create_session("alice")
 
     # add a room linked to Lobby
@@ -90,12 +90,12 @@ async def test_go_next_unread_moves_session(db, config):
 @pytest.mark.asyncio
 async def test_change_room_by_name_and_id(db, config):
     session_mgr = SessionManager(config, db)
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission) VALUES (?, ?, ?, ?)",
-                     ("bob", "x", b"y", "user"))
+    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
+                     ("bob", "x", b"y", 2))
     token = await session_mgr.create_session("bob")
 
     # Create a room
-    await db.execute("INSERT INTO rooms (id, name, description, read_only, permission_level) VALUES (10,'TechTalk','',0,'user')")
+    await db.execute("INSERT INTO rooms (id, name, description, read_only, permission_level) VALUES (10,'TechTalk','',0,2)")
 
     processor = CommandProcessor(config, db, session_mgr)
 
@@ -115,12 +115,12 @@ async def test_change_room_by_name_and_id(db, config):
 @pytest.mark.asyncio
 async def test_enter_message_requires_recipient_in_mail_room(db, config):
     session_mgr = SessionManager(config, db)
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission) VALUES (?, ?, ?, ?)",
-                     ("carol", "x", b"y", "user"))
+    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
+                     ("carol", "x", b"y", 2))
     token = await session_mgr.create_session("carol")
 
     # Create Mail room
-    await db.execute("INSERT INTO rooms (id, name, description, read_only, permission_level) VALUES (2,'Mail','',0,'user')")
+    await db.execute("INSERT INTO rooms (id, name, description, read_only, permission_level) VALUES (2,'Mail','',0,2)")
     session_mgr.set_current_room(token, SystemRoomIDs.MAIL_ID)
 
     processor = CommandProcessor(config, db, session_mgr)
@@ -132,8 +132,8 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
     assert resp.code == "missing_recipient"
 
     # With recipient should succeed
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission) VALUES (?, ?, ?, ?)",
-                     ("dave", "x", b"y", "user"))
+    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
+                     ("dave", "x", b"y", 2))
     cmd = EnterMessageCommand(username="carol", args={"content": "hi", "recipient": "dave"})
     resp = await processor.process(token, cmd)
     assert isinstance(resp, CommandResponse)
@@ -143,12 +143,12 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
 @pytest.mark.asyncio
 async def test_read_new_messages_returns_unread(db, config):
     session_mgr = SessionManager(config, db)
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission) VALUES (?, ?, ?, ?)",
-                     ("erin", "x", b"y", "user"))
+    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
+                     ("erin", "x", b"y", 2))
     token = await session_mgr.create_session("erin")
 
     # Create a room and set as current
-    await db.execute("INSERT INTO rooms (id, name, description, read_only, permission_level) VALUES (3,'General','',0,'user')")
+    await db.execute("INSERT INTO rooms (id, name, description, read_only, permission_level) VALUES (3,'General','',0,2)")
     session_mgr.set_current_room(token, 3)
 
     room = Room(db, config, 3)

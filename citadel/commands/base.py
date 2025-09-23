@@ -15,7 +15,7 @@ class BaseCommand(ABC):
     # Every subclass must override these
     code: str        # short code, e.g. "L" for list rooms
     name: str        # canonical name, e.g. "list_rooms"
-    permission: PermissionLevel = PermissionLevel.USER
+    permission_level: PermissionLevel = PermissionLevel.USER
 
     # Human‑readable description
     help_text: str = ""
@@ -64,8 +64,8 @@ class BaseCommand(ABC):
             "username": self.username,
             "room": self.room,
             "args": self.args,
-            "permission": self.permission.value,
+            "permission_level": self.permission_level.value,
         }
 
     def __repr__(self) -> str:
-        return f"<Command {self.code} ({self.name}) user={self.username!r} room={self.room!r} args={self.args!r} permission={self.permission.value}>"
+        return f"<Command {self.code} ({self.name}) user={self.username!r} room={self.room!r} args={self.args!r} permission_level={self.permission_level.value}>"
