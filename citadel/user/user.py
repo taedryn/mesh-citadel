@@ -57,18 +57,18 @@ class User:
         self._display_name = new_name
 
     @property
-    def permission(self) -> str:
+    def permission(self) -> PermissionLevel:
         try:
-            return self._permission
-        except AttributeError:
+            return PermissionLevel(self._permission)
+        except ValueError:
             raise RuntimeError('_permissions not initialized, ensure '
                                'load() has been called on this object')
 
-    async def set_permission(self, new_permission: str):
-        if new_permission not in PERMISSIONS:
+    async def set_permission(self, new_permission: PermissionLevel):
+        if not isinstance(new_permission, PermissionLevel):
             raise ValueError(f"Invalid permission level: {new_permission}")
         query = "UPDATE users SET permission = ? WHERE username = ?"
-        await self.db.execute(query, (new_permission, self.username))
+        await self.db.execute(query, (new_permission.value, self.username))
         self._permission = new_permission
 
     @property
@@ -101,7 +101,7 @@ class User:
         try:
             return self._salt
         except AttributeError:
-            raise RuntimeError('_permissions not initialized, ensure '
+            raise RuntimeError('_salt not initialized, ensure '
                                'load() has been called on this object')
 
     async def update_password(self, new_hash: str, new_salt: bytes):

@@ -3,6 +3,7 @@ import logging
 import secrets
 import threading
 
+from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.session.state import SessionState, WorkflowState
 

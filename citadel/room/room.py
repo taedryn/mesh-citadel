@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 
+from citadel.auth.permissions import PermissionLevel
 from citadel.user.user import User
 from citadel.message.manager import MessageManager
 from citadel.message.errors import InvalidContentError
@@ -53,7 +54,7 @@ class Room:
         self.name = None
         self.description = None
         self.read_only = False
-        self.permission_level = "user"
+        self.permission_level = PermissionLevel.USER
         self.next_neighbor = None
         self.prev_neighbor = None
         self._loaded = False
@@ -69,8 +70,12 @@ class Room:
         )
         if not result:
             raise RoomNotFoundError(f"Room {self.room_id} does not exist.")
-        self.name, self.description, self.read_only, self.permission_level, self.next_neighbor, self.prev_neighbor = result[
-            0]
+        self.name = result[0][0]
+        self.description = result[0][1]
+        self.read_only = result[0][2]
+        self.permission_level = PermissionLevel(int(result[0][3]))
+        self.next_neighbor = result[0][4]
+        self.prev_neighbor = result[0][5]
         self._loaded = True
 
     async def get_id_by_name(self, name: str) -> int:
@@ -86,19 +91,27 @@ class Room:
     # permission methods
     # ------------------------------------------------------------
     def can_user_read(self, user: User) -> bool:
-        if user.permission == "sysop":
+        if user.permission == PermissionLevel.SYSOP:
+            print('sysop: yes')
             return True
-        if self.permission_level == "aide":
-            return user.permission in ("aide", "sysop")
-        if self.permission_level == "user":
-            return user.permission in ("user", "aide", "sysop")
-        if self.permission_level == "twit":
+        if self.permission_level == PermissionLevel.AIDE:
+            answer = user.permission >= PermissionLevel.AIDE
+            print(f'aide: {answer}')
+            return answer
+        if self.permission_level == PermissionLevel.USER:
+            answer = user.permission >= PermissionLevel.USER
+            print(f'user: {answer}')
+            return answer
+        if self.permission_level == PermissionLevel.TWIT:
+            print('twit: yes')
             return True
+        print(f'permission: {user.permission}')
+        print('unknown: False')
         return False
 
     def can_user_post(self, user: User) -> bool:
         if self.read_only:
-            return user.permission in ("aide", "sysop")
+            return user.permission >= PermissionLevel.AIDE
         return self.can_user_read(user)
 
     # ------------------------------------------------------------
@@ -155,15 +168,19 @@ class Room:
             current = candidate.prev_neighbor
         return None
 
+    async def get_last_unread_message_id(self, user: User) -> int:
+        last_read = await self.db.execute(
+            "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
+            (user.username, self.room_id)
+        )
+        return last_seen[0][0]
+
     async def has_unread_messages(self, user: User) -> bool:
         newest = await self.get_newest_message_id()
         if not newest:
             return False
 
-        pointer = await self.db.execute(
-            "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
-            (user.username, self.room_id)
-        )
+        pointer = await self.get_last_unread_message_id(user)
         last_seen = pointer[0][0] if pointer else None
         return last_seen != newest
 
@@ -180,7 +197,7 @@ class Room:
             return room_id
 
         raise RoomNotFoundError(
-            "No room matching identifier {identifier} found")
+            f"No room matching identifier {identifier} found")
 
     async def go_to_room(self, identifier: int | str) -> "Room":
         room_id = await self.get_room_id(identifier)
@@ -196,6 +213,19 @@ class Room:
             (self.room_id,)
         )
         return [row[0] for row in rows]
+
+    async def get_unread_message_ids(self, username: str) -> list[int]:
+        """ return a list of message ids which have not yet been seen
+        by this user """
+        user = User(username)
+        await user.load()
+        last_read = await self.get_last_unseen_message_id(user)
+        id_list = await db.execute("""
+            SELECT message_id FROM room_messages
+            WHERE room_id = ?
+            AND message_id > ?
+            """, (self.room_id, last_read))
+        return [msg_id[0] for msg_id in id_list]
 
     async def get_oldest_message_id(self) -> int | None:
         result = await self.db.execute(
@@ -303,15 +333,16 @@ class Room:
         return max_id + 1
 
     @classmethod
-    async def insert_room_between(cls, db, config, name: str, description: str, read_only: bool,
-                                  permission_level: str, prev_id: int, next_id: int) -> int:
+    async def create(cls, db, config, name: str, description: str, 
+                     read_only: bool, permission_level: PermissionLevel, 
+                     prev_id: int, next_id: int) -> int:
         # Get next available room ID >= 100
         new_id = await cls._get_next_available_room_id(db)
 
         await db.execute(
             "INSERT INTO rooms (id, name, description, read_only, permission_level, prev_neighbor, next_neighbor) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (new_id, name, description, read_only,
-             permission_level, prev_id, next_id)
+             permission_level.value, prev_id, next_id)
         )
 
         # Update room chain links

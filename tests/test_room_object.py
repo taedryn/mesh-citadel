@@ -3,6 +3,7 @@ import pytest
 import pytest_asyncio
 import tempfile
 
+from citadel.auth.permissions import PermissionLevel
 from citadel.room.room import Room, SystemRoomIDs
 from citadel.user.user import User
 from citadel.message.manager import MessageManager
@@ -240,10 +241,12 @@ async def test_system_rooms_cannot_be_deleted(db, config, setup_rooms, setup_use
 async def test_user_room_id_constraint(db, config, setup_rooms, setup_users):
     """Test that user-created rooms get IDs >= 100."""
     # Create first user room
-    room_id1 = await Room.insert_room_between(db, config, 'Test Room 1', 'First test room', False, 'user', SystemRoomIDs.SYSTEM_ID, None)
+    room_id1 = await Room.create(db, config, 'Test Room 1',
+    'First test room', False, PermissionLevel.USER, SystemRoomIDs.SYSTEM_ID, None)
 
     # Create second user room
-    room_id2 = await Room.insert_room_between(db, config, 'Test Room 2', 'Second test room', False, 'user', room_id1, None)
+    room_id2 = await Room.create(db, config, 'Test Room 2',
+    'Second test room', False, PermissionLevel.USER, room_id1, None)
 
     # Verify both rooms get IDs >= MIN_USER_ROOM_ID (100)
     assert room_id1 >= Room.MIN_USER_ROOM_ID, f"First room ID {room_id1} should be >= {Room.MIN_USER_ROOM_ID}"
