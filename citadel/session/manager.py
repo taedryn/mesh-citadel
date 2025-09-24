@@ -15,8 +15,9 @@ class SessionManager:
     def __init__(self, config: "Config", db: DatabaseManager):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
         self.db = db
-        self.sessions = {}  # token -> (username, last_active: datetime)
+        self.sessions = {}  # token -> (SessionState, last_active: datetime)
         self.lock = threading.Lock()
+        self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
 
     def create_session_state(self, username: str) -> SessionState:
@@ -66,10 +67,19 @@ class SessionManager:
             expired = [t for t, (_, ts) in self.sessions.items()
                        if now - ts > self.timeout]
             for t in expired:
-                username, _ = self.sessions[t]
+                state, _ = self.sessions[t]
+                username = state.username
+
+                # Send logout notification if transport layer is available
+                if self.notification_callback:
+                    try:
+                        self.notification_callback(username, "You have been logged out due to inactivity.")
+                        log.info(f"Logout notification sent to username='{username}'")
+                    except (OSError, RuntimeError) as e:
+                        log.warning(f"Failed to send logout notification to '{username}': {e}")
+
                 del self.sessions[t]
                 log.info(f"Session auto-expired for username='{username}'")
-                # TODO: Send logout announcement
 
     def _start_sweeper(self):
         def sweep():
@@ -116,3 +126,8 @@ class SessionManager:
         state = self.validate_session(token)
         if state:
             state.workflow = None
+
+    def set_notification_callback(self, callback):
+        """Set callback function for sending logout notifications.
+        Callback should accept (username: str, message: str) -> None"""
+        self.notification_callback = callback

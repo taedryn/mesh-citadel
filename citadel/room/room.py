@@ -156,7 +156,11 @@ class Room:
                 current = candidate.next_neighbor
                 continue
             return candidate
-        return None
+
+        # If no unread rooms found, go to Lobby
+        lobby = Room(self.db, self.config, SystemRoomIDs.LOBBY_ID)
+        await lobby.load()
+        return lobby
 
     async def go_to_previous_room(self, user: User) -> "Room | None":
         current = self.prev_neighbor

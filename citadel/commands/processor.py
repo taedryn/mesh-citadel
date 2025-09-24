@@ -72,6 +72,7 @@ class CommandProcessor:
     # ------------------------------------------------------------
     async def _handle_quit(self, session_id, state, command):
         self.sessions.expire_session(session_id)
+        log.info(f"User '{state.username}' logged out via quit command")
         return CommandResponse(success=True, code="quit", text="Goodbye!")
 
     # ------------------------------------------------------------
@@ -83,11 +84,24 @@ class CommandProcessor:
         room = Room(self.db, self.config, state.current_room)
         await room.load()
         new_room = await room.go_to_next_room(user, with_unread=True)
-        if not new_room:
-            return ErrorResponse(code="no_unread_rooms",
-                               text="No rooms with unread messages found.")
         await new_room.load()
         self.sessions.set_current_room(session_id, new_room.room_id)
+
+        # Check if we wrapped to Lobby due to no unread rooms
+        if new_room.room_id == SystemRoomIDs.LOBBY_ID and room.room_id != SystemRoomIDs.LOBBY_ID:
+            # Check if there are any unread messages in the system
+            lobby_has_unread = await new_room.has_unread_messages(user)
+            if lobby_has_unread:
+                return CommandResponse(success=True, code="room_changed",
+                                       text=f"You are now in room '{new_room.name}'. New messages are available in other rooms.",
+                                       payload={"room_id": new_room.room_id,
+                                                "room_name": new_room.name})
+            else:
+                return CommandResponse(success=True, code="no_unread_rooms",
+                                       text=f"You are now in room '{new_room.name}'. No rooms with unread messages found.",
+                                       payload={"room_id": new_room.room_id,
+                                                "room_name": new_room.name})
+
         return CommandResponse(success=True, code="room_changed",
                                text=f"You are now in room '{new_room.name}'.",
                                payload={"room_id": new_room.room_id,
@@ -124,7 +138,7 @@ class CommandProcessor:
                                text=f"Message {msg_id} posted in {room.name}.",
                                payload={"message_id": msg_id})
 
-    async def _handle_read_new_messages(self, session_id, state, command) -> list[MessageResponse]:
+    async def _handle_read_new_messages(self, session_id, state, command) -> list[MessageResponse] | CommandResponse:
         room = Room(self.db, self.config, state.current_room)
         await room.load()
         msg_ids = await room.get_unread_message_ids(state.username)
