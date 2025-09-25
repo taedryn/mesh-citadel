@@ -3,10 +3,12 @@ from citadel.auth.checker import is_allowed, permission_denied, PermissionLevel
 from citadel.commands.responses import ErrorResponse
 from citadel.room.room import SystemRoomIDs
 
+
 class DummyUser:
     def __init__(self, level):
         self.permission_level = level
         self.username = "testuser"
+
 
 class DummyRoom:
     def __init__(self, can_read=True, can_post=True, room_id=0):
@@ -24,15 +26,19 @@ class DummyRoom:
 # ------------------------------------------------------------
 # Permission level checks
 # ------------------------------------------------------------
+
+
 def test_user_can_post():
     user = DummyUser(PermissionLevel.USER)
     room = DummyRoom()
     assert is_allowed("enter_message", user, room)
 
+
 def test_twit_cannot_post():
     user = DummyUser(PermissionLevel.TWIT)
     room = DummyRoom()
     assert not is_allowed("enter_message", user, room)
+
 
 def test_twit_can_read():
     user = DummyUser(PermissionLevel.TWIT)
@@ -40,26 +46,32 @@ def test_twit_can_read():
     room.room_id = SystemRoomIDs.TWIT_ID
     assert is_allowed("read_messages", user, room)
 
+
 def test_twit_can_post_in_twit():
     user = DummyUser(PermissionLevel.TWIT)
     room = DummyRoom()
     room.room_id = SystemRoomIDs.TWIT_ID
     assert is_allowed("enter_message", user, room)
 
+
 def test_sysop_can_do_anything():
     user = DummyUser(PermissionLevel.SYSOP)
     room = DummyRoom()
     assert is_allowed("enter_message", user, room)
     assert is_allowed("read_messages", user, room)
-    assert is_allowed("delete_message", user, room)  # assuming delete requires aide/sysop
+    # assuming delete requires aide/sysop
+    assert is_allowed("delete_message", user, room)
 
 # ------------------------------------------------------------
 # Room-specific checks
 # ------------------------------------------------------------
+
+
 def test_room_blocks_posting():
     user = DummyUser(PermissionLevel.USER)
     room = DummyRoom(can_post=False)
     assert not is_allowed("enter_message", user, room)
+
 
 def test_room_blocks_reading():
     user = DummyUser(PermissionLevel.USER)
@@ -69,6 +81,8 @@ def test_room_blocks_reading():
 # ------------------------------------------------------------
 # Unknown action
 # ------------------------------------------------------------
+
+
 def test_unknown_action_denied():
     user = DummyUser(PermissionLevel.USER)
     assert not is_allowed("dance", user)
@@ -76,6 +90,8 @@ def test_unknown_action_denied():
 # ------------------------------------------------------------
 # Error response helper
 # ------------------------------------------------------------
+
+
 def test_permission_denied_response():
     user = DummyUser(PermissionLevel.TWIT)
     room = DummyRoom()
@@ -83,4 +99,3 @@ def test_permission_denied_response():
     assert isinstance(resp, ErrorResponse)
     assert resp.code == "permission_denied"
     assert "post" in resp.text
-

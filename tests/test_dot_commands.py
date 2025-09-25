@@ -63,4 +63,3 @@ def test_permissions_for_dot_commands():
     assert builtins.EditRoomCommand.permission_level == PermissionLevel.SYSOP
     assert builtins.EditUserCommand.permission_level == PermissionLevel.SYSOP
     assert builtins.FastForwardCommand.permission_level == PermissionLevel.USER
-

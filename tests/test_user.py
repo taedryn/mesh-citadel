@@ -8,10 +8,12 @@ from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
 from citadel.user.user import User
 
+
 class DummyConfig:
     def __init__(self, path):
         self.database = {'db_path': path}
-        self.logging = {'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
+        self.logging = {
+            'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
         self.bbs = {
             'room_names': {
                 'lobby': 'Lobby',
@@ -21,6 +23,7 @@ class DummyConfig:
                 'system': 'System'
             }
         }
+
 
 @pytest_asyncio.fixture(scope="function")
 async def db():
@@ -33,9 +36,9 @@ async def db():
 
     # Insert test users
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("alice", "hash1", b"salt1", "Alice", "2025-09-17T00:00:00Z", 2))
+                         ("alice", "hash1", b"salt1", "Alice", "2025-09-17T00:00:00Z", 2))
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("bob", "hash2", b"salt2", "Bob", "2025-09-17T00:00:00Z", 2))
+                         ("bob", "hash2", b"salt2", "Bob", "2025-09-17T00:00:00Z", 2))
 
     yield db_mgr
 
@@ -46,6 +49,7 @@ async def db():
 # ✅ Core User Tests
 # -------------------------------
 
+
 @pytest.mark.asyncio
 async def test_user_loads_correctly(db):
     user = User(db, "alice")
@@ -53,6 +57,7 @@ async def test_user_loads_correctly(db):
     assert user.display_name == "Alice"
     assert user.permission_level.value == 2
     assert user.last_login == "2025-09-17T00:00:00Z"
+
 
 @pytest.mark.asyncio
 async def test_display_name_update(db):
@@ -62,6 +67,7 @@ async def test_display_name_update(db):
     reloaded = User(db, "alice")
     await reloaded.load()
     assert reloaded.display_name == "Alicia"
+
 
 @pytest.mark.asyncio
 async def test_permission_update(db):
@@ -73,6 +79,7 @@ async def test_permission_update(db):
     await reloaded.load()
     assert reloaded.permission_level == PermissionLevel.AIDE
 
+
 @pytest.mark.asyncio
 async def test_last_login_update(db):
     user = User(db, "alice")
@@ -82,6 +89,7 @@ async def test_last_login_update(db):
     reloaded = User(db, "alice")
     await reloaded.load()
     assert reloaded.last_login == now.isoformat()
+
 
 @pytest.mark.asyncio
 async def test_password_update(db):
@@ -97,6 +105,7 @@ async def test_password_update(db):
 # ✅ Blocking Tests
 # -------------------------------
 
+
 @pytest.mark.asyncio
 async def test_block_and_unblock_user(db):
     alice = User(db, "alice")
@@ -110,6 +119,7 @@ async def test_block_and_unblock_user(db):
     await alice.unblock_user("bob")
     assert not await alice.is_blocked("bob")
 
+
 @pytest.mark.asyncio
 async def test_blocking_persists_across_sessions(db):
     alice = User(db, "alice")
@@ -119,9 +129,9 @@ async def test_blocking_persists_across_sessions(db):
     await reloaded.load()
     assert await reloaded.is_blocked("bob")
 
+
 @pytest.mark.asyncio
 async def test_unblock_nonexistent_user_does_not_error(db):
     alice = User(db, "alice")
     await alice.load()
     await alice.unblock_user("charlie")  # Should not raise
-

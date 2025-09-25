@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 # * unusual
 # * admin
 
+
 @register_command
 class GoNextUnreadCommand(BaseCommand):
     code = "G"
@@ -40,7 +41,8 @@ class GoNextUnreadCommand(BaseCommand):
         await room.load()
         new_room = await room.go_to_next_room(user, with_unread=True)
         await new_room.load()
-        context.session_mgr.set_current_room(context.session_id, new_room.room_id)
+        context.session_mgr.set_current_room(
+            context.session_id, new_room.room_id)
 
         # Check if we wrapped to Lobby due to no unread rooms
         if new_room.room_id == SystemRoomIDs.LOBBY_ID and room.room_id != SystemRoomIDs.LOBBY_ID:
@@ -92,10 +94,10 @@ class EnterMessageCommand(BaseCommand):
         if room.room_id == SystemRoomIDs.MAIL_ID:
             if 'recipient' not in self.args:
                 return ErrorResponse(code="missing_recipient",
-                                   text=f"Messages in {room.name} require a recipient")
+                                     text=f"Messages in {room.name} require a recipient")
             msg_id = await room.post_message(state.username,
-                                           self.args["content"],
-                                           self.args["recipient"])
+                                             self.args["content"],
+                                             self.args["recipient"])
         else:
             msg_id = await room.post_message(state.username, self.args["content"])
 
@@ -232,8 +234,9 @@ class ChangeRoomCommand(BaseCommand):
         next_room = await current_room.go_to_room(self.args["room"])
         if not next_room:
             return ErrorResponse(code="no_next_room",
-                                text=f"Room {self.args['room']} not found.")
-        context.session_mgr.set_current_room(context.session_id, next_room.room_id)
+                                 text=f"Room {self.args['room']} not found.")
+        context.session_mgr.set_current_room(
+            context.session_id, next_room.room_id)
         return CommandResponse(success=True, code="room_changed",
                                text=f"You are now in room '{next_room.name}'.",
                                payload={"room_id": next_room.room_id})
@@ -274,7 +277,8 @@ class HelpCommand(BaseCommand):
 
         # Build dynamic menu by category
         all_commands = registry.available()
-        menu_text = self._build_category_menu(all_commands, user, room, CommandCategory.COMMON)
+        menu_text = self._build_category_menu(
+            all_commands, user, room, CommandCategory.COMMON)
 
         return CommandResponse(
             success=True,
@@ -292,7 +296,7 @@ class HelpCommand(BaseCommand):
         for cmd_class in all_commands.values():
             if (cmd_class.is_implemented() and
                 cmd_class.category == category and
-                is_allowed(cmd_class.name, user, room)):
+                    is_allowed(cmd_class.name, user, room)):
                 available_commands.append(cmd_class)
 
         # Sort by command code for consistent ordering
@@ -344,7 +348,8 @@ class HelpCommand(BaseCommand):
         if cmd_class.arg_schema:
             help_text += "\n\nArguments:"
             for arg, spec in cmd_class.arg_schema.items():
-                required = " (required)" if spec.get("required") else " (optional)"
+                required = " (required)" if spec.get(
+                    "required") else " (optional)"
                 help_text += f"\n  {arg}: {spec.get('help', 'No description')}{required}"
 
         return CommandResponse(
@@ -408,7 +413,6 @@ class DeleteMessageCommand(BaseCommand):
     }
 
 
-
 @register_command
 class BlockUserCommand(BaseCommand):
     code = "B"
@@ -422,7 +426,6 @@ class BlockUserCommand(BaseCommand):
     }
 
 
-
 @register_command
 class ValidateUsersCommand(BaseCommand):
     code = "V"
@@ -432,7 +435,6 @@ class ValidateUsersCommand(BaseCommand):
     short_text = "Validate users"
     help_text = "Enter the user validation workflow to approve new users."
     arg_schema = {}  # no args; interactive workflow
-
 
 
 # -------------------
@@ -453,7 +455,6 @@ class CreateRoomCommand(BaseCommand):
     }
 
 
-
 @register_command
 class EditRoomCommand(BaseCommand):
     code = ".ER"
@@ -466,7 +467,6 @@ class EditRoomCommand(BaseCommand):
         "room": {"required": True, "type": "str", "help": "Room to edit"},
         "attributes": {"required": True, "type": "dict", "help": "Room attributes to update"}
     }
-
 
 
 @register_command
@@ -483,7 +483,6 @@ class EditUserCommand(BaseCommand):
     }
 
 
-
 @register_command
 class FastForwardCommand(BaseCommand):
     code = ".FF"
@@ -493,4 +492,3 @@ class FastForwardCommand(BaseCommand):
     short_text = "Fast-forward"
     help_text = "Fast-forward to the latest message in the current room, skipping over unread messages. This resets your last-read pointer to the latest message."
     arg_schema = {}
-

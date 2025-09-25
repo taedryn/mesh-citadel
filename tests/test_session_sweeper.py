@@ -4,9 +4,11 @@ from citadel.session.manager import SessionManager
 from freezegun import freeze_time
 import threading
 
+
 class MockConfig:
     def __init__(self, timeout=10):
         self.auth = {"session_timeout": timeout}
+
 
 class MockDB:
     def __init__(self, existing_usernames=None, fail=False):
@@ -21,12 +23,14 @@ class MockDB:
             return [(1,)]
         return []
 
+
 @pytest.fixture
 def session_mgr():
     config = MockConfig(timeout=10)
     db = MockDB()
     mgr = SessionManager(config, db)
     return mgr
+
 
 @pytest.mark.asyncio
 async def test_sweeper_expires_stale_sessions(session_mgr):
@@ -40,6 +44,7 @@ async def test_sweeper_expires_stale_sessions(session_mgr):
         session_mgr.sweep_expired_sessions()  # Direct call
 
         assert session_mgr.validate_session(token) is None
+
 
 @pytest.mark.asyncio
 async def test_sweeper_preserves_active_sessions(session_mgr):
@@ -56,4 +61,3 @@ async def test_sweeper_preserves_active_sessions(session_mgr):
         # Should still be valid
         state = session_mgr.validate_session(token)
         assert state.username == "bob"
-

@@ -68,9 +68,11 @@ def test_invalid_value_type(temp_config_dir):
 def test_reload_preserves_reboot_only_keys(temp_config_dir):
     reset_config_singleton()
     config_path = os.path.join(temp_config_dir, "config.yaml")
-    write_config(config_path, "bbs:\n  system_name: 'Initial'\n  max_messages_per_room: 300")
+    write_config(
+        config_path, "bbs:\n  system_name: 'Initial'\n  max_messages_per_room: 300")
     cfg = Config(config_path)
-    write_config(config_path, "bbs:\n  system_name: 'Updated'\n  max_messages_per_room: 999")
+    write_config(
+        config_path, "bbs:\n  system_name: 'Updated'\n  max_messages_per_room: 999")
     with pytest.raises(RuntimeError):
         cfg.reload()
 
@@ -83,4 +85,3 @@ def test_reload_allows_safe_changes(temp_config_dir):
     write_config(config_path, "bbs:\n  system_name: 'Updated'")
     cfg.reload()
     assert cfg.bbs["system_name"] == "Updated"
-

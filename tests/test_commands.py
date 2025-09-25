@@ -34,7 +34,8 @@ def test_registry_lookup_returns_correct_class(code, expected_class):
 
 
 def test_command_to_dict_includes_username_and_room():
-    cmd = builtins.EnterMessageCommand(username="alice", room="Lobby", args={"content": "Hello"})
+    cmd = builtins.EnterMessageCommand(
+        username="alice", room="Lobby", args={"content": "Hello"})
     d = cmd.to_dict()
     assert d["username"] == "alice"
     assert d["room"] == "Lobby"
@@ -66,10 +67,9 @@ def test_validate_users_command_metadata():
     assert cmd_cls.arg_schema == {}
 
 
-
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # error-path validation tests
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
 def test_enter_message_requires_content():
     # Missing "content" should fail
@@ -109,14 +109,15 @@ def test_validate_users_command_accepts_no_args():
     cmd.validate(context={"role": "aide"})  # should not raise
 
     # Extraneous args should fail
-    cmd = builtins.ValidateUsersCommand(username="aide", args={"extra": "oops"})
+    cmd = builtins.ValidateUsersCommand(
+        username="aide", args={"extra": "oops"})
     with pytest.raises(ValueError):
         cmd.validate(context={"role": "aide"})
 
 
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 # positive validation tests
-#-----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 
 def test_enter_message_valid_in_regular_room():
     cmd = builtins.EnterMessageCommand(
@@ -154,4 +155,3 @@ def test_block_user_valid():
         args={"target_user": "charlie"}
     )
     cmd.validate(context={"room": "Lobby"})
-

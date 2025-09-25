@@ -20,7 +20,6 @@ class CommandProcessor:
         self.sessions = session_mgr
         self.msg_mgr = MessageManager(config, db)
 
-
     async def process(self, session_id: str, command) -> CommandResponse | MessageResponse:
         # 1. Validate session
         state = self.sessions.validate_session(session_id)
@@ -64,4 +63,3 @@ class CommandProcessor:
         except ValueError as e:
             log.warning(f"Command validation failed: {e}")
             return ErrorResponse(code="validation_error", text=str(e))
-

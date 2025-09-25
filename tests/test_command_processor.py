@@ -15,6 +15,7 @@ from citadel.session.state import SessionState, WorkflowState
 from citadel.user.user import User
 from citadel.workflows.registry import register
 
+
 class DummyCommand:
     def __init__(self, name, args=None):
         self.name = name
@@ -26,6 +27,7 @@ class DummyCommand:
             context.session_mgr.expire_session(context.session_id)
             return CommandResponse(success=True, code="quit", text="Goodbye!")
         return CommandResponse(success=True, code=self.name, text=f"Dummy {self.name} command")
+
 
 @pytest.fixture
 def config():
@@ -46,9 +48,9 @@ async def db(config):
     await initialize_database(db_mgr, config)
 
     await User.create(config, db_mgr, "alice", "hash", "salt", "")
-    #alice = User(db_mgr, 'alice')
-    #await alice.load()
-    #alice.set_permission_level(PermissionLevel.USER)
+    # alice = User(db_mgr, 'alice')
+    # await alice.load()
+    # alice.set_permission_level(PermissionLevel.USER)
 
     yield db_mgr
 
@@ -58,8 +60,10 @@ async def db(config):
 @pytest_asyncio.fixture
 async def session_mgr(config, db):
     mgr = SessionManager(config, db)
-    token = await mgr.create_session("alice")  # assume you have a sync helper for tests
+    # assume you have a sync helper for tests
+    token = await mgr.create_session("alice")
     return mgr, token
+
 
 @pytest.fixture
 def processor(config, db, session_mgr, monkeypatch):
@@ -89,6 +93,8 @@ async def test_invalid_session(processor):
 # ------------------------------------------------------------
 # Inline handler
 # ------------------------------------------------------------
+
+
 @pytest.mark.asyncio
 async def test_quit_expires_session(processor, session_mgr):
     mgr, token = session_mgr
@@ -103,6 +109,8 @@ async def test_quit_expires_session(processor, session_mgr):
 # ------------------------------------------------------------
 # Unknown command
 # ------------------------------------------------------------
+
+
 @pytest.mark.asyncio
 async def test_unknown_command(processor, session_mgr):
     mgr, token = session_mgr
@@ -114,6 +122,8 @@ async def test_unknown_command(processor, session_mgr):
 # ------------------------------------------------------------
 # Workflow delegation
 # ------------------------------------------------------------
+
+
 @pytest.mark.asyncio
 async def test_workflow_delegation(processor, session_mgr, monkeypatch):
     # note that this workflow isn't cleaned up, so remove it from
@@ -122,6 +132,7 @@ async def test_workflow_delegation(processor, session_mgr, monkeypatch):
     @register
     class DummyWorkflow:
         kind = "dummy"
+
         async def handle(self, processor, token, state, command, wf):
             return CommandResponse(success=True, code="dummy_ok", text="Handled by dummy workflow")
 
@@ -134,4 +145,3 @@ async def test_workflow_delegation(processor, session_mgr, monkeypatch):
     resp = await processor.process(token, cmd)
     assert isinstance(resp, CommandResponse)
     assert resp.code == "dummy_ok"
-

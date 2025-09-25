@@ -39,6 +39,7 @@ def config():
 
     os.unlink(path.name)
 
+
 @pytest_asyncio.fixture
 async def db(config):
     DatabaseManager._instance = None
@@ -50,11 +51,13 @@ async def db(config):
 
     await db_mgr.shutdown()
 
+
 @pytest_asyncio.fixture
 async def setup_rooms(db):
     # System rooms (1-5) are automatically created by initialize_database
     # Update room 2 name for the tests that expect "Tech" room
     await db.execute("UPDATE rooms SET name = 'Tech', description = 'Tech talk' WHERE id = 2")
+
 
 @pytest_asyncio.fixture
 async def setup_users(db):
@@ -63,6 +66,7 @@ async def setup_users(db):
     await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('aide', 3, 'hash', 'salt')")
     await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('sysop', 4, 'hash', 'salt')")
 
+
 @pytest.mark.asyncio
 async def test_room_initialization(db, config, setup_rooms):
     room = Room(db, config, 1)
@@ -70,6 +74,7 @@ async def test_room_initialization(db, config, setup_rooms):
     assert room.name == "Lobby"
     assert room.next_neighbor == 2
     assert room.prev_neighbor is None
+
 
 @pytest.mark.asyncio
 async def test_permission_logic(db, config, setup_rooms, setup_users):
@@ -90,6 +95,7 @@ async def test_permission_logic(db, config, setup_rooms, setup_users):
     assert aides.can_user_read(aide)
     assert not lobby.can_user_read(twit)
 
+
 @pytest.mark.asyncio
 async def test_ignore_logic(db, config, setup_rooms, setup_users):
     room = Room(db, config, 1)
@@ -102,6 +108,7 @@ async def test_ignore_logic(db, config, setup_rooms, setup_users):
     assert await room.is_ignored_by(user)
     await room.unignore_for_user(user)
     assert not await room.is_ignored_by(user)
+
 
 @pytest.mark.asyncio
 async def test_go_to_next_room_with_unread(db, config, setup_rooms, setup_users):
@@ -118,6 +125,7 @@ async def test_go_to_next_room_with_unread(db, config, setup_rooms, setup_users)
     next_room = await lobby.go_to_next_room(user, with_unread=True)
     await next_room.load()
     assert next_room.room_id == 2
+
 
 @pytest.mark.asyncio
 async def test_post_message_and_rotation(db, config, setup_rooms, setup_users):
@@ -136,6 +144,7 @@ async def test_post_message_and_rotation(db, config, setup_rooms, setup_users):
     assert ids[0] not in remaining
     assert new_id in remaining
 
+
 @pytest.mark.asyncio
 async def test_user_read_tracking(db, config, setup_rooms, setup_users):
     room = Room(db, config, 1)
@@ -150,6 +159,7 @@ async def test_user_read_tracking(db, config, setup_rooms, setup_users):
     # Should return None now that it's read
     assert await room.get_next_unread_message(user) is None
 
+
 @pytest.mark.asyncio
 async def test_skip_to_latest(db, config, setup_rooms, setup_users):
     room = Room(db, config, 1)
@@ -162,6 +172,7 @@ async def test_skip_to_latest(db, config, setup_rooms, setup_users):
 
     pointer = await db.execute("SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?", (user.username, room.room_id))
     assert pointer[0][0] == msg_id
+
 
 @pytest.mark.asyncio
 async def test_room_deletion_logs_event(db, config, setup_rooms, setup_users):
@@ -183,6 +194,7 @@ async def test_room_deletion_logs_event(db, config, setup_rooms, setup_users):
 
     assert any("Room 'Test Room' was deleted." in msg[0] for msg in messages)
 
+
 @pytest.mark.asyncio
 async def test_get_id_by_name(db, config, setup_rooms):
     room = Room(db, config, 1)
@@ -190,6 +202,7 @@ async def test_get_id_by_name(db, config, setup_rooms):
     assert await room.get_id_by_name("lobby") == 1
     with pytest.raises(RoomNotFoundError):
         await room.get_id_by_name("Nonexistent")
+
 
 @pytest.mark.asyncio
 async def test_go_to_room_by_name_or_id(db, config, setup_rooms):
@@ -206,6 +219,7 @@ async def test_go_to_room_by_name_or_id(db, config, setup_rooms):
 
     with pytest.raises(RoomNotFoundError):
         await room.go_to_room("NoSuchRoom")
+
 
 @pytest.mark.asyncio
 async def test_system_rooms_initialization(db, config, setup_rooms, setup_users):
@@ -226,6 +240,7 @@ async def test_system_rooms_initialization(db, config, setup_rooms, setup_users)
     assert twit[0][0] == SystemRoomIDs.SYSTEM_ID, "Twit room should link back to System room"
     assert twit[0][1] is None, "Twit should be last room (next_neighbor = NULL)"
 
+
 @pytest.mark.asyncio
 async def test_system_rooms_cannot_be_deleted(db, config, setup_rooms, setup_users):
     """Test that system rooms are protected from deletion."""
@@ -237,16 +252,17 @@ async def test_system_rooms_cannot_be_deleted(db, config, setup_rooms, setup_use
         with pytest.raises(PermissionDeniedError):
             await room.delete_room("sysop")
 
+
 @pytest.mark.asyncio
 async def test_user_room_id_constraint(db, config, setup_rooms, setup_users):
     """Test that user-created rooms get IDs >= 100."""
     # Create first user room
     room_id1 = await Room.create(db, config, 'Test Room 1',
-    'First test room', False, PermissionLevel.USER, SystemRoomIDs.SYSTEM_ID, None)
+                                 'First test room', False, PermissionLevel.USER, SystemRoomIDs.SYSTEM_ID, None)
 
     # Create second user room
     room_id2 = await Room.create(db, config, 'Test Room 2',
-    'Second test room', False, PermissionLevel.USER, room_id1, None)
+                                 'Second test room', False, PermissionLevel.USER, room_id1, None)
 
     # Verify both rooms get IDs >= MIN_USER_ROOM_ID (100)
     assert room_id1 >= Room.MIN_USER_ROOM_ID, f"First room ID {room_id1} should be >= {Room.MIN_USER_ROOM_ID}"
@@ -261,4 +277,3 @@ async def test_user_room_id_constraint(db, config, setup_rooms, setup_users):
 
     result2 = await db.execute("SELECT id, name FROM rooms WHERE id = ?", (room_id2,))
     assert result2[0][0] == room_id2 and result2[0][1] == 'Test Room 2'
-

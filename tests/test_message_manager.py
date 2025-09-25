@@ -10,10 +10,12 @@ from citadel.user.user import User
 from citadel.message.manager import MessageManager
 from citadel.message.errors import InvalidContentError, InvalidRecipientError
 
+
 class DummyConfig:
     def __init__(self, path):
         self.database = {'db_path': path}
-        self.logging = {'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
+        self.logging = {
+            'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
         self.bbs = {
             'max_messages_per_room': 100,  # For reference only
             'room_names': {
@@ -24,6 +26,7 @@ class DummyConfig:
                 'system': 'System'
             }
         }
+
 
 @pytest_asyncio.fixture(scope="function")
 async def db():
@@ -36,14 +39,15 @@ async def db():
 
     # Insert test users
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("alice", "hash", b"salt", "Alice", "2025-09-17T00:00:00Z", 2))
+                         ("alice", "hash", b"salt", "Alice", "2025-09-17T00:00:00Z", 2))
     await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                   ("bob", "hash", b"salt", "Bob", "2025-09-17T00:00:00Z", 2))
+                         ("bob", "hash", b"salt", "Bob", "2025-09-17T00:00:00Z", 2))
 
     yield db_mgr
 
     await db_mgr.shutdown()
     os.unlink(temp_db.name)
+
 
 @pytest.fixture
 def msg_mgr(db):
@@ -53,6 +57,7 @@ def msg_mgr(db):
 # -------------------------------
 # ✅ Core MessageManager Tests
 # -------------------------------
+
 
 @pytest.mark.asyncio
 async def test_post_and_get_message(msg_mgr, db):
@@ -67,6 +72,7 @@ async def test_post_and_get_message(msg_mgr, db):
     assert msg["display_name"] == "Alice"
     assert msg["blocked"] is False
 
+
 @pytest.mark.asyncio
 async def test_blocked_message(msg_mgr, db):
     msg_id = await msg_mgr.post_message("alice", "Secret message")
@@ -77,6 +83,7 @@ async def test_blocked_message(msg_mgr, db):
     msg = await msg_mgr.get_message(msg_id, recipient_user=bob)
     assert msg["blocked"] is True
 
+
 @pytest.mark.asyncio
 async def test_delete_message(msg_mgr, db):
     msg_id = await msg_mgr.post_message("alice", "Temporary message")
@@ -84,6 +91,7 @@ async def test_delete_message(msg_mgr, db):
     assert del_result is True
     get_result = await msg_mgr.get_message(msg_id)
     assert get_result is None
+
 
 @pytest.mark.asyncio
 async def test_get_messages_batch(msg_mgr, db):
@@ -101,6 +109,7 @@ async def test_get_messages_batch(msg_mgr, db):
     for msg in messages:
         assert msg["blocked"] is False
 
+
 @pytest.mark.asyncio
 async def test_message_summary_respects_packet_limit(msg_mgr, db):
     long_text = "X" * 500
@@ -112,18 +121,20 @@ async def test_message_summary_respects_packet_limit(msg_mgr, db):
     reserved = len(display_name) + timestamp_len
     assert len(summary) <= 184 - reserved
 
+
 @pytest.mark.asyncio
 async def test_post_message_with_empty_content(msg_mgr):
     with pytest.raises(InvalidContentError):
         await msg_mgr.post_message("alice", "")
+
 
 @pytest.mark.asyncio
 async def test_post_message_with_none_content(msg_mgr):
     with pytest.raises(InvalidContentError):
         await msg_mgr.post_message("alice", None)
 
+
 @pytest.mark.asyncio
 async def test_post_private_message_to_unknown_recipient(msg_mgr):
     with pytest.raises(InvalidRecipientError):
         await msg_mgr.post_message("alice", "Hi there", recipient="charlie")
-

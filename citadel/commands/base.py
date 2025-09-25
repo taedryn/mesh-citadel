@@ -98,7 +98,8 @@ class BaseCommand(ABC):
 
     async def run(self, context: CommandContext) -> "CommandResponse | MessageResponse | list[MessageResponse]":
         """Execute the command with the given context."""
-        raise NotImplementedError(f"{self.__class__.__name__} not yet implemented")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} not yet implemented")
 
     @classmethod
     def is_implemented(cls) -> bool:

@@ -19,6 +19,7 @@ from citadel.room.room import Room, SystemRoomIDs
 from citadel.session.manager import SessionManager
 from citadel.user.user import User
 
+
 @pytest.fixture
 def config():
     path = tempfile.NamedTemporaryFile(delete=False)
@@ -132,7 +133,8 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
     # With recipient should succeed
     await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
                      ("dave", "x", b"y", 2))
-    cmd = EnterMessageCommand(username="carol", args={"content": "hi", "recipient": "dave"})
+    cmd = EnterMessageCommand(username="carol", args={
+                              "content": "hi", "recipient": "dave"})
     resp = await processor.process(token, cmd)
     assert isinstance(resp, CommandResponse)
     assert resp.code == "message_posted"
@@ -162,4 +164,3 @@ async def test_read_new_messages_returns_unread(db, config):
     assert len(resp) == 2
     assert resp[0].content == "first"
     assert resp[1].content == "second"
-
