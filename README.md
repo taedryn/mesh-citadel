@@ -8,19 +8,26 @@ py-meshcore.
 
 # In Progress
 
-Development is currently in progress, and most of the system has yet to
-be fleshed out.  When it's done, it should have a clean, modular design
-that will be suitable for its intended purpose, while also being
-extensible for those who want to run with more resources, or an
-(unplanned, but easily implemented) HTTP transport module, or other
-transport methods.
+Development is still in progress, but the system is nearing the
+point of being sort of MVP-level code-complete.  The major remaining
+component is the transport layer code, which will focus on a CLI
+interface to start with, and expand to include a MeshCore transport
+soon after that.  Most of the BBS-side code is in a functional state,
+if not fully fleshed out (for instance, there's only a skeleton set of
+BBS commands available right now).  It's all in a fairly theoretical
+"it does what I want it to do" state, but it remains to be seen if
+these are the components of a functional BBS, or merely the start of
+those components.
 
-I will update this document as progress is made, but for now, this is
-very much a work in progress.
+I do expect to be able to interact via CLI fairly soon, which will
+quickly prove out the functionality I think I have.  The transport
+layer should be easily adaptable to other transport methods, such as
+MeshCore, Meshtastic, or telnet/ssh, or even a web client if someone
+wanted to go that way.
 
-You may enjoy reading the prompt.md file in this directory, which is
-the prompt used with Copilot to set the context, and conveys the
-architecture of the system very clearly.
+Check the docs/ directory for documents describing the intended
+path of development, with the prompt.md file being an overview, and
+the various other files addressing more specific areas.
 
 # Contributions
 
