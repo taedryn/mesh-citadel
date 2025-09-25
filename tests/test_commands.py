@@ -11,7 +11,7 @@ from citadel.auth.permissions import PermissionLevel
 def test_registry_contains_all_expected_commands():
     # Codes from prompt.md
     expected_codes = {
-        "G", "E", "R", "N", "L", "I", "Q", "S", "C", "H", "M", "W", "D", "B",
+        "G", "E", "R", "N", "K", "I", "Q", "S", "C", "H", "?", "M", "W", "D", "B",
         ".C", ".ER", ".EU", ".FF", "V",
     }
     available_codes = set(registry.available().keys())
@@ -22,7 +22,7 @@ def test_registry_contains_all_expected_commands():
 
 
 @pytest.mark.parametrize("code,expected_class", [
-    ("L", builtins.ListRoomsCommand),
+    ("K", builtins.KnownRoomsCommand),
     ("G", builtins.GoNextUnreadCommand),
     ("M", builtins.MailCommand),
     (".C", builtins.CreateRoomCommand),
@@ -45,7 +45,7 @@ def test_command_to_dict_includes_username_and_room():
 
 
 def test_permission_levels_are_set_correctly():
-    assert builtins.CreateRoomCommand.permission_level == PermissionLevel.AIDE
+    assert builtins.CreateRoomCommand.permission_level == PermissionLevel.USER
     assert builtins.EditRoomCommand.permission_level == PermissionLevel.SYSOP
     assert builtins.FastForwardCommand.permission_level == PermissionLevel.USER
 

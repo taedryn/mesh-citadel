@@ -59,7 +59,7 @@ def test_fast_forward_has_no_args():
 
 
 def test_permissions_for_dot_commands():
-    assert builtins.CreateRoomCommand.permission_level == PermissionLevel.AIDE
+    assert builtins.CreateRoomCommand.permission_level == PermissionLevel.USER
     assert builtins.EditRoomCommand.permission_level == PermissionLevel.SYSOP
     assert builtins.EditUserCommand.permission_level == PermissionLevel.SYSOP
     assert builtins.FastForwardCommand.permission_level == PermissionLevel.USER

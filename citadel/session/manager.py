@@ -73,10 +73,13 @@ class SessionManager:
                 # Send logout notification if transport layer is available
                 if self.notification_callback:
                     try:
-                        self.notification_callback(username, "You have been logged out due to inactivity.")
-                        log.info(f"Logout notification sent to username='{username}'")
+                        self.notification_callback(
+                            username, "You have been logged out due to inactivity.")
+                        log.info(
+                            f"Logout notification sent to username='{username}'")
                     except (OSError, RuntimeError) as e:
-                        log.warning(f"Failed to send logout notification to '{username}': {e}")
+                        log.warning(
+                            f"Failed to send logout notification to '{username}': {e}")
 
                 del self.sessions[t]
                 log.info(f"Session auto-expired for username='{username}'")

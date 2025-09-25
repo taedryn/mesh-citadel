@@ -3,6 +3,7 @@ from datetime import datetime, UTC
 from typing import Optional
 
 from citadel.auth.permissions import PermissionLevel
+from citadel.commands.responses import CommandResponse
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class User:
     @classmethod
     async def create(cls, config, db_mgr, username, password_hash,
                      salt, display_name=None):
-        query = "INSERT INTO users (username, password_hash, salt, display_name, permission_level) VALUES (?, ?, ?, ?, ?)"
+        query = "INSERT OR IGNORE INTO users (username, password_hash, salt, display_name, permission_level) VALUES (?, ?, ?, ?, ?)"
         await db_mgr.execute(query, (username, password_hash, salt,
                                      display_name,
                                      PermissionLevel.UNVERIFIED.value))
@@ -70,7 +71,8 @@ class User:
 
     async def set_permission_level(self, new_permission_level: PermissionLevel):
         if not isinstance(new_permission_level, PermissionLevel):
-            raise ValueError(f"Invalid permission level: {new_permission_level}")
+            raise ValueError(
+                f"Invalid permission level: {new_permission_level}")
         query = "UPDATE users SET permission_level = ? WHERE username = ?"
         await self.db.execute(query, (new_permission_level.value, self.username))
         self._permission_level = new_permission_level

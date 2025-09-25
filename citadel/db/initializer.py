@@ -1,9 +1,9 @@
+from citadel.auth.permissions import PermissionLevel
 import logging
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)
 
-from citadel.auth.permissions import PermissionLevel
 
 async def initialize_database(db_manager, config=None):
     log.info("Initializing database schema...")

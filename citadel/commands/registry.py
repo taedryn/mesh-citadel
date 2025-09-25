@@ -19,6 +19,10 @@ class CommandRegistry:
         self._commands[command_cls.code] = command_cls
 
     def get(self, code: str) -> Type[BaseCommand]:
+        try:
+            command = self._commands[code]
+        except KeyError:
+            return None
         return self._commands[code]
 
     def available(self) -> Dict[str, Type[BaseCommand]]:

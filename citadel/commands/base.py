@@ -1,8 +1,35 @@
 # bbs/commands/base.py
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from abc import ABC
+from dataclasses import dataclass
+from enum import IntEnum
+from typing import Any, Dict, Optional, TYPE_CHECKING
 from citadel.auth.permissions import PermissionLevel
+
+if TYPE_CHECKING:
+    from citadel.db.manager import DatabaseManager
+    from citadel.config import Config
+    from citadel.session.manager import SessionManager
+    from citadel.message.manager import MessageManager
+    from citadel.commands.responses import CommandResponse, MessageResponse
+
+
+@dataclass
+class CommandContext:
+    """Context provided to command handlers containing all necessary provider objects."""
+    db: "DatabaseManager"
+    config: "Config"
+    session_mgr: "SessionManager"
+    msg_mgr: "MessageManager"
+    session_id: str
+
+
+class CommandCategory(IntEnum):
+    COMMON = 1
+    UNCOMMON = 2
+    UNUSUAL = 3
+    AIDE = 4
+    SYSOP = 5
 
 
 class BaseCommand(ABC):
@@ -15,9 +42,11 @@ class BaseCommand(ABC):
     # Every subclass must override these
     code: str        # short code, e.g. "L" for list rooms
     name: str        # canonical name, e.g. "list_rooms"
+    category: CommandCategory = CommandCategory.COMMON
     permission_level: PermissionLevel = PermissionLevel.USER
 
     # Human‑readable description
+    short_text: str = ""
     help_text: str = ""
 
     # Argument schema: dict of arg_name →
@@ -66,6 +95,15 @@ class BaseCommand(ABC):
             "args": self.args,
             "permission_level": self.permission_level.value,
         }
+
+    async def run(self, context: CommandContext) -> "CommandResponse | MessageResponse | list[MessageResponse]":
+        """Execute the command with the given context."""
+        raise NotImplementedError(f"{self.__class__.__name__} not yet implemented")
+
+    @classmethod
+    def is_implemented(cls) -> bool:
+        """Check if this command has been implemented (run method overridden)."""
+        return cls.run != BaseCommand.run
 
     def __repr__(self) -> str:
         return f"<Command {self.code} ({self.name}) user={self.username!r} room={self.room!r} args={self.args!r} permission_level={self.permission_level.value}>"

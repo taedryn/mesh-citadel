@@ -20,6 +20,13 @@ class DummyCommand:
         self.name = name
         self.args = args or []
 
+    async def run(self, context):
+        from citadel.commands.responses import CommandResponse
+        if self.name == "quit":
+            context.session_mgr.expire_session(context.session_id)
+            return CommandResponse(success=True, code="quit", text="Goodbye!")
+        return CommandResponse(success=True, code=self.name, text=f"Dummy {self.name} command")
+
 @pytest.fixture
 def config():
     path = tempfile.NamedTemporaryFile(delete=False)

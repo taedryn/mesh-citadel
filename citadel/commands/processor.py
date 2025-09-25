@@ -2,6 +2,7 @@
 
 import logging
 from citadel.auth.checker import is_allowed, permission_denied
+from citadel.commands.base import CommandContext
 from citadel.commands.responses import MessageResponse, CommandResponse, ErrorResponse
 from citadel.session.manager import SessionManager
 from citadel.user.user import User
@@ -19,15 +20,6 @@ class CommandProcessor:
         self.sessions = session_mgr
         self.msg_mgr = MessageManager(config, db)
 
-        # Normal command dispatch table
-        self.dispatch = {
-            "quit": self._handle_quit,
-            "go_next_unread": self._handle_go_next_unread,
-            "change_room": self._handle_change_room,
-            "enter_message": self._handle_enter_message,
-            "read_new_messages": self._handle_read_new_messages,
-            # add more commands here
-        }
 
     async def process(self, session_id: str, command) -> CommandResponse | MessageResponse:
         # 1. Validate session
@@ -56,106 +48,20 @@ class CommandProcessor:
             print('processor is denying this one')
             return permission_denied(command.name, user, room)
 
-        # 3. Normal dispatch
-        handler = self.dispatch.get(command.name)
-        if not handler:
-            return ErrorResponse(code="unknown_command", text=f"Unknown command: {command.name}")
-
+        # 3. Execute command via its run method
         try:
-            return await handler(session_id, state, command)
-        except Exception as e:
-            log.exception("Command failed")
-            return ErrorResponse(code="internal_error", text=str(e))
+            context = CommandContext(
+                db=self.db,
+                config=self.config,
+                session_mgr=self.sessions,
+                msg_mgr=self.msg_mgr,
+                session_id=session_id
+            )
+            return await command.run(context)
+        except RuntimeError as e:
+            log.error(f"Command execution failed: {e}")
+            return ErrorResponse(code="command_error", text=str(e))
+        except ValueError as e:
+            log.warning(f"Command validation failed: {e}")
+            return ErrorResponse(code="validation_error", text=str(e))
 
-    # ------------------------------------------------------------
-    # Simple, auth-free handlers
-    # ------------------------------------------------------------
-    async def _handle_quit(self, session_id, state, command):
-        self.sessions.expire_session(session_id)
-        log.info(f"User '{state.username}' logged out via quit command")
-        return CommandResponse(success=True, code="quit", text="Goodbye!")
-
-    # ------------------------------------------------------------
-    # External handlers
-    # ------------------------------------------------------------
-    async def _handle_go_next_unread(self, session_id, state, command):
-        user = User(self.db, state.username)
-        await user.load()
-        room = Room(self.db, self.config, state.current_room)
-        await room.load()
-        new_room = await room.go_to_next_room(user, with_unread=True)
-        await new_room.load()
-        self.sessions.set_current_room(session_id, new_room.room_id)
-
-        # Check if we wrapped to Lobby due to no unread rooms
-        if new_room.room_id == SystemRoomIDs.LOBBY_ID and room.room_id != SystemRoomIDs.LOBBY_ID:
-            # Check if there are any unread messages in the system
-            lobby_has_unread = await new_room.has_unread_messages(user)
-            if lobby_has_unread:
-                return CommandResponse(success=True, code="room_changed",
-                                       text=f"You are now in room '{new_room.name}'. New messages are available in other rooms.",
-                                       payload={"room_id": new_room.room_id,
-                                                "room_name": new_room.name})
-            else:
-                return CommandResponse(success=True, code="no_unread_rooms",
-                                       text=f"You are now in room '{new_room.name}'. No rooms with unread messages found.",
-                                       payload={"room_id": new_room.room_id,
-                                                "room_name": new_room.name})
-
-        return CommandResponse(success=True, code="room_changed",
-                               text=f"You are now in room '{new_room.name}'.",
-                               payload={"room_id": new_room.room_id,
-                                        "room_name": new_room.name})
-
-    async def _handle_change_room(self, session_id, state, command):
-        user = User(self.db, state.username)
-        await user.load()
-        current_room = Room(self.db, self.config, state.current_room)
-        await current_room.load()
-        next_room = await current_room.go_to_room(command.args["room"])
-        if not next_room:
-            return ErrorResponse(code="no_next_room",
-                                   text=f"Room {command.args['room']} not found.")
-        self.sessions.set_current_room(session_id, next_room.room_id)
-        return CommandResponse(success=True, code="room_changed",
-                               text=f"You are now in room '{next_room.name}'.",
-                               payload={"room_id": next_room.room_id})
-
-    async def _handle_enter_message(self, session_id, state, command):
-        room = Room(self.db, self.config, state.current_room)
-        await room.load()
-        if room.room_id == SystemRoomIDs.MAIL_ID:
-            if 'recipient' not in command.args:
-                return ErrorResponse(code="missing_recipient",
-                                     text=f"Messages in {room.name} require a recipient")
-            else:
-                msg_id = await room.post_message(state.username,
-                                                 command.args["content"],
-                                                 command.args["recipient"])
-        else:
-            msg_id = await room.post_message(state.username, command.args["content"])
-        return CommandResponse(success=True, code="message_posted",
-                               text=f"Message {msg_id} posted in {room.name}.",
-                               payload={"message_id": msg_id})
-
-    async def _handle_read_new_messages(self, session_id, state, command) -> list[MessageResponse] | CommandResponse:
-        room = Room(self.db, self.config, state.current_room)
-        await room.load()
-        msg_ids = await room.get_unread_message_ids(state.username)
-        if not msg_ids:
-            return CommandResponse(success=True, code="no_unread", text="No unread messages.")
-        messages = []
-        for msg_id in msg_ids:
-            msg = await self.msg_mgr.get_message(msg_id)
-            sender = User(self.db, msg["sender"])
-            await sender.load()
-            messages.append(MessageResponse(
-                id=msg["id"],
-                sender=msg["sender"],
-                display_name=sender.display_name,
-                timestamp=msg["timestamp"],
-                room=room.name,
-                content=msg["content"],
-                blocked=msg["blocked"]
-            ))
-        return messages

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import logging
 
 from citadel.auth.permissions import PermissionLevel
+from citadel.commands.responses import CommandResponse
 from citadel.user.user import User
 from citadel.message.manager import MessageManager
 from citadel.message.errors import InvalidContentError
@@ -24,6 +25,7 @@ class SystemRoomIDs:
     @classmethod
     def as_set(cls):
         return {v for k, v in vars(cls).items() if k.endswith("_ID")}
+
 
 class Room:
     # Set of all system room IDs for easy checking
@@ -339,8 +341,8 @@ class Room:
         return max_id + 1
 
     @classmethod
-    async def create(cls, db, config, name: str, description: str, 
-                     read_only: bool, permission_level: PermissionLevel, 
+    async def create(cls, db, config, name: str, description: str,
+                     read_only: bool, permission_level: PermissionLevel,
                      prev_id: int, next_id: int) -> int:
         # Get next available room ID >= 100
         new_id = await cls._get_next_available_room_id(db)
