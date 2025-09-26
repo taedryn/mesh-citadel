@@ -2,3 +2,5 @@
 .mesh-citadel
 *.swp
 __pycache__
+.claude
+*.log
