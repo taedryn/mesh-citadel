@@ -62,7 +62,7 @@ Some transports may bypass certain layers for efficiency or functionality:
 - **Purpose**: Factory for loading appropriate transport engines based on configuration
 - **Responsibilities**:
   - Read transport configuration from config file
-  - Instantiate the correct transport engine (CLI, MeshCore, etc.)
+  - Instantiate the correct transport engines (CLI, MeshCore, etc.)
   - Provide common initialization and shutdown interfaces
 
 ### Text Parser
@@ -74,7 +74,7 @@ Some transports may bypass certain layers for efficiency or functionality:
 
 ### Transport Engines
 
-Individual transport implementations:
+Currently-planned individual transport implementations:
 
 - **CLI Transport**: `citadel/transport/cli.py`
   - Terminal I/O handling
@@ -91,14 +91,16 @@ Individual transport implementations:
 
 The transport layer will read configuration from the main config file to determine:
 
-- Which transport engine to load
+- Which transport engines to load (more than one possible at a time)
 - Transport-specific settings (ports, timeouts, packet sizes, etc.)
 - Protocol-specific parameters
 
 Example config structure:
 ```yaml
 transport:
-  engine: "cli"  # or "meshcore", "telnet", etc.
+  engines: 
+    - "cli"  # or "telnet", etc.
+    - "meshcore"
   cli:
     # CLI-specific settings
   meshcore:
@@ -111,16 +113,20 @@ transport:
 - Single-user session on startup
 - Session persists until logout or timeout
 - Direct stdin/stdout interaction
+- Ending CLI session shuts down server
+- Primarily useful for debugging and development
 
 ### MeshCore Transport (future)
 - Session per node ID
 - Sessions established via DM contact
 - Node ID becomes username automatically
+- Multiple concurrent connections possible
 
 ### Network Transports (future)
 - Session per connection
 - Standard login/logout flows
 - Connection-based session lifecycle
+- Multiple concurrent connections possible
 
 ## Development Approach
 

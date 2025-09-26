@@ -25,7 +25,7 @@ async def initialize_system():
     await initialize_database(db_mgr, config)
 
     # Initialize other managers
-    session_mgr = SessionManager(config)
+    session_mgr = SessionManager(config, db_mgr)
     message_mgr = MessageManager(config, db_mgr)
 
     log.info('System initialization complete')
@@ -38,9 +38,7 @@ async def shutdown(db_mgr, session_mgr):
     log = logging.getLogger('citadel')
     log.info('Shutting down system...')
 
-    # Clean up sessions
-    if session_mgr:
-        session_mgr.cleanup_all_sessions()
+    # Session cleanup handled automatically by SessionManager
 
     # Close database connections
     if db_mgr and hasattr(db_mgr, 'close'):
@@ -58,7 +56,7 @@ async def main():
         config, db_mgr, session_mgr, message_mgr = await initialize_system()
 
         # Start transport layer
-        transport_mgr = TransportManager(config, db_mgr, session_mgr, message_mgr)
+        transport_mgr = TransportManager(config, db_mgr, session_mgr)
         await transport_mgr.start()
 
     except KeyboardInterrupt:
