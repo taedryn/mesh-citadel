@@ -33,16 +33,20 @@ async def initialize_system():
     return config, db_mgr, session_mgr, message_mgr
 
 
-async def shutdown(db_mgr, session_mgr):
+async def shutdown(db_mgr, session_mgr, transport_mgr=None):
     """Gracefully shutdown system components."""
     log = logging.getLogger('citadel')
     log.info('Shutting down system...')
 
+    # Stop transport layer first
+    if transport_mgr:
+        await transport_mgr.stop()
+
     # Session cleanup handled automatically by SessionManager
 
     # Close database connections
-    if db_mgr and hasattr(db_mgr, 'close'):
-        await db_mgr.close()
+    if db_mgr:
+        await db_mgr.shutdown()
 
     log.info('Shutdown complete')
 
@@ -59,17 +63,27 @@ async def main():
         transport_mgr = TransportManager(config, db_mgr, session_mgr)
         await transport_mgr.start()
 
+        # Keep server running until interrupted
+        logging.getLogger('citadel').info('Server running. Press Ctrl+C to shutdown.')
+        while True:
+            await asyncio.sleep(1)
+
     except KeyboardInterrupt:
-        # TODO: Remove this once CLI transport handles KeyboardInterrupt properly
         logging.getLogger('citadel').info('Shutdown requested via keyboard interrupt')
     except Exception as e:
         logging.getLogger('citadel').error(f'System error: {e}')
         raise
     finally:
         # Always attempt graceful shutdown
-        if db_mgr or session_mgr:
+        if 'transport_mgr' in locals():
+            await shutdown(db_mgr, session_mgr, transport_mgr)
+        elif db_mgr or session_mgr:
             await shutdown(db_mgr, session_mgr)
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Clean exit - shutdown already handled in main()
+        pass
