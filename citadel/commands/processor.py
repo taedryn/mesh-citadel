@@ -4,11 +4,12 @@ import logging
 from citadel.auth.checker import is_allowed, permission_denied
 from citadel.commands.base import CommandContext
 from citadel.commands.responses import MessageResponse, CommandResponse, ErrorResponse
+from citadel.message.manager import MessageManager
+from citadel.room.room import Room, SystemRoomIDs
 from citadel.session.manager import SessionManager
 from citadel.user.user import User
-from citadel.room.room import Room, SystemRoomIDs
-from citadel.message.manager import MessageManager
 from citadel.workflows import registry as workflow_registry
+from citadel.workflows.types import WorkflowResponse
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ class CommandProcessor:
             handler = workflow_registry.get(wf.kind)
             if not handler:
                 return ErrorResponse(code="unknown_workflow", text=f"Unknown workflow: {wf.kind}")
+
             return await handler.handle(self, session_id, state, command, wf)
 
         # Permission check

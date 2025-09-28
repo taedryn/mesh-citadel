@@ -78,6 +78,24 @@ async def initialize_database(db_manager, config=None):
     );
     """
 
+    workflow_state_table = """
+    CREATE TABLE IF NOT EXISTS workflow_state (
+        session_id TEXT PRIMARY KEY,
+        workflow_kind TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        data TEXT NOT NULL  -- JSON-encoded dict of collected values
+    );
+    """
+
+    pending_validations_table = """
+    CREATE TABLE IF NOT EXISTS pending_validations (
+        username TEXT PRIMARY KEY,
+        submitted_at TEXT NOT NULL,
+        transport_engine TEXT,
+        transport_metadata TEXT  -- JSON-encoded metadata (IP, node ID, etc.)
+    );
+    """
+
     # all tables to be initialized
     tables = [
         user_table,
@@ -87,6 +105,8 @@ async def initialize_database(db_manager, config=None):
         room_messages_table,
         user_room_state_table,
         room_ignores_table,
+        workflow_state_table,
+        pending_validations_table,
     ]
 
     for sql in tables:

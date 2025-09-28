@@ -7,7 +7,7 @@ bbs:
   starting_room: "Lobby"
   system_events_room: "System"
   export_format: "json"             # "csv", "json", or "yaml"
-  # System room names (changeable but rooms IDs 1-5 are reserved)
+  # System room names (changeable but rooms IDs 1-6 are reserved)
   room_names:
     lobby: "Lobby"                  # Room ID 1
     mail: "Mail"                    # Room ID 2
@@ -15,6 +15,14 @@ bbs:
     sysop: "Sysop"                  # Room ID 4
     system: "System"                # Room ID 5
     twit: "Purgatory"               # Room ID 6
+  registration:
+    terms_required: true
+    terms: "To register with this system, you must agree to the following conditions of membership:
+  1. Bigotry or hatred will not be tolerated.
+  2. Be kind, and assume best intent.
+  3. No illegal content.
+  4. This is a welcoming, friendly community, and we expect everyone to respect all other members.
+  5. The sysop and aides are in charge, and you agree to abide by their decisions."
 
 auth:
   session_timeout: 3600             # seconds

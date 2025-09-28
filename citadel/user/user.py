@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, UTC
 from typing import Optional
 
+from citadel.auth.passwords import verify_password
 from citadel.auth.permissions import PermissionLevel
 from citadel.commands.responses import CommandResponse
 
@@ -36,6 +37,10 @@ class User:
         self._last_login = row[5]
         self._permission_level = row[6]
 
+    #------------------------------------------------------------
+    # class methods
+    #------------------------------------------------------------
+
     @classmethod
     async def create(cls, config, db_mgr, username, password_hash,
                      salt, display_name=None):
@@ -43,6 +48,25 @@ class User:
         await db_mgr.execute(query, (username, password_hash, salt,
                                      display_name,
                                      PermissionLevel.UNVERIFIED.value))
+
+    @classmethod
+    async def username_exists(cls, db_mgr, test_username: str) -> bool:
+        query = "SELECT 1 FROM users WHERE username = ?"
+        result = await db_mgr.execute(query, (test_username,))
+        return bool(result)
+
+    @classmethod
+    async def verify_password(cls, db_mgr, username: str, submitted_password: str) -> bool:
+        query = "SELECT password_hash, salt FROM users WHERE username = ?"
+        result = await db_mgr.execute(query, (username,))
+        if not result:
+            return False
+        stored_hash, salt = result[0]
+        return verify_password(submitted_password, salt, stored_hash)
+
+    #------------------------------------------------------------
+    # getters and setters
+    #------------------------------------------------------------
 
     @property
     def display_name(self) -> Optional[str]:
@@ -116,6 +140,10 @@ class User:
             raise RuntimeError('_salt not initialized, ensure '
                                'load() has been called on this object')
 
+    #------------------------------------------------------------
+    # methods
+    #------------------------------------------------------------
+
     async def update_password(self, new_hash: str, new_salt: bytes):
         query = "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?"
         await self.db.execute(query, (new_hash, new_salt, self.username))
@@ -136,3 +164,4 @@ class User:
         query = "SELECT 1 FROM user_blocks WHERE blocker = ? AND blocked = ?"
         result = await self.db.execute(query, (self.username, sender_username))
         return bool(result)
+

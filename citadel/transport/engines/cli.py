@@ -33,7 +33,8 @@ class CLITransportEngine:
         self.config = config
         self.server = None
         self.session_manager = session_manager
-        self.command_processor = CommandProcessor(config, db_manager, session_manager)
+        self.command_processor = CommandProcessor(
+            config, db_manager, session_manager)
         self.text_parser = TextParser()
         self._running = False
         self._client_count = 0
@@ -146,7 +147,8 @@ class CLITransportEngine:
             return result.message
 
         except Exception as e:
-            logger.error(f"Error processing command '{command_line}' for client {client_id}: {e}")
+            logger.error(
+                f"Error processing command '{command_line}' for client {client_id}: {e}")
             return f"ERROR: Command processing failed - {str(e)}"
 
     @property
