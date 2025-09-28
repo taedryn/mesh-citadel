@@ -61,8 +61,8 @@ async def db(config):
 async def session_mgr(config, db):
     mgr = SessionManager(config, db)
     # assume you have a sync helper for tests
-    token = await mgr.create_session("alice")
-    return mgr, token
+    session_id = await mgr.create_session("alice")
+    return mgr, session_id
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def processor(config, db, session_mgr, monkeypatch):
 @pytest.mark.asyncio
 async def test_invalid_session(processor):
     cmd = DummyCommand("quit")
-    resp = await processor.process("badtoken", cmd)
+    resp = await processor.process("badsession_id", cmd)
     assert isinstance(resp, ErrorResponse)
     assert resp.code == "invalid_session"
 
@@ -97,14 +97,14 @@ async def test_invalid_session(processor):
 
 @pytest.mark.asyncio
 async def test_quit_expires_session(processor, session_mgr):
-    mgr, token = session_mgr
+    mgr, session_id = session_mgr
     alice = User(db, "alice")
     await alice.load()
     cmd = DummyCommand("quit")
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, CommandResponse)
     assert resp.code == "quit"
-    assert not mgr.validate_session(token)
+    assert not mgr.validate_session(session_id)
 
 # ------------------------------------------------------------
 # Unknown command
@@ -113,9 +113,9 @@ async def test_quit_expires_session(processor, session_mgr):
 
 @pytest.mark.asyncio
 async def test_unknown_command(processor, session_mgr):
-    mgr, token = session_mgr
+    mgr, session_id = session_mgr
     cmd = DummyCommand("doesnotexist")
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, ErrorResponse)
     assert resp.code == "permission_denied"
 
@@ -133,15 +133,15 @@ async def test_workflow_delegation(processor, session_mgr, monkeypatch):
     class DummyWorkflow:
         kind = "dummy"
 
-        async def handle(self, processor, token, state, command, wf):
+        async def handle(self, processor, session_id, state, command, wf):
             return CommandResponse(success=True, code="dummy_ok", text="Handled by dummy workflow")
 
-    mgr, token = session_mgr
-    state = mgr.validate_session(token)
+    mgr, session_id = session_mgr
+    state = mgr.validate_session(session_id)
     wf = WorkflowState(kind="dummy")
-    mgr.set_workflow(token, wf)
+    mgr.set_workflow(session_id, wf)
 
     cmd = DummyCommand("anything")
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, CommandResponse)
     assert resp.code == "dummy_ok"

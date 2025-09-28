@@ -40,9 +40,9 @@ async def setup_user_and_session(config):
     await user.set_permission_level(PermissionLevel.USER)
 
     # Create session
-    token = await session_mgr.create_session('testuser')
+    session_id = await session_mgr.create_session('testuser')
 
-    yield db, session_mgr, token, user
+    yield db, session_mgr, session_id, user
 
     await db.shutdown()
 
@@ -115,7 +115,7 @@ def test_common_commands_detection():
 @pytest.mark.asyncio
 async def test_help_menu_generation(setup_user_and_session):
     """Test dynamic help menu generation."""
-    db, session_mgr, token, user = setup_user_and_session
+    db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
 
@@ -123,7 +123,7 @@ async def test_help_menu_generation(setup_user_and_session):
     help_cmd = HelpCommand(username='testuser', args={})
 
     # Process the command
-    response = await processor.process(token, help_cmd)
+    response = await processor.process(session_id, help_cmd)
 
     assert isinstance(response, CommandResponse)
     assert response.success
@@ -139,13 +139,13 @@ async def test_help_menu_generation(setup_user_and_session):
 @pytest.mark.asyncio
 async def test_specific_command_help(setup_user_and_session):
     """Test detailed help for specific commands."""
-    db, session_mgr, token, user = setup_user_and_session
+    db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
 
     # Test help for a specific implemented command
     help_cmd = HelpCommand(username='testuser', args={"command": "G"})
-    response = await processor.process(token, help_cmd)
+    response = await processor.process(session_id, help_cmd)
 
     assert isinstance(response, CommandResponse)
     assert response.success
@@ -160,13 +160,13 @@ async def test_specific_command_help(setup_user_and_session):
 @pytest.mark.asyncio
 async def test_unimplemented_command_help(setup_user_and_session):
     """Test help for unimplemented commands."""
-    db, session_mgr, token, user = setup_user_and_session
+    db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
 
     # Test help for an unimplemented command
     help_cmd = HelpCommand(username='testuser', args={"command": "D"})
-    response = await processor.process(token, help_cmd)
+    response = await processor.process(session_id, help_cmd)
 
     assert isinstance(response, CommandResponse)
     assert response.success
@@ -181,13 +181,13 @@ async def test_unimplemented_command_help(setup_user_and_session):
 @pytest.mark.asyncio
 async def test_unknown_command_help(setup_user_and_session):
     """Test help for unknown commands."""
-    db, session_mgr, token, user = setup_user_and_session
+    db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
 
     # Test help for unknown command
     help_cmd = HelpCommand(username='testuser', args={"command": "Z"})
-    response = await processor.process(token, help_cmd)
+    response = await processor.process(session_id, help_cmd)
 
     assert isinstance(response, CommandResponse)
     assert not response.success
@@ -198,7 +198,7 @@ async def test_unknown_command_help(setup_user_and_session):
 @pytest.mark.asyncio
 async def test_menu_command_works_same_as_help(setup_user_and_session):
     """Test that MenuCommand (?) works identically to HelpCommand (H)."""
-    db, session_mgr, token, user = setup_user_and_session
+    db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
 
@@ -206,8 +206,8 @@ async def test_menu_command_works_same_as_help(setup_user_and_session):
     help_cmd = HelpCommand(username='testuser', args={})
     menu_cmd = MenuCommand(username='testuser', args={})
 
-    help_response = await processor.process(token, help_cmd)
-    menu_response = await processor.process(token, menu_cmd)
+    help_response = await processor.process(session_id, help_cmd)
+    menu_response = await processor.process(session_id, menu_cmd)
 
     # Should produce identical results
     assert help_response.success == menu_response.success

@@ -7,7 +7,7 @@ class Workflow:
     """Abstract base for all workflows."""
     kind: str
 
-    async def handle(self, processor, token, state, command, wf_state):
+    async def handle(self, processor, session_id, state, command, wf_state):
         """Process a command within this workflow.
         Must return a CommandResponse or MessageResponse.
         """

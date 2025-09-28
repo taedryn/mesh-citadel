@@ -15,7 +15,7 @@ class SessionManager:
     def __init__(self, config: "Config", db: DatabaseManager):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
         self.db = db
-        self.sessions = {}  # token -> (SessionState, last_active: datetime)
+        self.sessions = {}  # session_id -> (SessionState, last_active: datetime)
         self.lock = threading.Lock()
         self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
@@ -27,36 +27,36 @@ class SessionManager:
         if not await self._user_exists(username):
             raise ValueError(f"Username '{username}' does not exist")
 
-        token = secrets.token_urlsafe(24)
+        session_id = secrets.token_urlsafe(24)
         now = datetime.now(UTC)
         state = self.create_session_state(username)
         with self.lock:
-            self.sessions[token] = (state, now)
+            self.sessions[session_id] = (state, now)
         log.info(f"Session created for username='{username}'")
-        return token
+        return session_id
 
-    def validate_session(self, token: str) -> SessionState | None:
+    def validate_session(self, session_id: str) -> SessionState | None:
         with self.lock:
-            data = self.sessions.get(token)
+            data = self.sessions.get(session_id)
             if not data:
                 return None
             state, _ = data
             return state
 
-    def touch_session(self, token: str) -> bool:
+    def touch_session(self, session_id: str) -> bool:
         now = datetime.now(UTC)
         with self.lock:
-            if token not in self.sessions:
+            if session_id not in self.sessions:
                 return False
-            state, _ = self.sessions[token]
-            self.sessions[token] = (state, now)
+            state, _ = self.sessions[session_id]
+            self.sessions[session_id] = (state, now)
             return True
 
-    def expire_session(self, token: str) -> bool:
+    def expire_session(self, session_id: str) -> bool:
         with self.lock:
-            if token in self.sessions:
-                username, _ = self.sessions[token]
-                del self.sessions[token]
+            if session_id in self.sessions:
+                username, _ = self.sessions[session_id]
+                del self.sessions[session_id]
                 log.info(f"Session manually expired for username='{username}'")
                 return True
             return False
@@ -103,30 +103,30 @@ class SessionManager:
 
     # --- New helpers for richer state ---
 
-    def get_username(self, token: str) -> str | None:
-        state = self.validate_session(token)
+    def get_username(self, session_id: str) -> str | None:
+        state = self.validate_session(session_id)
         return state.username if state else None
 
-    def get_current_room(self, token: str) -> str | None:
-        state = self.validate_session(token)
+    def get_current_room(self, session_id: str) -> str | None:
+        state = self.validate_session(session_id)
         return state.current_room if state else None
 
-    def set_current_room(self, token: str, room: str) -> None:
-        state = self.validate_session(token)
+    def set_current_room(self, session_id: str, room: str) -> None:
+        state = self.validate_session(session_id)
         if state:
             state.current_room = room
 
-    def get_workflow(self, token: str) -> WorkflowState | None:
-        state = self.validate_session(token)
+    def get_workflow(self, session_id: str) -> WorkflowState | None:
+        state = self.validate_session(session_id)
         return state.workflow if state else None
 
-    def set_workflow(self, token: str, wf: WorkflowState) -> None:
-        state = self.validate_session(token)
+    def set_workflow(self, session_id: str, wf: WorkflowState) -> None:
+        state = self.validate_session(session_id)
         if state:
             state.workflow = wf
 
-    def clear_workflow(self, token: str) -> None:
-        state = self.validate_session(token)
+    def clear_workflow(self, session_id: str) -> None:
+        state = self.validate_session(session_id)
         if state:
             state.workflow = None
 

@@ -1,10 +1,18 @@
 import logging
 from datetime import datetime, UTC
+from enum import Enum
 from typing import Optional
 
 from citadel.auth.passwords import verify_password
 from citadel.auth.permissions import PermissionLevel
 from citadel.commands.responses import CommandResponse
+
+
+class UserStatus(str, Enum):
+    PROVISIONAL = "provisional"
+    ACTIVE = "active"
+    BANNED = "banned"
+    SUSPENDED = "suspended"
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +44,7 @@ class User:
         self._display_name = row[4]
         self._last_login = row[5]
         self._permission_level = row[6]
+        self._status = row[7]
 
     #------------------------------------------------------------
     # class methods
@@ -43,11 +52,12 @@ class User:
 
     @classmethod
     async def create(cls, config, db_mgr, username, password_hash,
-                     salt, display_name=None):
-        query = "INSERT OR IGNORE INTO users (username, password_hash, salt, display_name, permission_level) VALUES (?, ?, ?, ?, ?)"
+                     salt, display_name=None, status=UserStatus.PROVISIONAL):
+        query = "INSERT OR IGNORE INTO users (username, password_hash, salt, display_name, permission_level, status) VALUES (?, ?, ?, ?, ?, ?)"
         await db_mgr.execute(query, (username, password_hash, salt,
                                      display_name,
-                                     PermissionLevel.UNVERIFIED.value))
+                                     PermissionLevel.UNVERIFIED.value,
+                                     status.value))
 
     @classmethod
     async def username_exists(cls, db_mgr, test_username: str) -> bool:
@@ -100,6 +110,23 @@ class User:
         query = "UPDATE users SET permission_level = ? WHERE username = ?"
         await self.db.execute(query, (new_permission_level.value, self.username))
         self._permission_level = new_permission_level
+
+    @property
+    def status(self) -> UserStatus:
+        if not self._loaded:
+            raise RuntimeError('Call .load() on this object first')
+        try:
+            return UserStatus(self._status)
+        except (AttributeError, ValueError):
+            raise RuntimeError('_status not initialized or invalid, ensure '
+                               'load() has been called on this object')
+
+    async def set_status(self, new_status: UserStatus):
+        if not isinstance(new_status, UserStatus):
+            raise ValueError(f"Invalid status: {new_status}. Must be a UserStatus enum value")
+        query = "UPDATE users SET status = ? WHERE username = ?"
+        await self.db.execute(query, (new_status.value, self.username))
+        self._status = new_status.value
 
     @property
     def last_login(self) -> Optional[str]:

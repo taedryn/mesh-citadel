@@ -67,7 +67,7 @@ async def test_go_next_unread_moves_session(db, config):
     alice = User(db, 'alice')
     await alice.load()
     await alice.set_permission_level(PermissionLevel.USER)
-    token = await session_mgr.create_session("alice")
+    session_id = await session_mgr.create_session("alice")
 
     # add a room linked to Lobby
     new_room_id = await Room.create(
@@ -80,11 +80,11 @@ async def test_go_next_unread_moves_session(db, config):
 
     processor = CommandProcessor(config, db, session_mgr)
     cmd = GoNextUnreadCommand(username="alice", args={})
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
 
     assert isinstance(resp, CommandResponse)
     assert resp.code == "room_changed"
-    assert session_mgr.get_current_room(token) == new_room_id
+    assert session_mgr.get_current_room(session_id) == new_room_id
 
 
 @pytest.mark.asyncio
@@ -92,7 +92,7 @@ async def test_change_room_by_name_and_id(db, config):
     session_mgr = SessionManager(config, db)
     await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
                      ("bob", "x", b"y", 2))
-    token = await session_mgr.create_session("bob")
+    session_id = await session_mgr.create_session("bob")
 
     # Create a room
     room_id = await Room.create(db, config, 'TechTalk', '', False, PermissionLevel.USER, SystemRoomIDs.LOBBY_ID, False)
@@ -101,15 +101,15 @@ async def test_change_room_by_name_and_id(db, config):
 
     # Change by name
     cmd = ChangeRoomCommand(username="bob", args={"room": "TechTalk"})
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, CommandResponse)
-    assert session_mgr.get_current_room(token) == room_id
+    assert session_mgr.get_current_room(session_id) == room_id
 
     # Change by id
     cmd = ChangeRoomCommand(username="bob", args={"room": str(room_id)})
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, CommandResponse)
-    assert session_mgr.get_current_room(token) == room_id
+    assert session_mgr.get_current_room(session_id) == room_id
 
 
 @pytest.mark.asyncio
@@ -117,16 +117,16 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
     session_mgr = SessionManager(config, db)
     await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
                      ("carol", "x", b"y", 2))
-    token = await session_mgr.create_session("carol")
+    session_id = await session_mgr.create_session("carol")
 
     # Set current room to Mail room (already exists from system initialization)
-    session_mgr.set_current_room(token, SystemRoomIDs.MAIL_ID)
+    session_mgr.set_current_room(session_id, SystemRoomIDs.MAIL_ID)
 
     processor = CommandProcessor(config, db, session_mgr)
 
     # Missing recipient should fail
     cmd = EnterMessageCommand(username="carol", args={"content": "hi"})
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, ErrorResponse)
     assert resp.code == "missing_recipient"
 
@@ -135,7 +135,7 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
                      ("dave", "x", b"y", 2))
     cmd = EnterMessageCommand(username="carol", args={
                               "content": "hi", "recipient": "dave"})
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
     assert isinstance(resp, CommandResponse)
     assert resp.code == "message_posted"
 
@@ -145,11 +145,11 @@ async def test_read_new_messages_returns_unread(db, config):
     session_mgr = SessionManager(config, db)
     await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
                      ("erin", "x", b"y", 2))
-    token = await session_mgr.create_session("erin")
+    session_id = await session_mgr.create_session("erin")
 
     # Create a room and set as current
     room_id = await Room.create(db, config, 'General', '', False, PermissionLevel.USER, SystemRoomIDs.LOBBY_ID, False)
-    session_mgr.set_current_room(token, room_id)
+    session_mgr.set_current_room(session_id, room_id)
 
     room = Room(db, config, room_id)
     await room.load()
@@ -158,7 +158,7 @@ async def test_read_new_messages_returns_unread(db, config):
 
     processor = CommandProcessor(config, db, session_mgr)
     cmd = ReadNewMessagesCommand(username="erin", args={})
-    resp = await processor.process(token, cmd)
+    resp = await processor.process(session_id, cmd)
 
     assert isinstance(resp, list)
     assert len(resp) == 2

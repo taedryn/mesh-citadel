@@ -16,7 +16,8 @@ async def initialize_database(db_manager, config=None):
         salt BLOB NOT NULL,
         display_name TEXT,
         last_login TIMESTAMP,
-        permission_level INT NOT NULL
+        permission_level INT NOT NULL,
+        status TEXT NOT NULL
     );
     """
 

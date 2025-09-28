@@ -101,7 +101,7 @@ class CLITransportEngine:
 
     async def _handle_client_session(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, client_id: int) -> None:
         """Handle the text communication session with a client."""
-        session = None
+        session_id = None
 
         while True:
             try:
@@ -117,7 +117,7 @@ class CLITransportEngine:
                 logger.debug(f"Client {client_id} sent: {line}")
 
                 # Process the command through BBS system
-                response = await self._process_command(line, session, client_id)
+                response = await self._process_command(line, session_id, client_id)
 
                 # Send response back to client
                 response_line = f"{response}\n"
@@ -125,8 +125,8 @@ class CLITransportEngine:
                 await writer.drain()
 
                 # Update session if command result includes session info
-                if hasattr(response, 'session'):
-                    session = response.session
+                if hasattr(response, 'session_id'):
+                    session_id = response.session_id
 
             except Exception as e:
                 logger.error(f"Error in client {client_id} session: {e}")
@@ -134,17 +134,36 @@ class CLITransportEngine:
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
 
-    async def _process_command(self, command_line: str, session: Optional[Any], client_id: int) -> str:
+    async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> str:
         """Process a command through the BBS command system."""
         try:
-            # Parse the command
-            command = self.text_parser.parse(command_line)
+            # Check if user has an active workflow and handle workflow responses
+            if session_id:
+                workflow_state = self.session_manager.get_workflow(session_id)
+                if workflow_state:
+                    # User is in a workflow - check for special commands first
+                    stripped_input = command_line.strip().lower()
+                    if stripped_input in ['cancel', 'cancel_workflow']:
+                        # Allow canceling workflows with special command
+                        command = self.text_parser.parse_command(command_line)
+                    else:
+                        # Treat all other input as workflow response
+                        from citadel.workflows.types import WorkflowResponse
+                        command = WorkflowResponse(
+                            workflow=workflow_state.workflow_kind,
+                            step=workflow_state.step,
+                            response=command_line.strip()
+                        )
 
-            # Process through command processor
-            result = await self.command_processor.process_command(command, session)
+            # If not in workflow or no session, parse normally
+            if 'command' not in locals():
+                command = self.text_parser.parse_command(command_line)
+
+            # Process through command processor (fix method name)
+            result = await self.command_processor.process(session_id, command)
 
             # Return the result message
-            return result.message
+            return result.text if hasattr(result, 'text') else str(result)
 
         except Exception as e:
             logger.error(

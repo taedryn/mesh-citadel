@@ -35,22 +35,22 @@ def session_mgr():
 @pytest.mark.asyncio
 async def test_sweeper_expires_stale_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
-        token = await session_mgr.create_session("alice")
-        state = session_mgr.validate_session(token)
+        session_id = await session_mgr.create_session("alice")
+        state = session_mgr.validate_session(session_id)
         assert state.username == "alice"
 
         # Advance time past timeout
         frozen.move_to("2025-09-17 00:00:11")
         session_mgr.sweep_expired_sessions()  # Direct call
 
-        assert session_mgr.validate_session(token) is None
+        assert session_mgr.validate_session(session_id) is None
 
 
 @pytest.mark.asyncio
 async def test_sweeper_preserves_active_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
-        token = await session_mgr.create_session("bob")
-        state = session_mgr.validate_session(token)
+        session_id = await session_mgr.create_session("bob")
+        state = session_mgr.validate_session(session_id)
         assert state.username == "bob"
 
         # Advance time just before timeout
@@ -59,5 +59,5 @@ async def test_sweeper_preserves_active_sessions(session_mgr):
         threading.Event().wait(0.1)
 
         # Should still be valid
-        state = session_mgr.validate_session(token)
+        state = session_mgr.validate_session(session_id)
         assert state.username == "bob"
