@@ -232,6 +232,7 @@ class ChangeRoomCommand(BaseCommand):
         current_room = Room(context.db, context.config, state.current_room)
         await current_room.load()
         next_room = await current_room.go_to_room(self.args["room"])
+        log.debug(f'preparing to go to room {self.args["room"]}')
         if not next_room:
             return ErrorResponse(code="no_next_room",
                                  text=f"Room {self.args['room']} not found.")

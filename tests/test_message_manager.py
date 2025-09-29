@@ -4,6 +4,7 @@ import tempfile
 import os
 from datetime import datetime, UTC
 
+from citadel.auth.permissions import PermissionLevel
 from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
 from citadel.user.user import User
@@ -38,10 +39,15 @@ async def db():
     await initialize_database(db_mgr, config)
 
     # Insert test users
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                         ("alice", "hash", b"salt", "Alice", "2025-09-17T00:00:00Z", 2))
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                         ("bob", "hash", b"salt", "Bob", "2025-09-17T00:00:00Z", 2))
+    await User.create(config, db_mgr, "alice", "hash", "salt", "Alice")
+    alice = User(db_mgr, "alice")
+    await alice.load()
+    await alice.set_permission_level(PermissionLevel.USER)
+
+    await User.create(config, db_mgr, "bob", "hash", "salt", "Bob")
+    bob = User(db_mgr, "bob")
+    await bob.load()
+    await bob.set_permission_level(PermissionLevel.USER)
 
     yield db_mgr
 

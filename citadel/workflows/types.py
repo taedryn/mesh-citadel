@@ -17,3 +17,4 @@ class WorkflowResponse:
     workflow: str
     step: int
     response: str
+    flags: dict[str, Any] = field(default_factory=dict)

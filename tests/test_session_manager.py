@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from datetime import datetime, timedelta, UTC
+from citadel.room.room import SystemRoomIDs
 from citadel.session.manager import SessionManager
 from citadel.session.state import WorkflowState
 
@@ -107,7 +108,7 @@ async def test_current_room_helpers(session_mgr):
 
     # Default should be Lobby (or None, depending on your SessionState default)
     room = session_mgr.get_current_room(session_id)
-    assert room in (None, "Lobby")
+    assert room in (None, SystemRoomIDs.LOBBY_ID)
 
     # Change room and verify
     session_mgr.set_current_room(session_id, "TechTalk")

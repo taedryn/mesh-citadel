@@ -90,8 +90,10 @@ async def test_go_next_unread_moves_session(db, config):
 @pytest.mark.asyncio
 async def test_change_room_by_name_and_id(db, config):
     session_mgr = SessionManager(config, db)
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
-                     ("bob", "x", b"y", 2))
+    await User.create(config, db, "bob", "x", "y")
+    bob = User(db, "bob")
+    await bob.load()
+    await bob.set_permission_level(PermissionLevel.USER)
     session_id = await session_mgr.create_session("bob")
 
     # Create a room
@@ -103,6 +105,7 @@ async def test_change_room_by_name_and_id(db, config):
     cmd = ChangeRoomCommand(username="bob", args={"room": "TechTalk"})
     resp = await processor.process(session_id, cmd)
     assert isinstance(resp, CommandResponse)
+    assert not isinstance(resp, ErrorResponse), f'got an error: {resp}'
     assert session_mgr.get_current_room(session_id) == room_id
 
     # Change by id
@@ -115,8 +118,10 @@ async def test_change_room_by_name_and_id(db, config):
 @pytest.mark.asyncio
 async def test_enter_message_requires_recipient_in_mail_room(db, config):
     session_mgr = SessionManager(config, db)
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
-                     ("carol", "x", b"y", 2))
+    await User.create(config, db, "carol", "x", "y")
+    carol = User(db, "carol")
+    await carol.load()
+    await carol.set_permission_level(PermissionLevel.USER)
     session_id = await session_mgr.create_session("carol")
 
     # Set current room to Mail room (already exists from system initialization)
@@ -131,8 +136,10 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
     assert resp.code == "missing_recipient"
 
     # With recipient should succeed
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
-                     ("dave", "x", b"y", 2))
+    await User.create(config, db, "dave", "x", "y")
+    dave = User(db, "dave")
+    await dave.load()
+    await dave.set_permission_level(PermissionLevel.USER)
     cmd = EnterMessageCommand(username="carol", args={
                               "content": "hi", "recipient": "dave"})
     resp = await processor.process(session_id, cmd)
@@ -143,8 +150,10 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
 @pytest.mark.asyncio
 async def test_read_new_messages_returns_unread(db, config):
     session_mgr = SessionManager(config, db)
-    await db.execute("INSERT INTO users (username, password_hash, salt, permission_level) VALUES (?, ?, ?, ?)",
-                     ("erin", "x", b"y", 2))
+    await User.create(config, db, "erin", "x", "y")
+    erin = User(db, "erin")
+    await erin.load()
+    await erin.set_permission_level(PermissionLevel.USER)
     session_id = await session_mgr.create_session("erin")
 
     # Create a room and set as current

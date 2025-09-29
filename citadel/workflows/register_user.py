@@ -31,7 +31,7 @@ class RegisterUserWorkflow(Workflow):
         data = wf_state["data"]
 
         # Cancellation
-        if command.name == "cancel_workflow":
+        if command.flags.get("cancel_workflow"):
             processor.sessions.clear_workflow(session_id)
             return CommandResponse(
                 success=True,

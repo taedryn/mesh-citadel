@@ -61,10 +61,25 @@ async def setup_rooms(db):
 
 @pytest_asyncio.fixture
 async def setup_users(db):
-    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('twit', 1, 'hash', 'salt')")
-    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('user', 2, 'hash', 'salt')")
-    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('aide', 3, 'hash', 'salt')")
-    await db.execute("INSERT INTO users (username, permission_level, password_hash, salt) VALUES ('sysop', 4, 'hash', 'salt')")
+    await User.create(config, db, "twit", "pw", "salt")
+    twit = User(db, "twit")
+    await twit.load()
+    await twit.set_permission_level(PermissionLevel.TWIT)
+
+    await User.create(config, db, "user", "pw", "salt")
+    user = User(db, "user")
+    await user.load()
+    await user.set_permission_level(PermissionLevel.USER)
+
+    await User.create(config, db, "aide", "pw", "salt")
+    aide = User(db, "aide")
+    await aide.load()
+    await aide.set_permission_level(PermissionLevel.AIDE)
+
+    await User.create(config, db, "sysop", "pw", "salt")
+    sysop = User(db, "sysop")
+    await sysop.load()
+    await sysop.set_permission_level(PermissionLevel.SYSOP)
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,8 @@ from datetime import datetime, UTC
 
 from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
-from citadel.user.user import User
+from citadel.user.user import User, UserStatus
+from citadel.auth.permissions import PermissionLevel
 
 
 class DummyConfig:
@@ -35,10 +36,8 @@ async def db():
     await initialize_database(db_mgr, config)
 
     # Insert test users
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                         ("alice", "hash1", b"salt1", "Alice", "2025-09-17T00:00:00Z", 2))
-    await db_mgr.execute("INSERT INTO users (username, password_hash, salt, display_name, last_login, permission_level) VALUES (?, ?, ?, ?, ?, ?)",
-                         ("bob", "hash2", b"salt2", "Bob", "2025-09-17T00:00:00Z", 2))
+    await User.create(config, db_mgr, "alice", "hash1", "salt1", "Alice")
+    await User.create(config, db_mgr, "bob", "hash2", "salt2", "Bob")
 
     yield db_mgr
 
@@ -55,8 +54,7 @@ async def test_user_loads_correctly(db):
     user = User(db, "alice")
     await user.load()
     assert user.display_name == "Alice"
-    assert user.permission_level.value == 2
-    assert user.last_login == "2025-09-17T00:00:00Z"
+    assert user.permission_level.value == PermissionLevel.UNVERIFIED
 
 
 @pytest.mark.asyncio

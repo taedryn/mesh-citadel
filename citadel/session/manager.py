@@ -5,6 +5,7 @@ import threading
 
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
+from citadel.room.room import SystemRoomIDs
 from citadel.session.state import SessionState, WorkflowState
 
 log = logging.getLogger(__name__)
@@ -21,7 +22,8 @@ class SessionManager:
         self._start_sweeper()
 
     def create_session_state(self, username: str) -> SessionState:
-        return SessionState(username=username, current_room="Lobby")
+        return SessionState(username=username,
+                            current_room=SystemRoomIDs.LOBBY_ID)
 
     async def create_session(self, username: str) -> str:
         if not await self._user_exists(username):
