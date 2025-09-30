@@ -12,8 +12,11 @@ from typing import Dict, Any, Optional
 
 from citadel.config import Config
 from citadel.session.manager import SessionManager
+from citadel.session.state import WorkflowState
 from citadel.commands.processor import CommandProcessor
+from citadel.commands.responses import CommandResponse
 from citadel.transport.parser import TextParser
+from citadel.workflows.types import WorkflowResponse
 
 
 logger = logging.getLogger(__name__)
@@ -89,6 +92,11 @@ class CLITransportEngine:
             writer.write(b"CONNECTED\n")
             await writer.drain()
 
+            # Send welcome message from config
+            welcome = self.config.bbs.get("welcome_message", "Welcome to Mesh-Citadel.")
+            writer.write(f"{welcome}\n".encode('utf-8'))
+            await writer.drain()
+
             # Handle client session
             await self._handle_client_session(reader, writer, client_id)
 
@@ -109,26 +117,62 @@ class CLITransportEngine:
                 data = await reader.readline()
                 if not data:
                     break
+            except Exception as e:
+                import pdb; pdb.set_trace()
+                logger.error(f"Error in client {client_id} session: {e}")
+                error_msg = f"ERROR: {str(e)}\n"
+                writer.write(error_msg.encode('utf-8'))
+                await writer.drain()
 
+            try:
                 line = data.decode('utf-8').strip()
                 if not line:
                     continue
+            except Exception as e:
+                import pdb; pdb.set_trace()
+                logger.error(f"Error in client {client_id} session: {e}")
+                error_msg = f"ERROR: {str(e)}\n"
+                writer.write(error_msg.encode('utf-8'))
+                await writer.drain()
 
                 logger.debug(f"Client {client_id} sent: {line}")
 
+            try:
                 # Process the command through BBS system
                 response = await self._process_command(line, session_id, client_id)
-
-                # Send response back to client
-                response_line = f"{response}\n"
-                writer.write(response_line.encode('utf-8'))
+            except Exception as e:
+                import pdb; pdb.set_trace()
+                logger.error(f"Error in client {client_id} session: {e}")
+                error_msg = f"ERROR: {str(e)}\n"
+                writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
 
-                # Update session if command result includes session info
-                if hasattr(response, 'session_id'):
-                    session_id = response.session_id
+            try:
+                if isinstance(response, CommandResponse):
+                    lines = [response.text]
+                    if response.payload and "session_id" in response.payload:
+                        session_id = response.payload["session_id"]
+                        lines.append(f"SESSION_ID: {session_id}")
+                    response_line = "\n".join(lines) + "\n"
+                else:
+                    response_line = f"{response}\n"
 
+                writer.write(response_line.encode('utf-8'))
+                await writer.drain()
             except Exception as e:
+                logger.error(f"Error sending response to client {client_id}: {e}")
+                error_msg = f"ERROR: {str(e)}\n"
+                writer.write(error_msg.encode('utf-8'))
+                await writer.drain()
+
+
+            try:
+                # Update session if command result includes session info
+                if isinstance(response, CommandResponse) and response.payload:
+                    session_id = response.payload.get("session_id", session_id)
+                    await writer.drain()
+            except Exception as e:
+                import pdb; pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -137,6 +181,22 @@ class CLITransportEngine:
     async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> str:
         """Process a command through the BBS command system."""
         try:
+            if command_line.startswith("__workflow:login:"):
+                nodename = command_line.split(":", 2)[2]
+                session_id = self.session_manager.create_provisional_session()
+                self.session_manager.set_workflow(
+                    session_id,
+                    WorkflowState(kind="login", step=1, data={"nodename": nodename})
+                )
+                #return f"SESSION_ID: {session_id}"
+                return CommandResponse(
+                    success=True,
+                    code="workflow_started",
+                    text="Starting login workflow...",
+                    payload={"session_id": session_id}
+                )
+
+
             # Check if user has an active workflow and handle workflow responses
             if session_id:
                 workflow_state = self.session_manager.get_workflow(session_id)
@@ -150,7 +210,7 @@ class CLITransportEngine:
                         # Treat all other input as workflow response
                         from citadel.workflows.types import WorkflowResponse
                         command = WorkflowResponse(
-                            workflow=workflow_state.workflow_kind,
+                            workflow=workflow_state.kind,
                             step=workflow_state.step,
                             response=command_line.strip()
                         )

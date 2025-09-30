@@ -23,6 +23,8 @@ bbs:
   3. No illegal content.
   4. This is a welcoming, friendly community, and we expect everyone to respect all other members.
   5. The sysop and aides are in charge, and you agree to abide by their decisions."
+  welcome_message: "Welcome to Mesh-Citadel. This is a decentralized bulletin board system. Please log in to continue."
+
 
 auth:
   session_timeout: 3600             # seconds

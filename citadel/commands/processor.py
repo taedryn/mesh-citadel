@@ -26,6 +26,9 @@ class CommandProcessor:
         state = self.sessions.validate_session(session_id)
         if not state:
             return ErrorResponse(code="invalid_session", text="Session expired or invalid.")
+        if not state.logged_in:
+            return ErrorResponse(code="not_logged_in", text="You must log in to use commands.")
+
         self.sessions.touch_session(session_id)
 
         # 2. Workflow check

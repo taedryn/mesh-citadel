@@ -13,6 +13,8 @@ class WorkflowState:
 
 @dataclass
 class SessionState:
-    username: str
-    current_room: Optional[str] = None
+    username: Optional[str] = None
+    current_room: Optional[int] = None
     workflow: Optional[WorkflowState] = None
+    logged_in: bool = False
+

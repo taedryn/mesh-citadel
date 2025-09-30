@@ -136,3 +136,29 @@ class SessionManager:
         """Set callback function for sending logout notifications.
         Callback should accept (username: str, message: str) -> None"""
         self.notification_callback = callback
+
+    # --- helpers for working with the pre-login state ---
+
+    def create_provisional_session(self) -> str:
+        """Create a session not yet tied to a user."""
+        session_id = secrets.token_urlsafe(24)
+        state = SessionState(username=None, current_room=None, logged_in=False)
+        with self.lock:
+            self.sessions[session_id] = (state, datetime.now(UTC))
+        log.info(f"Provisional session created: {session_id}")
+        return session_id
+
+    def mark_username(self, session_id: str, username: str):
+        """Bind a username to a session once validated."""
+        state = self.validate_session(session_id)
+        if state:
+            state.username = username
+            log.info(f"Username '{username}' bound to session '{session_id}'")
+
+    def mark_logged_in(self, session_id: str):
+        """Mark a session as authenticated."""
+        state = self.validate_session(session_id)
+        if state:
+            state.logged_in = True
+            log.info(f"Session '{session_id}' marked as logged in")
+

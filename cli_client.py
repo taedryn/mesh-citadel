@@ -25,15 +25,16 @@ class MeshCitadelCLI:
     BBS commands to the remote server.
     """
 
-    def __init__(self, socket_path: Path, node_name: Optional[str] = None):
+    def __init__(self, socket_path: Path, node_id: Optional[str] = None):
         self.socket_path = socket_path
-        self.node_name = node_name
+        self.node_id = node_id
+        self.session_id = None
         self.reader = None
         self.writer = None
-        self.connected = False
+        self.socket_connected = False
         self.logged_in = False
 
-    async def connect(self) -> bool:
+    async def socket_connect(self) -> bool:
         """Connect to the BBS server via Unix socket."""
         try:
             self.reader, self.writer = await asyncio.open_unix_connection(str(self.socket_path))
@@ -41,7 +42,7 @@ class MeshCitadelCLI:
             # Read connection acknowledgment
             response = await self.reader.readline()
             if response.strip() == b"CONNECTED":
-                self.connected = True
+                self.socket_connected = True
                 print("Connected to mesh-citadel BBS")
                 return True
             else:
@@ -57,18 +58,18 @@ class MeshCitadelCLI:
         if self.writer:
             self.writer.close()
             await self.writer.wait_closed()
-        self.connected = False
+        self.socket_connected = False
         self.logged_in = False
 
     async def run(self):
         """Run the CLI client main loop."""
-        if not await self.connect():
+        if not await self.socket_connect():
             return
 
         try:
-            # Handle automatic login if node name provided
-            if self.node_name:
-                await self._auto_login()
+            # Handle automatic login if node_id name provided
+            if self.node_id:
+                await self._auto_connect()
 
             # Main interaction loop
             await self._interaction_loop()
@@ -76,36 +77,20 @@ class MeshCitadelCLI:
         finally:
             await self.disconnect()
 
-    async def _auto_login(self):
-        """Attempt automatic login with provided node name."""
-        print(f"Attempting to login as {self.node_name}...")
-
-        # Try login first
-        response = await self._send_command(f"user login {self.node_name}")
-        if "success" in response.lower() or "logged in" in response.lower():
-            self.logged_in = True
-            print(f"Logged in as {self.node_name}")
-        else:
-            # Login failed, ask if user wants to create account
-            create = input(f"Node {self.node_name} not found. Create new node? (y/n): ").lower()
-            if create == 'y':
-                response = await self._send_command(f"user create {self.node_name}")
-                if "success" in response.lower() or "created" in response.lower():
-                    self.logged_in = True
-                    print(f"Created and logged in as {self.node_name}")
-                else:
-                    print(f"Failed to create node: {response}")
+    async def _auto_connect(self):
+        response = await self.bbs_connect()
+        print(response)
 
     async def _interaction_loop(self):
         """Main interaction loop for CLI commands."""
         print("\nWelcome to mesh-citadel CLI")
         print("Type '/help' for local commands or 'help' for BBS commands")
 
-        while self.connected:
+        while self.socket_connected:
             try:
                 # Show appropriate prompt
                 if self.logged_in:
-                    prompt = f"{self.node_name}> "
+                    prompt = f"{self.node_id}> "
                 else:
                     prompt = "guest> "
 
@@ -119,8 +104,8 @@ class MeshCitadelCLI:
                         break  # Exit requested
                 else:
                     # Handle BBS commands
-                    if not self.logged_in and not command.startswith('user'):
-                        print("You must log in first. Use '/login <nodename>' or '/create <nodename>'")
+                    if not self.logged_in:
+                        print("You must connect first. Use '/connect <node_id>'")
                         continue
 
                     response = await self._send_command(command)
@@ -148,40 +133,29 @@ class MeshCitadelCLI:
 
         if cmd == 'help':
             print("Local CLI commands:")
-            print("  /help           - Show this help")
-            print("  /login <node>   - Login as existing node")
-            print("  /create <node>  - Create new node")
-            print("  /quit or /exit  - Exit CLI")
-            print("\nFor BBS commands, type 'help' (without /)")
+            print("  /help             - Show this help")
+            print("  /connect <node_id>   - Connect to BBS as a node_id")
+            print("  /info             - Connection information")
+            print("  /quit             - Exit CLI")
+            print("\nFor BBS commands, type them directly after connecting")
 
-        elif cmd == 'login':
+        elif cmd == 'connect':
             if not args:
-                print("Usage: /login <nodename>")
+                print("Usage: /connect <node_id>")
                 return True
 
-            nodename = args[0]
-            response = await self._send_command(f"user login {nodename}")
-            if "success" in response.lower() or "logged in" in response.lower():
-                self.logged_in = True
-                self.node_name = nodename
-                print(f"Logged in as {nodename}")
-            else:
-                print(f"Login failed: {response}")
+            self.node_id = args[0]
+            response = await self.bbs_connect()
+            print(response)
 
-        elif cmd == 'create':
-            if not args:
-                print("Usage: /create <nodename>")
-                return True
-
-            nodename = args[0]
-            response = await self._send_command(f"user create {nodename}")
-            if "success" in response.lower() or "created" in response.lower():
-                self.logged_in = True
-                self.node_name = nodename
-                print(f"Created and logged in as {nodename}")
-            else:
-                print(f"Failed to create node: {response}")
-
+        elif cmd == 'info':
+            print(f'Node ID: {self.node_id}')
+            print(f'Session ID: {self.session_id}')
+            # print out connection info
+            # * node id
+            # * session id
+            # * username
+            # * last activity time
         elif cmd in ['quit', 'exit']:
             print("Goodbye!")
             return False
@@ -201,10 +175,20 @@ class MeshCitadelCLI:
 
             # Read response
             response = await self.reader.readline()
+            decoded = response.decode('utf-8').strip()
+            if decoded.startswith('ERROR'):
+                print(decoded)
+            elif decoded.startswith('SESSION_ID'):
+                print(decoded)
+                self.session_id = decoded.split(': ')[1]
             return response.decode('utf-8').strip()
 
         except Exception as e:
             return f"Communication error: {e}"
+
+    async def bbs_connect(self) -> None:
+        response = await self._send_command(f"__workflow:login:{self.node_id}")
+        return response
 
 
 async def main():
