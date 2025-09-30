@@ -1,10 +1,52 @@
+import os
 import pytest
+import pytest_asyncio
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
+from citadel.db.manager import DatabaseManager
+from citadel.db.initializer import initialize_database
 from citadel.workflows.register_user import RegisterUserWorkflow
 from citadel.workflows.types import WorkflowResponse
 from citadel.commands.responses import CommandResponse
 from citadel.user.user import UserStatus
+
+
+class DummyConfig:
+    def __init__(self, path):
+        self.database = {'db_path': path}
+        self.logging = {
+            'log_file_path': '/tmp/citadel.log', 'log_level': 'DEBUG'}
+        self.bbs = {
+            'registration': {
+                'terms_required': True,
+                'terms': 'here are some terms',
+            },
+            'room_names': {
+                'lobby': 'Lobby',
+                'mail': 'Mail',
+                'aides': 'Aides',
+                'sysop': 'Sysop',
+                'system': 'System'
+            }
+        }
+
+config = None
+
+@pytest_asyncio.fixture(scope="function")
+async def db():
+    global config
+    temp_db = tempfile.NamedTemporaryFile(delete=False)
+    config = DummyConfig(temp_db.name)
+    DatabaseManager._instance = None
+    db_mgr = DatabaseManager(config)
+    await db_mgr.start()
+    await initialize_database(db_mgr, config)
+
+    yield db_mgr
+
+    await db_mgr.shutdown()
+    os.unlink(temp_db.name)
 
 
 @pytest.fixture
@@ -21,13 +63,16 @@ def mock_db():
 
 
 @pytest.fixture
-def mock_config():
+def mock_config(db_file):
     return {
         "bbs": {
             "registration": {
                 "terms_required": True,
                 "terms": "To register with this system, you must agree to the following conditions:\n1. Be kind.\n2. No illegal content."
             }
+        },
+        "database": {
+            "db_path": db_file,
         }
     }
 
@@ -42,12 +87,15 @@ def mock_sessions():
 
 
 @pytest.fixture
-def processor(mock_config, mock_db, mock_sessions):
+def processor(db, mock_sessions):
+    global config
     class MockProcessor:
-        config = mock_config
-        db = mock_db
-        sessions = mock_sessions
-    return MockProcessor()
+        def __init__(self, db, config, sessions):
+            self.db = db
+            self.config = config
+            self.sessions = sessions
+    mock = MockProcessor(db, config, mock_sessions)
+    return mock
 
 
 @pytest.fixture
