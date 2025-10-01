@@ -148,17 +148,23 @@ class CLITransportEngine:
                 await writer.drain()
 
             try:
+                # Persist session_id BEFORE printing
+                if isinstance(response, CommandResponse) and response.payload:
+                    if "session_id" in response.payload:
+                        session_id = response.payload["session_id"]
+
+                # Format response
                 if isinstance(response, CommandResponse):
                     lines = [response.text]
                     if response.payload and "session_id" in response.payload:
-                        session_id = response.payload["session_id"]
-                        lines.append(f"SESSION_ID: {session_id}")
+                        lines.append(f"SESSION_ID: {response.payload['session_id']}")
                     response_line = "\n".join(lines) + "\n"
                 else:
                     response_line = f"{response}\n"
 
                 writer.write(response_line.encode('utf-8'))
                 await writer.drain()
+
             except Exception as e:
                 logger.error(f"Error sending response to client {client_id}: {e}")
                 error_msg = f"ERROR: {str(e)}\n"

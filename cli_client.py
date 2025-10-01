@@ -33,6 +33,7 @@ class MeshCitadelCLI:
         self.writer = None
         self.socket_connected = False
         self.logged_in = False
+        self.welcome = ""
 
     async def socket_connect(self) -> bool:
         """Connect to the BBS server via Unix socket."""
@@ -44,6 +45,11 @@ class MeshCitadelCLI:
             if response.strip() == b"CONNECTED":
                 self.socket_connected = True
                 print("Connected to mesh-citadel BBS")
+
+                # welcome message
+                welcome = await self.reader.readline()
+                self.welcome = welcome.decode('utf-8').strip()
+
                 return True
             else:
                 print(f"Unexpected response from server: {response}")
@@ -146,6 +152,7 @@ class MeshCitadelCLI:
 
             self.node_id = args[0]
             response = await self.bbs_connect()
+            print(self.welcome)
             print(response)
 
         elif cmd == 'info':
@@ -167,21 +174,28 @@ class MeshCitadelCLI:
         return True
 
     async def _send_command(self, command: str) -> str:
-        """Send a command to the BBS server and return the response."""
+        """Send a command to the BBS server and return the full response."""
         try:
             # Send command
             self.writer.write(f"{command}\n".encode('utf-8'))
             await self.writer.drain()
 
-            # Read response
-            response = await self.reader.readline()
-            decoded = response.decode('utf-8').strip()
-            if decoded.startswith('ERROR'):
-                print(decoded)
-            elif decoded.startswith('SESSION_ID'):
-                print(decoded)
-                self.session_id = decoded.split(': ')[1]
-            return response.decode('utf-8').strip()
+            # Read all response lines until a short pause
+            lines = []
+            while True:
+                try:
+                    line = await asyncio.wait_for(self.reader.readline(), timeout=0.2)
+                    if not line:
+                        break
+                    decoded = line.decode('utf-8').strip()
+                    if decoded.startswith('SESSION_ID:'):
+                        self.session_id = decoded.split(': ', 1)[1]
+                    else:
+                        lines.append(decoded)
+                except asyncio.TimeoutError:
+                    break
+
+            return "\n".join(lines)
 
         except Exception as e:
             return f"Communication error: {e}"
