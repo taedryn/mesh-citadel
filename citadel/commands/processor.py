@@ -1,7 +1,9 @@
 # citadel/command/processor.py
 
 import logging
+
 from citadel.auth.checker import is_allowed, permission_denied
+from citadel.auth.login_handler import LoginHandler
 from citadel.commands.base import CommandContext
 from citadel.commands.responses import MessageResponse, CommandResponse, ErrorResponse
 from citadel.message.manager import MessageManager
@@ -20,6 +22,7 @@ class CommandProcessor:
         self.db = db
         self.sessions = session_mgr
         self.msg_mgr = MessageManager(config, db)
+        self.auth = LoginHandler(db)
 
     async def process(self, session_id: str, command) -> CommandResponse | MessageResponse:
         # 1. Validate session

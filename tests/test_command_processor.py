@@ -67,8 +67,9 @@ async def session_mgr(config, db):
 
 @pytest.fixture
 def processor(config, db, session_mgr, monkeypatch):
-    mgr, _ = session_mgr
+    mgr, session_id = session_mgr
     proc = CommandProcessor(config, db, mgr)
+    proc.sessions.mark_logged_in(session_id)
 
     # Patch User.load to always set permission_level high enough
     # so we're testing commands, not permissions

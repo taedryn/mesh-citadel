@@ -118,6 +118,7 @@ async def test_help_menu_generation(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Create help command
     help_cmd = HelpCommand(username='testuser', args={})
@@ -142,6 +143,7 @@ async def test_specific_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Test help for a specific implemented command
     help_cmd = HelpCommand(username='testuser', args={"command": "G"})
@@ -163,6 +165,7 @@ async def test_unimplemented_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Test help for an unimplemented command
     help_cmd = HelpCommand(username='testuser', args={"command": "D"})
@@ -184,6 +187,7 @@ async def test_unknown_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Test help for unknown command
     help_cmd = HelpCommand(username='testuser', args={"command": "Z"})
@@ -201,6 +205,7 @@ async def test_menu_command_works_same_as_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Test both commands with same args
     help_cmd = HelpCommand(username='testuser', args={})

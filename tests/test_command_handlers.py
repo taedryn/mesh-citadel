@@ -79,6 +79,7 @@ async def test_go_next_unread_moves_session(db, config):
     await general.post_message("alice", "hello world")
 
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
     cmd = GoNextUnreadCommand(username="alice", args={})
     resp = await processor.process(session_id, cmd)
 
@@ -100,6 +101,7 @@ async def test_change_room_by_name_and_id(db, config):
     room_id = await Room.create(db, config, 'TechTalk', '', False, PermissionLevel.USER, SystemRoomIDs.LOBBY_ID, False)
 
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Change by name
     cmd = ChangeRoomCommand(username="bob", args={"room": "TechTalk"})
@@ -128,6 +130,7 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
     session_mgr.set_current_room(session_id, SystemRoomIDs.MAIL_ID)
 
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
 
     # Missing recipient should fail
     cmd = EnterMessageCommand(username="carol", args={"content": "hi"})
@@ -166,6 +169,7 @@ async def test_read_new_messages_returns_unread(db, config):
     await room.post_message("erin", "second")
 
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_logged_in(session_id)
     cmd = ReadNewMessagesCommand(username="erin", args={})
     resp = await processor.process(session_id, cmd)
 
