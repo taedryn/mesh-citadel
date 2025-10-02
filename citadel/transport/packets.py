@@ -20,6 +20,8 @@ class ToUser:
     text: str
     hints: Dict[str, Any] = field(default_factory=dict)
     message: Optional[MessageResponse] = None
+    is_error: bool = False
+    error_code: Optional[str] = None
 
 
 @dataclass

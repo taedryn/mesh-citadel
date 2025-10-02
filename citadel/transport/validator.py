@@ -6,7 +6,7 @@ from typing import Optional
 from citadel.commands.base import BaseCommand
 from citadel.commands.responses import ErrorResponse
 from citadel.session.manager import SessionManager
-from citadel.transport.packets import FromUser, FromUserType
+from citadel.transport.packets import FromUser, FromUserType, ToUser
 
 log = logging.getLogger(__name__)
 
@@ -17,21 +17,23 @@ class InputValidator:
     def __init__(self, session_manager: SessionManager):
         self.session_manager = session_manager
 
-    def validate(self, packet: FromUser) -> Optional[ErrorResponse]:
+    def validate(self, packet: FromUser) -> Optional[ToUser]:
         """
         Validate a FromUser packet against session expectations.
 
         Returns:
             None if validation passes
-            ErrorResponse if validation fails
+            ToUser error packet if validation fails
         """
         # Validate session exists
         session_state = self.session_manager.validate_session(packet.session_id)
         if not session_state:
             log.error(f"Input validator: Invalid session ID {packet.session_id}")
-            return ErrorResponse(
-                code="invalid_session",
-                text="Session expired or invalid."
+            return ToUser(
+                session_id=packet.session_id,
+                text="Session expired or invalid.",
+                is_error=True,
+                error_code="invalid_session"
             )
 
         # Determine expected input type based on session state
@@ -44,9 +46,11 @@ class InputValidator:
                 f"Transport error: Expected {expected_type} but received {packet.payload_type}. "
                 f"Session: {packet.session_id}, Workflow: {workflow_info}"
             )
-            return ErrorResponse(
-                code="transport_error",
-                text=f"Internal error: Transport sent {packet.payload_type} but session expects {expected_type}."
+            return ToUser(
+                session_id=packet.session_id,
+                text=f"Internal error: Transport sent {packet.payload_type} but session expects {expected_type}.",
+                is_error=True,
+                error_code="transport_error"
             )
 
         # Validate payload structure matches type
@@ -56,9 +60,11 @@ class InputValidator:
                 f"Transport error: Invalid payload structure for {packet.payload_type}. "
                 f"Session: {packet.session_id}, Error: {validation_error}"
             )
-            return ErrorResponse(
-                code="transport_error",
-                text=f"Internal error: Invalid {packet.payload_type} format from transport."
+            return ToUser(
+                session_id=packet.session_id,
+                text=f"Internal error: Invalid {packet.payload_type} format from transport.",
+                is_error=True,
+                error_code="transport_error"
             )
 
         return None  # Validation passed
