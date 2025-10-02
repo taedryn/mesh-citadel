@@ -17,4 +17,3 @@ class SessionState:
     current_room: Optional[int] = None
     workflow: Optional[WorkflowState] = None
     logged_in: bool = False
-

@@ -493,4 +493,3 @@ class FastForwardCommand(BaseCommand):
     short_text = "Fast-forward"
     help_text = "Fast-forward to the latest message in the current room, skipping over unread messages. This resets your last-read pointer to the latest message."
     arg_schema = {}
-

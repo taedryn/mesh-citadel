@@ -1,6 +1,6 @@
 from citadel.workflows.base import Workflow
 from citadel.workflows.registry import register
-from citadel.commands.responses import CommandResponse, ErrorResponse
+from citadel.transport.packets import ToUser
 from citadel.session.state import WorkflowState
 from citadel.user.user import User
 
@@ -19,29 +19,29 @@ class LoginWorkflow(Workflow):
                 session_id,
                 WorkflowState(kind=self.kind, step=2, data=data)
             )
-            return CommandResponse(
-                success=True,
-                code="prompt_username",
-                text="Enter your username:"
+            return ToUser(
+                session_id=session_id,
+                text="Enter your username:",
+                hints={"type": "text", "workflow": self.kind, "step": 2}
             )
 
         elif step == 2:
             # Store username and prompt for password
-            data["username"] = command.text.strip()
+            data["username"] = command
             processor.sessions.set_workflow(
                 session_id,
                 WorkflowState(kind=self.kind, step=3, data=data)
             )
-            return CommandResponse(
-                success=True,
-                code="prompt_password",
-                text="Enter your password:"
+            return ToUser(
+                session_id=session_id,
+                text="Enter your password:",
+                hints={"type": "password", "workflow": self.kind, "step": 3}
             )
 
         elif step == 3:
             # Attempt authentication
             username = data.get("username")
-            password = command.text.strip()
+            password = command
 
             user = await processor.auth.authenticate(username, password)
             if not user:
@@ -49,23 +49,25 @@ class LoginWorkflow(Workflow):
                     session_id,
                     WorkflowState(kind=self.kind, step=2, data={})
                 )
-                return CommandResponse(
-                    success=False,
-                    code="login_failed",
-                    text="Login failed. Try again.\nEnter your username:"
+                return ToUser(
+                    session_id=session_id,
+                    text="Login failed. Try again.\nEnter your username:",
+                    hints={"type": "text", "workflow": self.kind, "step": 2},
+                    is_error=True,
+                    error_code="login_failed"
                 )
 
             processor.sessions.mark_username(session_id, username)
             processor.sessions.mark_logged_in(session_id)
             processor.sessions.clear_workflow(session_id)
-            return CommandResponse(
-                success=True,
-                code="login_success",
+            return ToUser(
+                session_id=session_id,
                 text=f"Welcome, {username}! You are now logged in."
             )
 
-        return ErrorResponse(
-            code="invalid_login_step",
-            text=f"Invalid login step: {step}"
+        return ToUser(
+            session_id=session_id,
+            text=f"Invalid login step: {step}",
+            is_error=True,
+            error_code="invalid_login_step"
         )
-

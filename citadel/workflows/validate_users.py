@@ -2,7 +2,7 @@
 
 from citadel.workflows.base import Workflow
 from citadel.workflows.registry import register
-from citadel.commands.responses import CommandResponse, ErrorResponse
+from citadel.transport.packets import ToUser
 
 
 @register
@@ -10,11 +10,21 @@ class ValidateUsersWorkflow(Workflow):
     kind = "validate_users"
 
     async def handle(self, processor, session_id, state, command, wf_state):
-        if command.name == "approve":
+        if command == "approve":
             processor.sessions.clear_workflow(session_id)
-            return CommandResponse(success=True, code="user_validated", text="User approved.")
-        elif command.name == "reject":
+            return ToUser(
+                session_id=session_id,
+                text="User approved."
+            )
+        elif command == "reject":
             processor.sessions.clear_workflow(session_id)
-            return CommandResponse(success=True, code="user_rejected", text="User rejected.")
-        return ErrorResponse(code="invalid_workflow_command",
-                             text=f"Command {command.name} not valid in workflow {self.kind}")
+            return ToUser(
+                session_id=session_id,
+                text="User rejected."
+            )
+        return ToUser(
+            session_id=session_id,
+            text=f"Command '{command}' not valid in workflow {self.kind}",
+            is_error=True,
+            error_code="invalid_workflow_command"
+        )

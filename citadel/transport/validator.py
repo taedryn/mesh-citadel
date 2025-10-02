@@ -26,9 +26,11 @@ class InputValidator:
             ToUser error packet if validation fails
         """
         # Validate session exists
-        session_state = self.session_manager.validate_session(packet.session_id)
+        session_state = self.session_manager.validate_session(
+            packet.session_id)
         if not session_state:
-            log.error(f"Input validator: Invalid session ID {packet.session_id}")
+            log.error(
+                f"Input validator: Invalid session ID {packet.session_id}")
             return ToUser(
                 session_id=packet.session_id,
                 text="Session expired or invalid.",
@@ -54,7 +56,8 @@ class InputValidator:
             )
 
         # Validate payload structure matches type
-        validation_error = self._validate_payload_structure(packet.payload_type, packet.payload)
+        validation_error = self._validate_payload_structure(
+            packet.payload_type, packet.payload)
         if validation_error:
             log.error(
                 f"Transport error: Invalid payload structure for {packet.payload_type}. "

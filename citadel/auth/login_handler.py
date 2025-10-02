@@ -31,4 +31,3 @@ class LoginHandler:
         # Return user object
         user = User(self.db, username)
         return await user.load()
-

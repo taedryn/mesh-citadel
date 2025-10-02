@@ -8,8 +8,10 @@ PBKDF2_ITERATIONS = 100_000
 HASH_LENGTH = 64
 SALT_LENGTH = 16
 
+
 def generate_salt() -> bytes:
     return os.urandom(SALT_LENGTH)
+
 
 def hash_password(password: str, salt: bytes) -> str:
     dk = hashlib.pbkdf2_hmac(
@@ -21,7 +23,7 @@ def hash_password(password: str, salt: bytes) -> str:
     )
     return base64.b64encode(dk).decode("utf-8")
 
+
 def verify_password(password: str, salt: bytes, stored_hash: str) -> bool:
     computed = hash_password(password, salt)
     return computed == stored_hash
-
