@@ -69,13 +69,18 @@ class CommandProcessor:
             if packet.payload_type.value == "workflow_response":
                 return await handler.handle(self, session_id, state, packet.payload, wf)
             else:
-                # Unexpected: got command packet while in workflow
-                return ToUser(
-                    session_id=session_id,
-                    text="Cannot execute commands while in a workflow.",
-                    is_error=True,
-                    error_code="workflow_active"
-                )
+                # Got command packet while in workflow - only allow cancel command
+                command = packet.payload
+                if command.name == "cancel":
+                    # Allow cancel command to execute even in workflow
+                    pass  # Continue to regular command processing below
+                else:
+                    return ToUser(
+                        session_id=session_id,
+                        text="Cannot execute commands while in a workflow. Type 'cancel' to exit the workflow.",
+                        is_error=True,
+                        error_code="workflow_active"
+                    )
 
         # 5. Handle regular commands
         if packet.payload_type.value != "command":
@@ -98,8 +103,7 @@ class CommandProcessor:
 
         if not is_allowed(command.name, user, room):
             print('processor is denying this one')
-            # permission_denied will need to be updated to return ToUser - this will break temporarily
-            return permission_denied(command.name, user, room)
+            return permission_denied(session_id, command.name, user, room)
 
         # 6. Execute command via its run method
         try:

@@ -28,3 +28,11 @@ class ValidateUsersWorkflow(Workflow):
             is_error=True,
             error_code="invalid_workflow_command"
         )
+
+    async def cleanup(self, processor, session_id, wf_state):
+        """Clean up validate users workflow when cancelled.
+
+        This workflow doesn't create persistent state, so no cleanup needed.
+        """
+        # No persistent state to clean up
+        pass

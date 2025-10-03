@@ -1,8 +1,12 @@
+import logging
+
 from citadel.workflows.base import Workflow
 from citadel.workflows.registry import register
 from citadel.transport.packets import ToUser
 from citadel.session.state import WorkflowState
 from citadel.user.user import User
+
+log = logging.getLogger(__name__)
 
 
 @register
@@ -71,3 +75,15 @@ class LoginWorkflow(Workflow):
             is_error=True,
             error_code="invalid_login_step"
         )
+
+    async def cleanup(self, processor, session_id, wf_state):
+        """Clean up login workflow when cancelled.
+
+        Resets session to anonymous state if username was bound during login attempt.
+        """
+        data = wf_state.data
+
+        # If username was bound to session during login, reset to anonymous
+        if "username" in data:
+            processor.sessions.mark_username(session_id, None)
+            log.info(f"Reset session '{session_id}' to anonymous state after login cancellation")

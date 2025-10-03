@@ -152,21 +152,8 @@ class CLITransportEngine:
                 await writer.drain()
 
             try:
-                # Persist session_id BEFORE printing
-                if isinstance(response, CommandResponse) and response.payload:
-                    if "session_id" in response.payload:
-                        session_id = response.payload["session_id"]
-
-                # Format response
-                if isinstance(response, CommandResponse):
-                    lines = [response.text]
-                    if response.payload and "session_id" in response.payload:
-                        lines.append(
-                            f"SESSION_ID: {response.payload['session_id']}")
-                    response_line = "\n".join(lines) + "\n"
-                else:
-                    response_line = f"{response}\n"
-
+                # Response is now a formatted string from _process_command
+                response_line = f"{response}\n"
                 writer.write(response_line.encode('utf-8'))
                 await writer.drain()
 
@@ -177,18 +164,8 @@ class CLITransportEngine:
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
 
-            try:
-                # Update session if command result includes session info
-                if isinstance(response, CommandResponse) and response.payload:
-                    session_id = response.payload.get("session_id", session_id)
-                    await writer.drain()
-            except Exception as e:
-                import pdb
-                pdb.set_trace()
-                logger.error(f"Error in client {client_id} session: {e}")
-                error_msg = f"ERROR: {str(e)}\n"
-                writer.write(error_msg.encode('utf-8'))
-                await writer.drain()
+            # Session management is now handled by the session manager directly
+            # No need to extract session_id from response payload
 
     async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> str:
         """Process a command through the BBS command system."""
@@ -250,13 +227,49 @@ class CLITransportEngine:
             # Process through command processor with new packet interface
             result = await self.command_processor.process(packet)
 
-            # Return the result message
-            return result.text if hasattr(result, 'text') else str(result)
+            # Return the formatted result
+            return self._format_response(result)
 
         except Exception as e:
             logger.error(
                 f"Error processing command '{command_line}' for client {client_id}: {e}")
             return f"ERROR: Command processing failed - {str(e)}"
+
+    def _format_response(self, response):
+        """Format ToUser response(s) for CLI display."""
+        if isinstance(response, list):
+            # Handle list[ToUser] for multiple items (like messages)
+            formatted_lines = []
+            for item in response:
+                formatted_lines.append(self._format_single_touser(item))
+            return "\n".join(formatted_lines)
+        else:
+            # Handle single ToUser packet
+            return self._format_single_touser(response)
+
+    def _format_single_touser(self, touser):
+        """Format a single ToUser packet for display."""
+        if not hasattr(touser, 'text'):
+            # Fallback for non-ToUser responses
+            return str(touser)
+
+        # If there's a message field, format it as a BBS message
+        if hasattr(touser, 'message') and touser.message:
+            return self._format_message(touser.message)
+
+        # Otherwise, just return the text field
+        return touser.text if touser.text else ""
+
+    def _format_message(self, message):
+        """Format a MessageResponse object for BBS-style display."""
+        # Format: "From: DisplayName (username) - Timestamp\nContent"
+        header = f"From: {message.display_name} ({message.sender}) - {message.timestamp}"
+        if message.blocked:
+            content = "[Message blocked]"
+        else:
+            content = message.content
+
+        return f"{header}\n{content}"
 
     @property
     def is_running(self) -> bool:

@@ -32,13 +32,7 @@ class RegisterUserWorkflow(Workflow):
         step = wf_state["step"]
         data = wf_state["data"]
 
-        # Cancellation
-        if command.flags.get("cancel_workflow"):
-            processor.sessions.clear_workflow(session_id)
-            return ToUser(
-                session_id=session_id,
-                text="Registration cancelled. Restarting intro..."
-            )
+        # Cancellation is handled by transport layer, no need to check here
 
         # Step 1: Username
         if step == 1:
@@ -228,3 +222,40 @@ class RegisterUserWorkflow(Workflow):
             is_error=True,
             error_code="invalid_step"
         )
+
+    async def cleanup(self, processor, session_id, wf_state):
+        """Clean up registration workflow when cancelled.
+
+        Removes any provisional user created during registration and
+        resets session to anonymous state.
+        """
+        step = wf_state.step
+        data = wf_state.data
+
+        # If we created a provisional user (step >= 1), remove it
+        if step >= 1 and "username" in data:
+            username = data["username"]
+
+            # Check if user exists and is provisional
+            user = User(processor.db, username)
+            try:
+                await user.load()
+            except RuntimeError:
+                # User doesn't exist - nothing to clean up
+                return
+
+            if user.status == UserStatus.PROVISIONAL:
+                try:
+                    await processor.db.execute(
+                        "DELETE FROM users WHERE username = ? AND status = ?",
+                        (username, UserStatus.PROVISIONAL.value)
+                    )
+                    log.info(f"Deleted provisional user '{username}' during workflow cancellation")
+                except RuntimeError as e:
+                    log.error(f"Failed to delete provisional user '{username}': {e}")
+            else:
+                log.warning(f"User '{username}' was not provisional during cleanup (status: {user.status})")
+
+            # Reset session to anonymous state
+            processor.sessions.mark_username(session_id, None)
+            log.info(f"Reset session '{session_id}' to anonymous state")
