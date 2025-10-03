@@ -194,7 +194,6 @@ class CLITransportEngine:
                     session_id,
                     WorkflowState(kind="login", step=1, data={"nodename": nodename})
                 )
-                #return f"SESSION_ID: {session_id}"
                 return CommandResponse(
                     success=True,
                     code="workflow_started",
@@ -227,6 +226,10 @@ class CLITransportEngine:
 
             # Process through command processor (fix method name)
             result = await self.command_processor.process(session_id, command)
+
+            if result.code == "login_blocked":
+                text = "The MeshCore client would sleep 5 here. " + result.text
+                return text
 
             # Return the result message
             return result.text if hasattr(result, 'text') else str(result)

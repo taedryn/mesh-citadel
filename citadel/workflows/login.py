@@ -28,6 +28,36 @@ class LoginWorkflow(Workflow):
         elif step == 2:
             # Store username and prompt for password
             data["username"] = command.text.strip()
+
+            if data["username"].lower() == "new":
+                processor.sessions.set_workflow(
+                    session_id,
+                    WorkflowState(kind="register_user", step=1, data={}))
+                return CommandResponse(
+                    success=True,
+                    code="register_user",
+                    text="Starting new user registration"
+                )
+
+            user_exists = await User.username_exists(processor.db,
+                                                     data["username"])
+            if not user_exists:
+                processor.sessions.set_workflow(
+                    session_id,
+                    WorkflowState(
+                        kind=self.kind,
+                        step=2,
+                        data={}
+                    )
+                )
+                return CommandResponse(
+                    success=False,
+                    code="unknown_user",
+                    text=(f"User '{data['username']}' not found. Try again or "
+                    "type 'new' to register as a new user.\nEnter your "
+                    "username:")
+                )
+
             processor.sessions.set_workflow(
                 session_id,
                 WorkflowState(kind=self.kind, step=3, data=data)
@@ -45,9 +75,19 @@ class LoginWorkflow(Workflow):
 
             user = await processor.auth.authenticate(username, password)
             if not user:
+                attempts = data.get("attempts", 0) + 1
+                data["attempts"] = attempts
+
+                if attempts >= 3:
+                    processor.sessions.clear_workflow(session_id)
+                    return ErrorResponse(
+                        code="login_blocked",
+                        text="Too many failed login attempts. Please try again later."
+                    )
+
                 processor.sessions.set_workflow(
                     session_id,
-                    WorkflowState(kind=self.kind, step=2, data={})
+                    WorkflowState(kind=self.kind, step=2, data=data)
                 )
                 return CommandResponse(
                     success=False,
