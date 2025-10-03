@@ -2,6 +2,7 @@ import pytest
 from citadel.auth.checker import is_allowed, permission_denied, PermissionLevel
 from citadel.commands.responses import ErrorResponse
 from citadel.room.room import SystemRoomIDs
+from citadel.transport.packets import ToUser
 
 
 class DummyUser:
@@ -96,6 +97,7 @@ def test_permission_denied_response():
     user = DummyUser(PermissionLevel.TWIT)
     room = DummyRoom()
     resp = permission_denied("enter_message", user, room)
-    assert isinstance(resp, ErrorResponse)
-    assert resp.code == "permission_denied"
-    assert "post" in resp.text
+    assert isinstance(resp, ToUser)
+    assert resp.is_error
+    assert resp.error_code == "permission_denied"
+    assert "do not have permission" in resp.text
