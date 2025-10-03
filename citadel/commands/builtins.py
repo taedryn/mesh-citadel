@@ -4,7 +4,8 @@ import logging
 from citadel.commands.base import BaseCommand, CommandCategory
 from citadel.commands.registry import register_command
 from citadel.auth.permissions import PermissionLevel
-from citadel.commands.responses import CommandResponse, ErrorResponse, MessageResponse
+from citadel.commands.responses import MessageResponse
+from citadel.transport.packets import ToUser
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,6 @@ class GoNextUnreadCommand(BaseCommand):
     arg_schema = {}
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse
         from citadel.room.room import Room, SystemRoomIDs
         from citadel.user.user import User
 
@@ -49,20 +49,20 @@ class GoNextUnreadCommand(BaseCommand):
             # Check if there are any unread messages in the system
             lobby_has_unread = await new_room.has_unread_messages(user)
             if lobby_has_unread:
-                return CommandResponse(success=True, code="room_changed",
-                                       text=f"You are now in room '{new_room.name}'. New messages are available in other rooms.",
-                                       payload={"room_id": new_room.room_id,
-                                                "room_name": new_room.name})
+                return ToUser(
+                    session_id=context.session_id,
+                    text=f"You are now in room '{new_room.name}'. New messages are available in other rooms."
+                )
             else:
-                return CommandResponse(success=True, code="no_unread_rooms",
-                                       text=f"You are now in room '{new_room.name}'. No rooms with unread messages found.",
-                                       payload={"room_id": new_room.room_id,
-                                                "room_name": new_room.name})
+                return ToUser(
+                    session_id=context.session_id,
+                    text=f"You are now in room '{new_room.name}'. No rooms with unread messages found."
+                )
 
-        return CommandResponse(success=True, code="room_changed",
-                               text=f"You are now in room '{new_room.name}'.",
-                               payload={"room_id": new_room.room_id,
-                                        "room_name": new_room.name})
+        return ToUser(
+            session_id=context.session_id,
+            text=f"You are now in room '{new_room.name}'."
+        )
 
 
 @register_command
@@ -84,7 +84,6 @@ class EnterMessageCommand(BaseCommand):
             raise ValueError("Recipient required in Mail room")
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse, ErrorResponse
         from citadel.room.room import Room, SystemRoomIDs
 
         state = context.session_mgr.validate_session(context.session_id)
@@ -93,17 +92,22 @@ class EnterMessageCommand(BaseCommand):
 
         if room.room_id == SystemRoomIDs.MAIL_ID:
             if 'recipient' not in self.args:
-                return ErrorResponse(code="missing_recipient",
-                                     text=f"Messages in {room.name} require a recipient")
+                return ToUser(
+                    session_id=context.session_id,
+                    text=f"Messages in {room.name} require a recipient",
+                    is_error=True,
+                    error_code="missing_recipient"
+                )
             msg_id = await room.post_message(state.username,
                                              self.args["content"],
                                              self.args["recipient"])
         else:
             msg_id = await room.post_message(state.username, self.args["content"])
 
-        return CommandResponse(success=True, code="message_posted",
-                               text=f"Message {msg_id} posted in {room.name}.",
-                               payload={"message_id": msg_id})
+        return ToUser(
+            session_id=context.session_id,
+            text=f"Message {msg_id} posted in {room.name}."
+        )
 
 
 @register_command
@@ -130,7 +134,7 @@ class ReadNewMessagesCommand(BaseCommand):
     arg_schema = {}
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse, MessageResponse
+        from citadel.commands.responses import MessageResponse
         from citadel.room.room import Room
         from citadel.user.user import User
 
@@ -139,13 +143,17 @@ class ReadNewMessagesCommand(BaseCommand):
         await room.load()
         msg_ids = await room.get_unread_message_ids(state.username)
         if not msg_ids:
-            return CommandResponse(success=True, code="no_unread", text="No unread messages.")
-        messages = []
+            return ToUser(
+                session_id=context.session_id,
+                text="No unread messages."
+            )
+
+        to_user_list = []
         for msg_id in msg_ids:
             msg = await context.msg_mgr.get_message(msg_id)
             sender = User(context.db, msg["sender"])
             await sender.load()
-            messages.append(MessageResponse(
+            message_response = MessageResponse(
                 id=msg["id"],
                 sender=msg["sender"],
                 display_name=sender.display_name,
@@ -153,8 +161,13 @@ class ReadNewMessagesCommand(BaseCommand):
                 room=room.name,
                 content=msg["content"],
                 blocked=msg["blocked"]
+            )
+            to_user_list.append(ToUser(
+                session_id=context.session_id,
+                text="",  # Message content is in the message field
+                message=message_response
             ))
-        return messages
+        return to_user_list
 
 
 @register_command
@@ -190,12 +203,59 @@ class QuitCommand(BaseCommand):
     arg_schema = {}
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse
-
         state = context.session_mgr.validate_session(context.session_id)
         context.session_mgr.expire_session(context.session_id)
         log.info(f"User '{state.username}' logged out via quit command")
-        return CommandResponse(success=True, code="quit", text="Goodbye!")
+        return ToUser(
+            session_id=context.session_id,
+            text="Goodbye!"
+        )
+
+
+@register_command
+class CancelCommand(BaseCommand):
+    code = "cancel"  # Use full word since this is a special case
+    name = "cancel"
+    category = CommandCategory.COMMON
+    permission_level = PermissionLevel.USER
+    short_text = "Cancel workflow"
+    help_text = "Cancel the current workflow and return to normal command mode"
+    arg_schema = {}
+
+    async def run(self, context):
+        from citadel.workflows import registry as workflow_registry
+
+        # Check if user is in a workflow
+        workflow_state = context.session_mgr.get_workflow(context.session_id)
+        if not workflow_state:
+            return ToUser(
+                session_id=context.session_id,
+                text="No active workflow to cancel.",
+                is_error=True,
+                error_code="no_workflow"
+            )
+
+        # Call cleanup on the workflow if it has one
+        handler = workflow_registry.get(workflow_state.kind)
+        if handler and hasattr(handler, 'cleanup'):
+            try:
+                # Create processor-like context for cleanup
+                processor_context = type('ProcessorContext', (), {
+                    'db': context.db,
+                    'config': context.config,
+                    'sessions': context.session_mgr
+                })()
+                await handler.cleanup(processor_context, context.session_id, workflow_state)
+            except Exception as e:
+                log.warning(f"Error during workflow cleanup for {workflow_state.kind}: {e}")
+
+        # Clear the workflow
+        context.session_mgr.clear_workflow(context.session_id)
+
+        return ToUser(
+            session_id=context.session_id,
+            text=f"Cancelled {workflow_state.kind} workflow."
+        )
 
 
 @register_command
@@ -222,7 +282,6 @@ class ChangeRoomCommand(BaseCommand):
     }
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse, ErrorResponse
         from citadel.room.room import Room
         from citadel.user.user import User
 
@@ -234,13 +293,18 @@ class ChangeRoomCommand(BaseCommand):
         next_room = await current_room.go_to_room(self.args["room"])
         log.debug(f'preparing to go to room {self.args["room"]}')
         if not next_room:
-            return ErrorResponse(code="no_next_room",
-                                 text=f"Room {self.args['room']} not found.")
+            return ToUser(
+                session_id=context.session_id,
+                text=f"Room {self.args['room']} not found.",
+                is_error=True,
+                error_code="no_next_room"
+            )
         context.session_mgr.set_current_room(
             context.session_id, next_room.room_id)
-        return CommandResponse(success=True, code="room_changed",
-                               text=f"You are now in room '{next_room.name}'.",
-                               payload={"room_id": next_room.room_id})
+        return ToUser(
+            session_id=context.session_id,
+            text=f"You are now in room '{next_room.name}'."
+        )
 
 
 @register_command
@@ -256,7 +320,6 @@ class HelpCommand(BaseCommand):
     }
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse
         from citadel.commands.registry import registry
         from citadel.auth.checker import is_allowed
         from citadel.user.user import User
@@ -274,18 +337,16 @@ class HelpCommand(BaseCommand):
 
         # If specific command requested, show detailed help
         if "command" in self.args and self.args["command"]:
-            return await self._show_command_help(self.args["command"], user, room)
+            return await self._show_command_help(context.session_id, self.args["command"], user, room)
 
         # Build dynamic menu by category
         all_commands = registry.available()
         menu_text = self._build_category_menu(
             all_commands, user, room, CommandCategory.COMMON)
 
-        return CommandResponse(
-            success=True,
-            code="help_menu",
-            text=menu_text,
-            payload={"category": "common", "has_more": True}
+        return ToUser(
+            session_id=context.session_id,
+            text=menu_text
         )
 
     def _build_category_menu(self, all_commands, user, room, category):
@@ -316,30 +377,31 @@ class HelpCommand(BaseCommand):
         header = f"{category_name} Commands:"
         return header + "\n" + "  ".join(menu_lines)
 
-    async def _show_command_help(self, command_code, user, room):
+    async def _show_command_help(self, session_id, command_code, user, room):
         """Show detailed help for a specific command."""
         from citadel.auth.checker import is_allowed
         from citadel.commands.registry import registry
 
         cmd_class = registry.get(command_code.upper())
         if not cmd_class:
-            return CommandResponse(
-                success=False,
-                code="unknown_command",
-                text=f"Unknown command: {command_code}"
+            return ToUser(
+                session_id=session_id,
+                text=f"Unknown command: {command_code}",
+                is_error=True,
+                error_code="unknown_command"
             )
 
         if not is_allowed(cmd_class.name, user, room):
-            return CommandResponse(
-                success=False,
-                code="permission_denied",
-                text=f"You don't have permission to use command {command_code}"
+            return ToUser(
+                session_id=session_id,
+                text=f"You don't have permission to use command {command_code}",
+                is_error=True,
+                error_code="permission_denied"
             )
 
         if not cmd_class.is_implemented():
-            return CommandResponse(
-                success=True,
-                code="command_help",
+            return ToUser(
+                session_id=session_id,
                 text=f"{cmd_class.code} - {cmd_class.short_text}\n(Not yet implemented)"
             )
 
@@ -353,9 +415,8 @@ class HelpCommand(BaseCommand):
                     "required") else " (optional)"
                 help_text += f"\n  {arg}: {spec.get('help', 'No description')}{required}"
 
-        return CommandResponse(
-            success=True,
-            code="command_help",
+        return ToUser(
+            session_id=session_id,
             text=help_text
         )
 
@@ -493,4 +554,3 @@ class FastForwardCommand(BaseCommand):
     short_text = "Fast-forward"
     help_text = "Fast-forward to the latest message in the current room, skipping over unread messages. This resets your last-read pointer to the latest message."
     arg_schema = {}
-

@@ -1,7 +1,7 @@
 # citadel/auth/checker.py
 
 from citadel.auth.permissions import PermissionLevel, ACTION_REQUIREMENTS
-from citadel.commands.responses import ErrorResponse
+from citadel.transport.packets import ToUser
 from citadel.room.room import SystemRoomIDs
 
 
@@ -40,13 +40,15 @@ def is_allowed(action: str, user, room=None) -> bool:
     return True
 
 
-def permission_denied(action: str, user, room=None):
+def permission_denied(session_id, action: str, user, room=None):
     requirement = ACTION_REQUIREMENTS.get(action)
     if requirement:
         do_action = requirement.description
     else:
         do_action = action
-    return ErrorResponse(
-        code="permission_denied",
-        text=f"You do not have permission to {do_action} in {room.name if room else 'this context'}."
+    return ToUser(
+        session_id=session_id,
+        text=f"You do not have permission to {do_action} in {room.name if room else 'this context'}.",
+        is_error=True,
+        error_code="permission_denied"
     )

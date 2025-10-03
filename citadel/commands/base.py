@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from citadel.session.manager import SessionManager
     from citadel.message.manager import MessageManager
     from citadel.commands.responses import CommandResponse, MessageResponse
+    from citadel.transport.packets import ToUser
 
 
 @dataclass
@@ -96,7 +97,7 @@ class BaseCommand(ABC):
             "permission_level": self.permission_level.value,
         }
 
-    async def run(self, context: CommandContext) -> "CommandResponse | MessageResponse | list[MessageResponse]":
+    async def run(self, context: CommandContext) -> "ToUser | list[ToUser]":
         """Execute the command with the given context."""
         raise NotImplementedError(
             f"{self.__class__.__name__} not yet implemented")

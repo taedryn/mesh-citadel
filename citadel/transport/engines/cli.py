@@ -14,9 +14,8 @@ from citadel.config import Config
 from citadel.session.manager import SessionManager
 from citadel.session.state import WorkflowState
 from citadel.commands.processor import CommandProcessor
-from citadel.commands.responses import CommandResponse
 from citadel.transport.parser import TextParser
-from citadel.workflows.types import WorkflowResponse
+from citadel.transport.packets import FromUser, FromUserType
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +92,8 @@ class CLITransportEngine:
             await writer.drain()
 
             # Send welcome message from config
-            welcome = self.config.bbs.get("welcome_message", "Welcome to Mesh-Citadel.")
+            welcome = self.config.bbs.get(
+                "welcome_message", "Welcome to Mesh-Citadel.")
             writer.write(f"{welcome}\n".encode('utf-8'))
             await writer.drain()
 
@@ -118,7 +118,8 @@ class CLITransportEngine:
                 if not data:
                     break
             except Exception as e:
-                import pdb; pdb.set_trace()
+                import pdb
+                pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -129,7 +130,8 @@ class CLITransportEngine:
                 if not line:
                     continue
             except Exception as e:
-                import pdb; pdb.set_trace()
+                import pdb
+                pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -141,48 +143,28 @@ class CLITransportEngine:
                 # Process the command through BBS system
                 response = await self._process_command(line, session_id, client_id)
             except Exception as e:
-                import pdb; pdb.set_trace()
+                import pdb
+                pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
 
             try:
-                # Persist session_id BEFORE printing
-                if isinstance(response, CommandResponse) and response.payload:
-                    if "session_id" in response.payload:
-                        session_id = response.payload["session_id"]
-
-                # Format response
-                if isinstance(response, CommandResponse):
-                    lines = [response.text]
-                    if response.payload and "session_id" in response.payload:
-                        lines.append(f"SESSION_ID: {response.payload['session_id']}")
-                    response_line = "\n".join(lines) + "\n"
-                else:
-                    response_line = f"{response}\n"
-
+                # Response is now a formatted string from _process_command
+                response_line = f"{response}\n"
                 writer.write(response_line.encode('utf-8'))
                 await writer.drain()
 
             except Exception as e:
-                logger.error(f"Error sending response to client {client_id}: {e}")
+                logger.error(
+                    f"Error sending response to client {client_id}: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
 
-
-            try:
-                # Update session if command result includes session info
-                if isinstance(response, CommandResponse) and response.payload:
-                    session_id = response.payload.get("session_id", session_id)
-                    await writer.drain()
-            except Exception as e:
-                import pdb; pdb.set_trace()
-                logger.error(f"Error in client {client_id} session: {e}")
-                error_msg = f"ERROR: {str(e)}\n"
-                writer.write(error_msg.encode('utf-8'))
-                await writer.drain()
+            # Session management is now handled by the session manager directly
+            # No need to extract session_id from response payload
 
     async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> str:
         """Process a command through the BBS command system."""
@@ -192,17 +174,16 @@ class CLITransportEngine:
                 session_id = self.session_manager.create_provisional_session()
                 self.session_manager.set_workflow(
                     session_id,
-                    WorkflowState(kind="login", step=1, data={"nodename": nodename})
+                    WorkflowState(kind="login", step=1, data={
+                                  "nodename": nodename})
                 )
-                return CommandResponse(
-                    success=True,
-                    code="workflow_started",
-                    text="Starting login workflow...",
-                    payload={"session_id": session_id}
+                return self._format_response(ToUser(
+                        session_id=session_id,
+                        text="Starting login workflow...",
+                    )
                 )
 
-
-            # Check if user has an active workflow and handle workflow responses
+            # Create appropriate FromUser packet based on context
             if session_id:
                 workflow_state = self.session_manager.get_workflow(session_id)
                 if workflow_state:
@@ -211,33 +192,81 @@ class CLITransportEngine:
                     if stripped_input in ['cancel', 'cancel_workflow']:
                         # Allow canceling workflows with special command
                         command = self.text_parser.parse_command(command_line)
-                    else:
-                        # Treat all other input as workflow response
-                        from citadel.workflows.types import WorkflowResponse
-                        command = WorkflowResponse(
-                            workflow=workflow_state.kind,
-                            step=workflow_state.step,
-                            response=command_line.strip()
+                        packet = FromUser(
+                            session_id=session_id,
+                            payload_type=FromUserType.COMMAND,
+                            payload=command
                         )
-
-            # If not in workflow or no session, parse normally
-            if 'command' not in locals():
+                    else:
+                        # Treat all other input as workflow response - send raw string
+                        packet = FromUser(
+                            session_id=session_id,
+                            payload_type=FromUserType.WORKFLOW_RESPONSE,
+                            payload=command_line.strip()
+                        )
+                else:
+                    # Not in workflow, parse as command
+                    command = self.text_parser.parse_command(command_line)
+                    packet = FromUser(
+                        session_id=session_id,
+                        payload_type=FromUserType.COMMAND,
+                        payload=command
+                    )
+            else:
+                # No session, parse as command
                 command = self.text_parser.parse_command(command_line)
+                packet = FromUser(
+                    session_id="",  # No session yet
+                    payload_type=FromUserType.COMMAND,
+                    payload=command
+                )
 
-            # Process through command processor (fix method name)
-            result = await self.command_processor.process(session_id, command)
+            # Process through command processor with new packet interface
+            result = await self.command_processor.process(packet)
 
-            if result.code == "login_blocked":
-                text = "The MeshCore client would sleep 5 here. " + result.text
-                return text
-
-            # Return the result message
-            return result.text if hasattr(result, 'text') else str(result)
+            # Return the formatted result
+            return self._format_response(result)
 
         except Exception as e:
             logger.error(
                 f"Error processing command '{command_line}' for client {client_id}: {e}")
             return f"ERROR: Command processing failed - {str(e)}"
+
+    def _format_response(self, response):
+        """Format ToUser response(s) for CLI display."""
+        if isinstance(response, list):
+            # Handle list[ToUser] for multiple items (like messages)
+            formatted_lines = []
+            for item in response:
+                formatted_lines.append(self._format_single_touser(item))
+            return "\n".join(formatted_lines)
+        else:
+            # Handle single ToUser packet
+            return self._format_single_touser(response)
+
+    def _format_single_touser(self, touser):
+        """Format a single ToUser packet for display."""
+        if not hasattr(touser, 'text'):
+            # Fallback for non-ToUser responses
+            return str(touser)
+
+        # If there's a message field, format it as a BBS message
+        if hasattr(touser, 'message') and touser.message:
+            return self._format_message(touser.message)
+
+        # Otherwise, just return the text field
+        return touser.text if touser.text else ""
+
+    def _format_message(self, message):
+        """Format a MessageResponse object for BBS-style display."""
+        # Format: "From: DisplayName (username) - Timestamp\nContent"
+        header = f"From: {message.display_name} ({message.sender}) - {message.timestamp}"
+        if message.blocked:
+            content = "[Message from blocked sender]"
+        else:
+            content = message.content
+
+        return f"{header}\n{content}"
 
     @property
     def is_running(self) -> bool:

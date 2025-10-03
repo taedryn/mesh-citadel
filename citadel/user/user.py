@@ -14,6 +14,7 @@ class UserStatus(str, Enum):
     BANNED = "banned"
     SUSPENDED = "suspended"
 
+
 log = logging.getLogger(__name__)
 
 PERMISSIONS = {"unverified", "twit", "user", "aide", "sysop"}
@@ -46,9 +47,9 @@ class User:
         self._permission_level = row[6]
         self._status = row[7]
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # class methods
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     @classmethod
     async def create(cls, config, db_mgr, username, password_hash,
@@ -74,9 +75,9 @@ class User:
         stored_hash, salt = result[0]
         return verify_password(submitted_password, salt, stored_hash)
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # getters and setters
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     @property
     def display_name(self) -> Optional[str]:
@@ -123,7 +124,8 @@ class User:
 
     async def set_status(self, new_status: UserStatus):
         if not isinstance(new_status, UserStatus):
-            raise ValueError(f"Invalid status: {new_status}. Must be a UserStatus enum value")
+            raise ValueError(
+                f"Invalid status: {new_status}. Must be a UserStatus enum value")
         query = "UPDATE users SET status = ? WHERE username = ?"
         await self.db.execute(query, (new_status.value, self.username))
         self._status = new_status.value
@@ -167,9 +169,9 @@ class User:
             raise RuntimeError('_salt not initialized, ensure '
                                'load() has been called on this object')
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # methods
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def update_password(self, new_hash: str, new_salt: bytes):
         query = "UPDATE users SET password_hash = ?, salt = ? WHERE username = ?"
@@ -191,4 +193,3 @@ class User:
         query = "SELECT 1 FROM user_blocks WHERE blocker = ? AND blocked = ?"
         result = await self.db.execute(query, (self.username, sender_username))
         return bool(result)
-

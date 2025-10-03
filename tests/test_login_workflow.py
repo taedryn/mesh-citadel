@@ -4,8 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from citadel.workflows.login import LoginWorkflow
 from citadel.session.state import WorkflowState
-from citadel.workflows.types import WorkflowResponse
-from citadel.commands.responses import CommandResponse
+from citadel.transport.packets import ToUser
 
 
 @pytest.fixture
@@ -39,7 +38,7 @@ async def test_login_workflow_happy_path(mock_processor):
     command.name = None
     command.text = ""
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert isinstance(response, CommandResponse)
+    assert isinstance(response, ToUser)
     assert response.text == "Enter your username:"
     assert response.code == "prompt_username"
 

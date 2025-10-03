@@ -16,7 +16,8 @@ class SessionManager:
     def __init__(self, config: "Config", db: DatabaseManager):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
         self.db = db
-        self.sessions = {}  # session_id -> (SessionState, last_active: datetime)
+        # session_id -> (SessionState, last_active: datetime)
+        self.sessions = {}
         self.lock = threading.Lock()
         self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
@@ -161,4 +162,3 @@ class SessionManager:
         if state:
             state.logged_in = True
             log.info(f"Session '{session_id}' marked as logged in")
-
