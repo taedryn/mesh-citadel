@@ -13,8 +13,8 @@ from citadel.commands.processor import CommandProcessor
 from citadel.commands.builtins import HelpCommand, MenuCommand
 from citadel.commands.registry import registry
 from citadel.commands.base import CommandCategory
-from citadel.commands.responses import CommandResponse
 from citadel.auth.permissions import PermissionLevel
+from citadel.transport.packets import FromUser, FromUserType, ToUser
 
 
 @pytest.fixture
@@ -124,14 +124,16 @@ async def test_help_menu_generation(setup_user_and_session):
     help_cmd = HelpCommand(username='testuser', args={})
 
     # Process the command
-    response = await processor.process(session_id, help_cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=help_cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    response = await processor.process(fromuser)
 
-    assert isinstance(response, CommandResponse)
-    assert response.success
-    assert response.code == "help_menu"
+    assert isinstance(response, ToUser)
+    assert not response.is_error
     assert "Common Commands:" in response.text
-    assert response.payload["category"] == "common"
-    assert response.payload["has_more"] is True
 
     print(f"\nGenerated help menu:")
     print(response.text)
@@ -147,11 +149,15 @@ async def test_specific_command_help(setup_user_and_session):
 
     # Test help for a specific implemented command
     help_cmd = HelpCommand(username='testuser', args={"command": "G"})
-    response = await processor.process(session_id, help_cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=help_cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    response = await processor.process(fromuser)
 
-    assert isinstance(response, CommandResponse)
-    assert response.success
-    assert response.code == "command_help"
+    assert isinstance(response, ToUser)
+    assert not response.is_error
     assert "G - " in response.text
     assert "Go to the next room" in response.text
 
@@ -169,11 +175,15 @@ async def test_unimplemented_command_help(setup_user_and_session):
 
     # Test help for an unimplemented command
     help_cmd = HelpCommand(username='testuser', args={"command": "D"})
-    response = await processor.process(session_id, help_cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=help_cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    response = await processor.process(fromuser)
 
-    assert isinstance(response, CommandResponse)
-    assert response.success
-    assert response.code == "command_help"
+    assert isinstance(response, ToUser)
+    assert not response.is_error
     assert "D - " in response.text
     assert "(Not yet implemented)" in response.text
 
@@ -191,11 +201,16 @@ async def test_unknown_command_help(setup_user_and_session):
 
     # Test help for unknown command
     help_cmd = HelpCommand(username='testuser', args={"command": "Z"})
-    response = await processor.process(session_id, help_cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=help_cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    response = await processor.process(fromuser)
 
-    assert isinstance(response, CommandResponse)
-    assert not response.success
-    assert response.code == "unknown_command"
+    assert isinstance(response, ToUser)
+    assert response.is_error
+    assert response.error_code == "unknown_command"
     assert "Unknown command: Z" in response.text
 
 
@@ -211,11 +226,15 @@ async def test_menu_command_works_same_as_help(setup_user_and_session):
     help_cmd = HelpCommand(username='testuser', args={})
     menu_cmd = MenuCommand(username='testuser', args={})
 
-    help_response = await processor.process(session_id, help_cmd)
-    menu_response = await processor.process(session_id, menu_cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=help_cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    help_response = await processor.process(fromuser)
+    fromuser.payload = menu_cmd
+    menu_response = await processor.process(fromuser)
 
     # Should produce identical results
-    assert help_response.success == menu_response.success
-    assert help_response.code == menu_response.code
     assert help_response.text == menu_response.text
-    assert help_response.payload == menu_response.payload
+    assert help_response.hints == menu_response.hints

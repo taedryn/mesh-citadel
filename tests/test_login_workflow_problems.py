@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from citadel.workflows.login import LoginWorkflow
 from citadel.session.state import WorkflowState
-from citadel.commands.responses import CommandResponse, ErrorResponse
 from citadel.user.user import User
+from citadel.transport.packets import FromUser, FromUserType, ToUser
 
 
 @pytest.fixture
@@ -39,8 +39,7 @@ async def test_unknown_user_triggers_retry(mock_processor):
     User.username_exists = AsyncMock(return_value=False)
 
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert isinstance(response, CommandResponse)
-    assert response.code == "unknown_user"
+    assert isinstance(response, ToUser)
     assert "not found" in response.text
 
 
@@ -53,9 +52,8 @@ async def test_new_user_triggers_registration(mock_processor):
     command.text = "new"
 
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert isinstance(response, CommandResponse)
-    assert response.code == "register_user"
-    assert "Starting new user registration" in response.text
+    assert isinstance(response, ToUser)
+    assert "to register as a new user" in response.text
 
 
 @pytest.mark.asyncio
@@ -69,8 +67,7 @@ async def test_failed_password_triggers_retry(mock_processor):
     mock_processor.auth.authenticate.return_value = None
 
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert isinstance(response, CommandResponse)
-    assert response.code == "login_failed"
+    assert isinstance(response, ToUser)
     assert "Login failed" in response.text
 
 
@@ -85,8 +82,9 @@ async def test_login_blocked_after_three_attempts(mock_processor):
     mock_processor.auth.authenticate.return_value = None
 
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert isinstance(response, ErrorResponse)
-    assert response.code == "login_blocked"
+    assert isinstance(response, ToUser)
+    assert response.is_error
+    assert response.error_code == "login_blocked"
     assert "Too many failed login attempts" in response.text
 
 
@@ -99,6 +97,7 @@ async def test_invalid_step_returns_error(mock_processor):
     command.text = "anything"
 
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert isinstance(response, ErrorResponse)
-    assert response.code == "invalid_login_step"
+    assert isinstance(response, ToUser)
+    assert response.is_error
+    assert response.error_code == "invalid_login_step"
 

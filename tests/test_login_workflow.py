@@ -24,6 +24,7 @@ def mock_processor(monkeypatch):
     processor = MagicMock()
     processor.auth = mock_auth
     processor.sessions = mock_sessions
+    processor.db = AsyncMock()
     return processor
 
 
@@ -39,15 +40,18 @@ async def test_login_workflow_happy_path(mock_processor):
     command.text = ""
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
     assert isinstance(response, ToUser)
+    assert not response.is_error
+    assert not response.is_error
     assert response.text == "Enter your username:"
-    assert response.code == "prompt_username"
+    assert 'type' in response.hints and response.hints['type'] == 'text'
 
     # Step 2: provide username
     wf_state = WorkflowState(kind="login", step=2, data={})
     command.text = "bob"
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
+    assert not response.is_error
     assert response.text == "Enter your password:"
-    assert response.code == "prompt_password"
+    assert 'type' in response.hints and response.hints['type'] == 'password'
 
     # Step 3: provide password
     wf_state = WorkflowState(kind="login", step=3, data={"username": "bob"})
@@ -57,8 +61,7 @@ async def test_login_workflow_happy_path(mock_processor):
     mock_processor.auth.authenticate.return_value = mock_user
 
     response = await workflow.handle(mock_processor, session_id, None, command, wf_state)
-    assert response.success is True
-    assert response.code == "login_success"
+    assert not response.is_error
     assert "Welcome, bob" in response.text
 
     # Ensure session was marked

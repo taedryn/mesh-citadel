@@ -11,8 +11,8 @@ from citadel.auth.permissions import PermissionLevel
 def test_registry_contains_all_expected_commands():
     # Codes from prompt.md
     expected_codes = {
-        "G", "E", "R", "N", "K", "I", "Q", "S", "C", "H", "?", "M", "W", "D", "B",
-        ".C", ".ER", ".EU", ".FF", "V",
+        "G", "E", "R", "N", "K", "I", "Q", "S", "C", "H", "?", "M", "W", "D",
+        "B", ".C", ".ER", ".EU", ".FF", "V", "cancel",
     }
     available_codes = set(registry.available().keys())
     missing = expected_codes - available_codes
