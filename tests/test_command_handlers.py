@@ -12,11 +12,11 @@ from citadel.commands.builtins import (
     EnterMessageCommand,
     ReadNewMessagesCommand,
 )
-from citadel.commands.responses import CommandResponse, ErrorResponse
 from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
 from citadel.room.room import Room, SystemRoomIDs
 from citadel.session.manager import SessionManager
+from citadel.transport.packets import ToUser, FromUser, FromUserType
 from citadel.user.user import User
 
 
@@ -81,10 +81,14 @@ async def test_go_next_unread_moves_session(db, config):
     processor = CommandProcessor(config, db, session_mgr)
     processor.sessions.mark_logged_in(session_id)
     cmd = GoNextUnreadCommand(username="alice", args={})
-    resp = await processor.process(session_id, cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
 
-    assert isinstance(resp, CommandResponse)
-    assert resp.code == "room_changed"
+    assert isinstance(resp, ToUser)
     assert session_mgr.get_current_room(session_id) == new_room_id
 
 
@@ -105,15 +109,21 @@ async def test_change_room_by_name_and_id(db, config):
 
     # Change by name
     cmd = ChangeRoomCommand(username="bob", args={"room": "TechTalk"})
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, CommandResponse)
-    assert not isinstance(resp, ErrorResponse), f'got an error: {resp}'
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
+    assert not resp.is_error, f'got an error: {resp.error_code}'
     assert session_mgr.get_current_room(session_id) == room_id
 
     # Change by id
     cmd = ChangeRoomCommand(username="bob", args={"room": str(room_id)})
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, CommandResponse)
+    fromuser.payload = cmd
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
     assert session_mgr.get_current_room(session_id) == room_id
 
 
@@ -134,9 +144,15 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
 
     # Missing recipient should fail
     cmd = EnterMessageCommand(username="carol", args={"content": "hi"})
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, ErrorResponse)
-    assert resp.code == "missing_recipient"
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
+    assert resp.is_error
+    assert resp.error_code == "missing_recipient"
 
     # With recipient should succeed
     await User.create(config, db, "dave", "x", "y")
@@ -145,9 +161,13 @@ async def test_enter_message_requires_recipient_in_mail_room(db, config):
     await dave.set_permission_level(PermissionLevel.USER)
     cmd = EnterMessageCommand(username="carol", args={
                               "content": "hi", "recipient": "dave"})
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, CommandResponse)
-    assert resp.code == "message_posted"
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
 
 
 @pytest.mark.asyncio
@@ -171,9 +191,15 @@ async def test_read_new_messages_returns_unread(db, config):
     processor = CommandProcessor(config, db, session_mgr)
     processor.sessions.mark_logged_in(session_id)
     cmd = ReadNewMessagesCommand(username="erin", args={})
-    resp = await processor.process(session_id, cmd)
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
 
     assert isinstance(resp, list)
+    assert all(isinstance(r, ToUser) for r in resp)
     assert len(resp) == 2
-    assert resp[0].content == "first"
-    assert resp[1].content == "second"
+    assert resp[0].message.content == "first"
+    assert resp[1].message.content == "second"

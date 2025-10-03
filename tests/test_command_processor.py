@@ -6,27 +6,31 @@ import pytest_asyncio
 from citadel.auth.permissions import PermissionLevel
 from citadel.auth.checker import is_allowed
 from citadel.config import Config
+from citadel.commands.base import BaseCommand
 from citadel.commands.processor import CommandProcessor
 from citadel.commands.responses import CommandResponse, MessageResponse, ErrorResponse
 from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
 from citadel.session.manager import SessionManager
 from citadel.session.state import SessionState, WorkflowState
+from citadel.transport.packets import FromUser, ToUser, FromUserType
 from citadel.user.user import User
 from citadel.workflows.registry import register
 
 
-class DummyCommand:
+class DummyCommand(BaseCommand):
     def __init__(self, name, args=None):
         self.name = name
         self.args = args or []
 
     async def run(self, context):
-        from citadel.commands.responses import CommandResponse
         if self.name == "quit":
             context.session_mgr.expire_session(context.session_id)
-            return CommandResponse(success=True, code="quit", text="Goodbye!")
-        return CommandResponse(success=True, code=self.name, text=f"Dummy {self.name} command")
+            return ToUser(session_id=None, text="Goodbye!")
+        return ToUser(
+            session_id=context.session_id,
+            text=f"Dummy {self.name} command"
+        )
 
 
 @pytest.fixture
@@ -48,9 +52,9 @@ async def db(config):
     await initialize_database(db_mgr, config)
 
     await User.create(config, db_mgr, "alice", "hash", "salt", "")
-    # alice = User(db_mgr, 'alice')
-    # await alice.load()
-    # alice.set_permission_level(PermissionLevel.USER)
+    alice = User(db_mgr, 'alice')
+    await alice.load()
+    await alice.set_permission_level(PermissionLevel.USER)
 
     yield db_mgr
 
@@ -87,9 +91,15 @@ def processor(config, db, session_mgr, monkeypatch):
 @pytest.mark.asyncio
 async def test_invalid_session(processor):
     cmd = DummyCommand("quit")
-    resp = await processor.process("badsession_id", cmd)
-    assert isinstance(resp, ErrorResponse)
-    assert resp.code == "invalid_session"
+    fromuser = FromUser(
+        session_id="badsessionid",
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
+    assert resp.is_error
+    assert resp.error_code == "invalid_session"
 
 # ------------------------------------------------------------
 # Inline handler
@@ -99,12 +109,15 @@ async def test_invalid_session(processor):
 @pytest.mark.asyncio
 async def test_quit_expires_session(processor, session_mgr):
     mgr, session_id = session_mgr
-    alice = User(db, "alice")
-    await alice.load()
     cmd = DummyCommand("quit")
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, CommandResponse)
-    assert resp.code == "quit"
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
+    assert resp.text == "Goodbye!"
     assert not mgr.validate_session(session_id)
 
 # ------------------------------------------------------------
@@ -116,9 +129,15 @@ async def test_quit_expires_session(processor, session_mgr):
 async def test_unknown_command(processor, session_mgr):
     mgr, session_id = session_mgr
     cmd = DummyCommand("doesnotexist")
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, ErrorResponse)
-    assert resp.code == "permission_denied"
+    fromuser = FromUser(
+        session_id=session_id,
+        payload=cmd,
+        payload_type=FromUserType.COMMAND
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
+    assert resp.is_error
+    assert resp.error_code == "permission_denied"
 
 # ------------------------------------------------------------
 # Workflow delegation
@@ -135,14 +154,18 @@ async def test_workflow_delegation(processor, session_mgr, monkeypatch):
         kind = "dummy"
 
         async def handle(self, processor, session_id, state, command, wf):
-            return CommandResponse(success=True, code="dummy_ok", text="Handled by dummy workflow")
+            return ToUser(session_id=session_id, text="Handled by dummy workflow")
 
     mgr, session_id = session_mgr
     state = mgr.validate_session(session_id)
     wf = WorkflowState(kind="dummy")
     mgr.set_workflow(session_id, wf)
 
-    cmd = DummyCommand("anything")
-    resp = await processor.process(session_id, cmd)
-    assert isinstance(resp, CommandResponse)
-    assert resp.code == "dummy_ok"
+    fromuser = FromUser(
+        session_id=session_id,
+        payload="anything",
+        payload_type=FromUserType.WORKFLOW_RESPONSE
+    )
+    resp = await processor.process(fromuser)
+    assert isinstance(resp, ToUser)
+    assert resp.text == "Handled by dummy workflow"
