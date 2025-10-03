@@ -15,7 +15,7 @@ from citadel.session.manager import SessionManager
 from citadel.session.state import WorkflowState
 from citadel.commands.processor import CommandProcessor
 from citadel.transport.parser import TextParser
-from citadel.transport.packets import FromUser, FromUserType
+from citadel.transport.packets import FromUser, FromUserType, ToUser
 
 
 logger = logging.getLogger(__name__)
