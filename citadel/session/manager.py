@@ -26,6 +26,11 @@ class SessionManager:
         return SessionState(username=username,
                             current_room=SystemRoomIDs.LOBBY_ID)
 
+    def get_session_state(self, session_id: str) -> SessionState:
+        if session_id in self.sessions:
+            return self.sessions.get(session_id)
+        return None
+
     async def create_session(self, username: str) -> str:
         if not await self._user_exists(username):
             raise ValueError(f"Username '{username}' does not exist")
@@ -162,3 +167,10 @@ class SessionManager:
         if state:
             state.logged_in = True
             log.info(f"Session '{session_id}' marked as logged in")
+
+    def is_logged_in(self, session_id: str):
+        """Return True if the session is logged in"""
+        state = self.validate_session(session_id)
+        if state:
+            return state.logged_in
+        return False

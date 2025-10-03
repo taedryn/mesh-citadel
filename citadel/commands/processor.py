@@ -13,6 +13,9 @@ from citadel.transport.validator import InputValidator
 from citadel.user.user import User
 from citadel.workflows import registry as workflow_registry
 
+# Import to register built-in commands
+import citadel.commands.builtins  # noqa: F401
+
 log = logging.getLogger(__name__)
 
 

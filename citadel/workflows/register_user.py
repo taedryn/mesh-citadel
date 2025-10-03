@@ -5,6 +5,7 @@ import logging
 import string
 
 from citadel.auth.passwords import generate_salt, hash_password
+from citadel.session.state import WorkflowState
 from citadel.transport.packets import ToUser
 from citadel.user.user import User, UserStatus
 from citadel.workflows.base import Workflow
@@ -21,22 +22,25 @@ def is_ascii_username(username: str) -> bool:
 class RegisterUserWorkflow(Workflow):
     kind = "register_user"
 
+    async def start(self, processor, session_id, state, wf_state):
+        """Start the registration workflow by prompting for username."""
+        return ToUser(
+            session_id=session_id,
+            text="Choose a username:",
+            hints={"type": "text", "workflow": self.kind, "step": 1}
+        )
+
     async def handle(self, processor, session_id, state, command, wf_state):
         db = processor.db
 
-        # Initialize workflow state
-        if "step" not in wf_state:
-            wf_state["step"] = 1
-            wf_state["data"] = {}
-
-        step = wf_state["step"]
-        data = wf_state["data"]
+        step = wf_state.step
+        data = wf_state.data
 
         # Cancellation is handled by transport layer, no need to check here
 
         # Step 1: Username
         if step == 1:
-            username = command
+            username = command.strip() if command else ""
             if not is_ascii_username(username):
                 return ToUser(
                     session_id=session_id,
@@ -77,7 +81,10 @@ class RegisterUserWorkflow(Workflow):
             processor.sessions.mark_username(session_id, username)
 
             data["username"] = username
-            wf_state["step"] = 2
+            processor.sessions.set_workflow(
+                session_id,
+                WorkflowState(kind=self.kind, step=2, data=data)
+            )
 
             return ToUser(
                 session_id=session_id,
@@ -103,7 +110,10 @@ class RegisterUserWorkflow(Workflow):
             await user.set_display_name(display_name)
 
             data["display_name"] = display_name
-            wf_state["step"] = 3
+            processor.sessions.set_workflow(
+                session_id,
+                WorkflowState(kind=self.kind, step=3, data=data)
+            )
             return ToUser(
                 session_id=session_id,
                 text="Choose a password.",
@@ -132,7 +142,10 @@ class RegisterUserWorkflow(Workflow):
                 terms_req = processor.config.bbs["registration"]["terms_required"]
                 if terms_req:
                     terms = processor.config.bbs["registration"]["terms"]
-                    wf_state["step"] = 4
+                    processor.sessions.set_workflow(
+                        session_id,
+                        WorkflowState(kind=self.kind, step=4, data=data)
+                    )
                     return ToUser(
                         session_id=session_id,
                         text=f"{terms}\nDo you agree to the terms?",
@@ -143,7 +156,10 @@ class RegisterUserWorkflow(Workflow):
                     log.warning("Terms agreement disabled, skipping")
             except KeyError:
                 log.warning("No terms specified, skipping terms agreement")
-            wf_state["step"] = 5
+            processor.sessions.set_workflow(
+                session_id,
+                WorkflowState(kind=self.kind, step=5, data=data)
+            )
             return ToUser(
                 session_id=session_id,
                 text="Tell us a bit about yourself.",
@@ -161,7 +177,10 @@ class RegisterUserWorkflow(Workflow):
                     error_code="terms_not_accepted"
                 )
             data["agreed"] = True
-            wf_state["step"] = 5
+            processor.sessions.set_workflow(
+                session_id,
+                WorkflowState(kind=self.kind, step=5, data=data)
+            )
             return ToUser(
                 session_id=session_id,
                 text="Tell us a bit about yourself.",
@@ -172,7 +191,10 @@ class RegisterUserWorkflow(Workflow):
         if step == 5:
             intro = command
             data["intro"] = intro
-            wf_state["step"] = 6
+            processor.sessions.set_workflow(
+                session_id,
+                WorkflowState(kind=self.kind, step=6, data=data)
+            )
             return ToUser(
                 session_id=session_id,
                 text="Submit registration?",

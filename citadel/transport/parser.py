@@ -4,7 +4,7 @@ import logging
 from typing import Union
 from citadel.commands.base import BaseCommand
 from citadel.commands.registry import registry
-from citadel.commands.responses import ErrorResponse
+from citadel.transport.packets import ToUser
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ class TextParser:
     def __init__(self):
         pass
 
-    def parse_command(self, text: str) -> Union[BaseCommand, ErrorResponse]:
+    def parse_command(self, text: str) -> Union[BaseCommand, bool]:
         """
         Parse a text string into a BaseCommand object.
 
@@ -23,13 +23,11 @@ class TextParser:
             text: Raw text input from user (e.g., "G", "H V", "E message text")
 
         Returns:
-            BaseCommand instance if parsing succeeds, ErrorResponse if it fails
+            BaseCommand instance if parsing succeeds, False if it fails
         """
         if not text or not text.strip():
-            return ErrorResponse(
-                code="empty_command",
-                text="Please enter a command."
-            )
+            log.warning("Empty command failed")
+            return False
 
         # Split command and arguments
         parts = text.strip().split(None, 1)  # Split on first whitespace only
@@ -39,13 +37,11 @@ class TextParser:
         # Look up command class in registry
         command_cls = registry.get(command_code)
         if not command_cls:
-            return ErrorResponse(
-                code="unknown_command",
-                text=f"Unknown command: {command_code}. Type H for help."
-            )
+            log.warning(f"Unknown command: {command_code}")
+            return False
 
-        # Create command instance
-        command = command_cls()
+        # Create command instance with placeholder username (real username comes from session)
+        command = command_cls(username="")
 
         # Store raw args text - individual commands can parse as needed
         if hasattr(command, 'args_text'):

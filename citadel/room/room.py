@@ -2,7 +2,6 @@ from dataclasses import dataclass
 import logging
 
 from citadel.auth.permissions import PermissionLevel
-from citadel.commands.responses import CommandResponse
 from citadel.user.user import User
 from citadel.message.manager import MessageManager
 from citadel.message.errors import InvalidContentError

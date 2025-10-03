@@ -16,6 +16,17 @@ class Workflow:
         """
         raise NotImplementedError
 
+    async def start(self, processor, session_id, state, wf_state) -> "ToUser":
+        """Generate the first prompt when this workflow is started.
+
+        Called immediately after workflow creation to provide the initial
+        user prompt. Should return a ToUser packet with appropriate hints.
+
+        Default implementation delegates to handle() with None command,
+        but workflows can override for custom start behavior.
+        """
+        return await self.handle(processor, session_id, state, None, wf_state)
+
     async def cleanup(self, processor, session_id, wf_state):
         """Clean up workflow state when cancelled.
 

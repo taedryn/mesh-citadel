@@ -5,7 +5,6 @@ from typing import Optional
 
 from citadel.auth.passwords import verify_password
 from citadel.auth.permissions import PermissionLevel
-from citadel.commands.responses import CommandResponse
 
 
 class UserStatus(str, Enum):
@@ -62,13 +61,24 @@ class User:
 
     @classmethod
     async def username_exists(cls, db_mgr, test_username: str) -> bool:
-        query = "SELECT 1 FROM users WHERE username = ?"
+        """Check if username exists (case-insensitive)."""
+        query = "SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)"
         result = await db_mgr.execute(query, (test_username,))
         return bool(result)
 
     @classmethod
+    async def get_actual_username(cls, db_mgr, username_input: str) -> Optional[str]:
+        """Get the actual stored username for case-insensitive input."""
+        query = "SELECT username FROM users WHERE LOWER(username) = LOWER(?)"
+        result = await db_mgr.execute(query, (username_input,))
+        if not result:
+            return None
+        return result[0][0]
+
+    @classmethod
     async def verify_password(cls, db_mgr, username: str, submitted_password: str) -> bool:
-        query = "SELECT password_hash, salt FROM users WHERE username = ?"
+        """Verify password for username (case-insensitive lookup)."""
+        query = "SELECT password_hash, salt FROM users WHERE LOWER(username) = LOWER(?)"
         result = await db_mgr.execute(query, (username,))
         if not result:
             return False

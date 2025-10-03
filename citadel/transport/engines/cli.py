@@ -141,7 +141,9 @@ class CLITransportEngine:
 
             try:
                 # Process the command through BBS system
-                response = await self._process_command(line, session_id, client_id)
+                response, new_session_id, result = await self._process_command(line, session_id, client_id)
+                if new_session_id:
+                    session_id = new_session_id
             except Exception as e:
                 import pdb
                 pdb.set_trace()
@@ -154,6 +156,18 @@ class CLITransportEngine:
                 # Response is now a formatted string from _process_command
                 response_line = f"{response}\n"
                 writer.write(response_line.encode('utf-8'))
+
+                # If a new session was created, send the session_id to the client
+                if new_session_id:
+                    session_id_line = f"SESSION_ID: {new_session_id}\n"
+                    writer.write(session_id_line.encode('utf-8'))
+
+                # Send input mode based on the ToUser packet
+                if result:
+                    input_mode = self._get_input_mode(result)
+                    mode_line = f"INPUT_MODE: {input_mode}\n"
+                    writer.write(mode_line.encode('utf-8'))
+
                 await writer.drain()
 
             except Exception as e:
@@ -166,22 +180,64 @@ class CLITransportEngine:
             # Session management is now handled by the session manager directly
             # No need to extract session_id from response payload
 
-    async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> str:
+    async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> tuple[str, Optional[str], Optional[object]]:
         """Process a command through the BBS command system."""
         try:
+            # Check if session is in a workflow and route input there
+            if session_id:
+                workflow_state = self.session_manager.get_workflow(session_id)
+                if workflow_state:
+                    from citadel.workflows import registry as workflow_registry
+                    from citadel.session.state import SessionState
+
+                    handler = workflow_registry.get(workflow_state.kind)
+                    if handler:
+                        # Get session state
+                        session_state = SessionState(
+                            username=self.session_manager.get_username(session_id),
+                            current_room=None,  # TODO: get from session
+                            logged_in=self.session_manager.is_logged_in(session_id)
+                        )
+
+                        touser_result = await handler.handle(
+                            self.command_processor, session_id, session_state,
+                            command_line, workflow_state
+                        )
+                        response = self._format_response(touser_result)
+                        return (response, None, touser_result)
+
             if command_line.startswith("__workflow:login:"):
+                from citadel.workflows import registry as workflow_registry
+                from citadel.session.state import SessionState
+
                 nodename = command_line.split(":", 2)[2]
-                session_id = self.session_manager.create_provisional_session()
-                self.session_manager.set_workflow(
-                    session_id,
-                    WorkflowState(kind="login", step=1, data={
-                                  "nodename": nodename})
-                )
-                return self._format_response(ToUser(
-                        session_id=session_id,
-                        text="Starting login workflow...",
+                new_session_id = self.session_manager.create_provisional_session()
+
+                # Create workflow state
+                wf_state = WorkflowState(kind="login", step=1, data={"nodename": nodename})
+                self.session_manager.set_workflow(new_session_id, wf_state)
+
+                # Get workflow handler and call start()
+                handler = workflow_registry.get("login")
+                if handler:
+                    # Create session state for workflow
+                    session_state = SessionState(
+                        username=None,
+                        current_room=None,
+                        logged_in=False
                     )
-                )
+
+                    touser_result = await handler.start(self.command_processor, new_session_id, session_state, wf_state)
+                else:
+                    touser_result = ToUser(
+                        session_id=new_session_id,
+                        text="Error: Login workflow not found",
+                        is_error=True,
+                        error_code="workflow_not_found"
+                    )
+
+                response = self._format_response(touser_result)
+                return (response, new_session_id, touser_result)
 
             # Create appropriate FromUser packet based on context
             if session_id:
@@ -192,6 +248,9 @@ class CLITransportEngine:
                     if stripped_input in ['cancel', 'cancel_workflow']:
                         # Allow canceling workflows with special command
                         command = self.text_parser.parse_command(command_line)
+                        if command is False:
+                            return self._handle_parse_failure(command_line, session_id)
+
                         packet = FromUser(
                             session_id=session_id,
                             payload_type=FromUserType.COMMAND,
@@ -207,6 +266,9 @@ class CLITransportEngine:
                 else:
                     # Not in workflow, parse as command
                     command = self.text_parser.parse_command(command_line)
+                    if command is False:
+                        return self._handle_parse_failure(command_line, session_id)
+
                     packet = FromUser(
                         session_id=session_id,
                         payload_type=FromUserType.COMMAND,
@@ -215,6 +277,11 @@ class CLITransportEngine:
             else:
                 # No session, parse as command
                 command = self.text_parser.parse_command(command_line)
+
+                # Handle parser failure - command not recognized
+                if command is False:
+                    return self._handle_parse_failure(command_line, session_id)
+
                 packet = FromUser(
                     session_id="",  # No session yet
                     payload_type=FromUserType.COMMAND,
@@ -224,13 +291,13 @@ class CLITransportEngine:
             # Process through command processor with new packet interface
             result = await self.command_processor.process(packet)
 
-            # Return the formatted result
-            return self._format_response(result)
+            # Return the formatted result (no session change for regular commands)
+            return (self._format_response(result), None, result)
 
         except Exception as e:
             logger.error(
                 f"Error processing command '{command_line}' for client {client_id}: {e}")
-            return f"ERROR: Command processing failed - {str(e)}"
+            return (f"ERROR: Command processing failed - {str(e)}", None, None)
 
     def _format_response(self, response):
         """Format ToUser response(s) for CLI display."""
@@ -256,6 +323,23 @@ class CLITransportEngine:
 
         # Otherwise, just return the text field
         return touser.text if touser.text else ""
+
+    def _get_input_mode(self, touser):
+        """Determine input mode from ToUser packet hints."""
+        if hasattr(touser, 'hints') and touser.hints:
+            if 'workflow' in touser.hints:
+                return "WORKFLOW"
+        return "COMMAND"
+
+    def _handle_parse_failure(self, command_line: str, session_id: Optional[str]) -> tuple[str, None, ToUser]:
+        """Handle command parser failure by returning appropriate error response."""
+        error_result = ToUser(
+            session_id=session_id or "",
+            text=f"Unknown command: {command_line.strip()}. Type H for help.",
+            is_error=True,
+            error_code="unknown_command"
+        )
+        return (self._format_response(error_result), None, error_result)
 
     def _format_message(self, message):
         """Format a MessageResponse object for BBS-style display."""

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from citadel.config import Config
     from citadel.session.manager import SessionManager
     from citadel.message.manager import MessageManager
-    from citadel.commands.responses import CommandResponse, MessageResponse
+    from citadel.commands.responses import MessageResponse
     from citadel.transport.packets import ToUser
 
 

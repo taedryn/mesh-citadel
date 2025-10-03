@@ -14,10 +14,16 @@ class LoginHandler:
         self.db = db_mgr
 
     async def authenticate(self, username_input: str, password_input: str):
-        username = username_input.strip().lower()
+        username = username_input.strip()  # Preserve case, User methods handle case-insensitive lookup
 
         # Check if user exists
         if not await User.username_exists(self.db, username):
+            log.info(f"Unknown username '{username}'")
+            return None
+
+        # Get the actual stored username (with correct capitalization)
+        actual_username = await User.get_actual_username(self.db, username)
+        if not actual_username:
             log.info(f"Unknown username '{username}'")
             return None
 
@@ -28,6 +34,7 @@ class LoginHandler:
             time.sleep(5)
             return None
 
-        # Return user object
-        user = User(self.db, username)
-        return await user.load()
+        # Return user object with actual stored username
+        user = User(self.db, actual_username)
+        await user.load()
+        return user

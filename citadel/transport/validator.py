@@ -4,7 +4,6 @@ import logging
 from typing import Optional, Any
 
 from citadel.commands.base import BaseCommand
-from citadel.commands.responses import ErrorResponse
 from citadel.session.manager import SessionManager
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 

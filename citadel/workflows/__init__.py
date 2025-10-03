@@ -1,6 +1,8 @@
 # citadel/workflows/__init__.py
 
 from citadel.workflows import registry
+from citadel.workflows import login
+from citadel.workflows import register_user
 from citadel.workflows import validate_users
 
 # any new workflows must be imported above to be registered

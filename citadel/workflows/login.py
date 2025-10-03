@@ -18,7 +18,7 @@ class LoginWorkflow(Workflow):
         data = wf_state.data
 
         if step == 1:
-            # Prompt for username
+            # Prompt for username (called on workflow start or with command=None)
             processor.sessions.set_workflow(
                 session_id,
                 WorkflowState(kind=self.kind, step=2, data=data)
@@ -34,13 +34,26 @@ class LoginWorkflow(Workflow):
             data["username"] = command.strip()
 
             if data["username"].lower() == "new":
+                from citadel.workflows import registry as workflow_registry
+
+                # Clear current workflow and start registration workflow
                 processor.sessions.set_workflow(
                     session_id,
                     WorkflowState(kind="register_user", step=1, data={}))
-                return ToUser(
-                    session_id=session_id,
-                    text="Starting new user registration"
-                )
+
+                # Get registration workflow and call start()
+                handler = workflow_registry.get("register_user")
+                if handler:
+                    session_state = processor.sessions.get_session_state(session_id)
+                    wf_state = processor.sessions.get_workflow(session_id)
+                    return await handler.start(processor, session_id, session_state, wf_state)
+                else:
+                    return ToUser(
+                        session_id=session_id,
+                        text="Error: Registration workflow not found",
+                        is_error=True,
+                        error_code="workflow_not_found"
+                    )
 
             user_exists = await User.username_exists(processor.db,
                                                      data["username"])
