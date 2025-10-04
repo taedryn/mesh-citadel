@@ -70,6 +70,7 @@ class CommandProcessor:
 
             # For workflows, pass raw string response directly
             if packet.payload_type.value == "workflow_response":
+                print(f'command processor workflow response state: {state}')
                 return await handler.handle(self, session_id, state, packet.payload, wf)
             else:
                 # Got command packet while in workflow - only allow cancel command

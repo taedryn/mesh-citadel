@@ -85,30 +85,27 @@ class EnterMessageCommand(BaseCommand):
             raise ValueError("Recipient required in Mail room")
 
     async def run(self, context):
-        from citadel.room.room import Room, SystemRoomIDs
+        from citadel.workflows.registry import get as get_workflow
+        from citadel.session.state import WorkflowState
+        from citadel.room.room import SystemRoomIDs
 
         state = context.session_mgr.get_session_state(context.session_id)
-        room = Room(context.db, context.config, state.current_room)
-        await room.load()
+        if not state:
+            return ToUser(
+                session_id=context.session_id,
+                text="Session not found",
+                is_error=True,
+                error_code="no_session"
+            )
 
-        if room.room_id == SystemRoomIDs.MAIL_ID:
-            if 'recipient' not in self.args:
-                return ToUser(
-                    session_id=context.session_id,
-                    text=f"Messages in {room.name} require a recipient",
-                    is_error=True,
-                    error_code="missing_recipient"
-                )
-            msg_id = await room.post_message(state.username,
-                                             self.args["content"],
-                                             self.args["recipient"])
-        else:
-            msg_id = await room.post_message(state.username, self.args["content"])
-
-        return ToUser(
-            session_id=context.session_id,
-            text=f"Message {msg_id} posted in {room.name}."
+        # Start the workflow
+        context.session_mgr.set_workflow(
+            context.session_id,
+            WorkflowState(kind="enter_message", step=1, data={})
         )
+
+        workflow = get_workflow("enter_message")
+        return await workflow.start(processor, context.session_id, state, WorkflowState(kind="enter_message", step=1, data={}))
 
 
 @register_command

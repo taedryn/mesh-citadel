@@ -120,9 +120,10 @@ class LoginWorkflow(Workflow):
             processor.sessions.mark_username(session_id, username)
             processor.sessions.mark_logged_in(session_id)
             processor.sessions.clear_workflow(session_id)
+            state = processor.sessions.get_session_state(session_id)
             return ToUser(
                 session_id=session_id,
-                text=f"Welcome, {username}! You are now logged in."
+                text=f"Welcome, {username}! You are now logged in.\nCurrent room: {state.current_room}"
             )
 
         return ToUser(

@@ -118,8 +118,6 @@ class CLITransportEngine:
                 if not data:
                     break
             except Exception as e:
-                import pdb
-                pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -130,8 +128,6 @@ class CLITransportEngine:
                 if not line:
                     continue
             except Exception as e:
-                import pdb
-                pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -145,8 +141,6 @@ class CLITransportEngine:
                 if new_session_id:
                     session_id = new_session_id
             except Exception as e:
-                import pdb
-                pdb.set_trace()
                 logger.error(f"Error in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -154,8 +148,10 @@ class CLITransportEngine:
 
             try:
                 # Response is now a formatted string from _process_command
-                response_line = f"{response}\n"
-                writer.write(response_line.encode('utf-8'))
+                # A None response is used when entering messages
+                if response:
+                    response_line = f"{response}\n"
+                    writer.write(response_line.encode('utf-8'))
 
                 # If a new session was created, send the session_id to the client
                 if new_session_id:
@@ -192,13 +188,7 @@ class CLITransportEngine:
 
                     handler = workflow_registry.get(workflow_state.kind)
                     if handler:
-                        # Get session state
-                        session_state = SessionState(
-                            username=self.session_manager.get_username(session_id),
-                            current_room=None,  # TODO: get from session
-                            logged_in=self.session_manager.is_logged_in(session_id)
-                        )
-
+                        session_state = self.session_manager.get_session_state(session_id)
                         touser_result = await handler.handle(
                             self.command_processor, session_id, session_state,
                             command_line, workflow_state
