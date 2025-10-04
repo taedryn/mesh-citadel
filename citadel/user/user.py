@@ -85,6 +85,17 @@ class User:
         stored_hash, salt = result[0]
         return verify_password(submitted_password, salt, stored_hash)
 
+    @classmethod
+    async def get_user_count(cls, db_mgr) -> int:
+        """Count the users currently in the system and return the
+        number"""
+        query = "SELECT count(username) from users";
+        result = await db_mgr.execute(query, [])
+        if not result:
+            return 0
+        count = result[0][0]
+        return count
+
     # ------------------------------------------------------------
     # getters and setters
     # ------------------------------------------------------------

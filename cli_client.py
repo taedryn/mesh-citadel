@@ -231,7 +231,8 @@ class MeshCitadelCLI:
 
             # Provide user feedback based on resulting state
             if self.in_workflow:
-                print("(Entering login workflow - type your username)")
+                pass
+                #print("(Entering login workflow - type your username)")
             elif response and "error" not in response.lower():
                 print("(Connected - type 'help' for BBS commands)")
             else:

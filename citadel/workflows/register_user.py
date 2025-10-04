@@ -5,6 +5,7 @@ import logging
 import string
 
 from citadel.auth.passwords import generate_salt, hash_password
+from citadel.auth.permissions import PermissionLevel
 from citadel.session.state import WorkflowState
 from citadel.transport.packets import ToUser
 from citadel.user.user import User, UserStatus
@@ -221,17 +222,27 @@ class RegisterUserWorkflow(Workflow):
             # Mark session as fully logged in
             processor.sessions.mark_logged_in(session_id)
 
-            await db.execute(
-                "INSERT INTO pending_validations "
-                "(username, submitted_at, transport_engine, transport_metadata) "
-                "VALUES (?, ?, ?, ?)",
-                (
-                    username,
-                    datetime.now(UTC).isoformat(),
-                    "unknown",
-                    "{}"
+            user_count = await User.get_user_count(db)
+            print(f"[DEBUG] user count: {user_count}")
+            if user_count == 1: # single provisional user entry created
+                await user.set_permission_level(PermissionLevel.SYSOP)
+                processor.sessions.clear_workflow(session_id)
+                return ToUser(
+                    session_id=session_id,
+                    text="Registering you as the Sysop, my first user"
                 )
-            )
+            else:
+                await db.execute(
+                    "INSERT INTO pending_validations "
+                    "(username, submitted_at, transport_engine, transport_metadata) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        username,
+                        datetime.now(UTC).isoformat(),
+                        "unknown",
+                        "{}"
+                    )
+                )
             processor.sessions.clear_workflow(session_id)
             return ToUser(
                 session_id=session_id,
