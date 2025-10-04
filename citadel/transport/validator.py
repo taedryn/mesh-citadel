@@ -25,7 +25,7 @@ class InputValidator:
             ToUser error packet if validation fails
         """
         # Validate session exists
-        session_state = self.session_manager.validate_session(
+        session_state = self.session_manager.get_session_state(
             packet.session_id)
         if not session_state:
             log.error(

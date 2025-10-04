@@ -211,7 +211,7 @@ class CLITransportEngine:
                 from citadel.session.state import SessionState
 
                 nodename = command_line.split(":", 2)[2]
-                new_session_id = self.session_manager.create_provisional_session()
+                new_session_id = self.session_manager.create_session()
 
                 # Create workflow state
                 wf_state = WorkflowState(kind="login", step=1, data={"nodename": nodename})

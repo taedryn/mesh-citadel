@@ -34,7 +34,8 @@ class GoNextUnreadCommand(BaseCommand):
         from citadel.room.room import Room, SystemRoomIDs
         from citadel.user.user import User
 
-        state = context.session_mgr.validate_session(context.session_id)
+        import pdb; pdb.set_trace()
+        state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
         room = Room(context.db, context.config, state.current_room)
@@ -86,7 +87,7 @@ class EnterMessageCommand(BaseCommand):
     async def run(self, context):
         from citadel.room.room import Room, SystemRoomIDs
 
-        state = context.session_mgr.validate_session(context.session_id)
+        state = context.session_mgr.get_session_state(context.session_id)
         room = Room(context.db, context.config, state.current_room)
         await room.load()
 
@@ -138,7 +139,7 @@ class ReadNewMessagesCommand(BaseCommand):
         from citadel.room.room import Room
         from citadel.user.user import User
 
-        state = context.session_mgr.validate_session(context.session_id)
+        state = context.session_mgr.get_session_state(context.session_id)
         room = Room(context.db, context.config, state.current_room)
         await room.load()
         msg_ids = await room.get_unread_message_ids(state.username)
@@ -203,7 +204,7 @@ class QuitCommand(BaseCommand):
     arg_schema = {}
 
     async def run(self, context):
-        state = context.session_mgr.validate_session(context.session_id)
+        state = context.session_mgr.get_session_state(context.session_id)
         context.session_mgr.expire_session(context.session_id)
         log.info(f"User '{state.username}' logged out via quit command")
         return ToUser(
@@ -285,7 +286,7 @@ class ChangeRoomCommand(BaseCommand):
         from citadel.room.room import Room
         from citadel.user.user import User
 
-        state = context.session_mgr.validate_session(context.session_id)
+        state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
         current_room = Room(context.db, context.config, state.current_room)
@@ -325,7 +326,7 @@ class HelpCommand(BaseCommand):
         from citadel.user.user import User
         from citadel.room.room import Room
 
-        state = context.session_mgr.validate_session(context.session_id)
+        state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
 

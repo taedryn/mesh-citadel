@@ -36,7 +36,7 @@ class CommandProcessor:
 
         # 2. Extract session and validate state
         session_id = packet.session_id
-        state = self.sessions.validate_session(session_id)
+        state = self.sessions.get_session_state(session_id)
         if not state:
             return ToUser(
                 session_id=session_id,
