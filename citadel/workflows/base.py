@@ -1,22 +1,44 @@
 # citadel/workflows/base.py
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Dict, Any
 
 if TYPE_CHECKING:
     from citadel.transport.packets import ToUser
+    from citadel.session.state import WorkflowState
+
+
+@dataclass
+class WorkflowContext:
+    """providers necessary for workflow execution, so we can avoid
+    passing every last thing as an argument"""
+    session_id: str
+    db: "DatabaseManager"
+    config: "ConfigManager"
+    session_mgr: "SessionManager"
+    wf_state: "WorkflowState"
+
+
+@dataclass
+class WorkflowState:
+    kind: str
+    step: int = 0
+    data: Dict[str, Any] = field(default_factory=dict)
 
 
 class Workflow:
     """Abstract base for all workflows."""
     kind: str
 
-    async def handle(self, processor, session_id, state, command, wf_state) -> "ToUser":
+    async def handle(self, context, command) -> "ToUser":
         """Process a command within this workflow.
         Must return a ToUser packet.
+        'context' is a WorkflowContext object.
+        'command' appears to be the input from the user?
         """
         raise NotImplementedError
 
-    async def start(self, processor, session_id, state, wf_state) -> "ToUser":
+    async def start(self, context) -> "ToUser":
         """Generate the first prompt when this workflow is started.
 
         Called immediately after workflow creation to provide the initial
@@ -25,9 +47,9 @@ class Workflow:
         Default implementation delegates to handle() with None command,
         but workflows can override for custom start behavior.
         """
-        return await self.handle(processor, session_id, state, None, wf_state)
+        return await self.handle(context, session_id, None)
 
-    async def cleanup(self, processor, session_id, wf_state):
+    async def cleanup(self, context):
         """Clean up workflow state when cancelled.
 
         Called when a workflow is cancelled via the cancel command.
@@ -35,9 +57,8 @@ class Workflow:
         created during workflow execution.
 
         Args:
-            processor: Command processor instance with access to db, config, sessions
-            session_id: Session ID for the workflow being cancelled
-            wf_state: Workflow state containing step and data
+            context: WorkflowContext object containing manager,
+            session, and state information
         """
         # Default implementation does nothing - workflows can override if needed
         pass

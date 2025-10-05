@@ -1,14 +1,9 @@
 # citadel/session/state.py
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-
-@dataclass
-class WorkflowState:
-    kind: str
-    step: int = 0
-    data: Dict[str, Any] = field(default_factory=dict)
+from citadel.workflows.base import WorkflowState
 
 
 @dataclass

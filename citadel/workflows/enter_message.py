@@ -2,7 +2,7 @@
 from citadel.workflows.base import Workflow
 from citadel.workflows.registry import register
 from citadel.transport.packets import ToUser
-from citadel.session.state import WorkflowState
+from citadel.workflows.base import WorkflowState
 from citadel.room.room import Room, SystemRoomIDs
 from citadel.user.user import User
 
@@ -10,11 +10,12 @@ from citadel.user.user import User
 class EnterMessageWorkflow(Workflow):
     kind = "enter_message"
 
-    async def start(self, processor, session_id, state, wf_state):
+    async def start(self, context):
+        state = context.session_mgr.get_session_state(session_id)
         room_id = state.current_room
         if room_id == SystemRoomIDs.MAIL_ID:
-            processor.sessions.set_workflow(
-                session_id,
+            context.session_mgr.set_workflow(
+                context.session_id,
                 WorkflowState(
                     kind=self.kind,
                     step=1,
@@ -22,13 +23,13 @@ class EnterMessageWorkflow(Workflow):
                 )
             )
             return ToUser(
-                session_id=session_id,
+                session_id=context.session_id,
                 text="Enter recipient username:",
                 hints={"type": "text", "workflow": self.kind, "step": 1}
             )
         else:
-            processor.sessions.set_workflow(
-                session_id,
+            context.session_mgr.set_workflow(
+                context.session_id,
                 WorkflowState(
                     kind=self.kind,
                     step=2,
@@ -36,16 +37,17 @@ class EnterMessageWorkflow(Workflow):
                 )
             )
             return ToUser(
-                session_id=session_id,
+                session_id=context.session_id,
                 text="Enter your message. End with a single '.' on a line:",
                 hints={"type": "text", "workflow": self.kind, "step": 2}
             )
 
-    async def handle(self, processor, session_id, state, command, wf_state):
-        db = processor.db
-        config = processor.config
-        step = wf_state.step
-        data = wf_state.data
+    async def handle(self, context, command):
+        state = context.session_mgr.get_session_state(context.session_id)
+        db = context.db
+        config = context.config
+        step = context.wf_state.step
+        data = context.wf_state.data
         room = Room(db, config, state.current_room)
         await room.load()
 
@@ -54,15 +56,15 @@ class EnterMessageWorkflow(Workflow):
             recipient = command.strip()
             if not recipient or not await User.username_exists(db, recipient):
                 return ToUser(
-                    session_id=session_id,
+                    session_id=context.session_id,
                     text="Recipient not found. Try again.",
                     is_error=True,
                     error_code="invalid_recipient"
                 )
 
             data["recipient"] = recipient
-            processor.sessions.set_workflow(
-                session_id,
+            context.session_mgr.set_workflow(
+                context.session_id,
                 WorkflowState(
                     kind=self.kind,
                     step=2,
@@ -70,7 +72,7 @@ class EnterMessageWorkflow(Workflow):
                 )
             )
             return ToUser(
-                session_id=session_id,
+                session_id=context.session_id,
                 text="Enter your message. End with a single '.' on a line:",
                 hints={"type": "text", "workflow": self.kind, "step": 2}
             )
@@ -90,16 +92,16 @@ class EnterMessageWorkflow(Workflow):
                 else:
                     msg_id = await room.post_message(state.username, content)
 
-                processor.sessions.clear_workflow(session_id)
+                context.session_mgr.clear_workflow(context.session_id)
                 return ToUser(
-                    session_id=session_id,
+                    session_id=context.session_id,
                     text=f"Message {msg_id} posted in {room.name}."
                 )
             else:
                 lines.append(line)
                 data["lines"] = lines
-                processor.sessions.set_workflow(
-                    session_id,
+                context.session_mgr.set_workflow(
+                    context.session_id,
                     WorkflowState(
                         kind=self.kind,
                         step=2,
@@ -109,7 +111,7 @@ class EnterMessageWorkflow(Workflow):
                 return None
 
         return ToUser(
-            session_id=session_id,
+            session_id=context.session_id,
             text=f"Invalid step {step}",
             is_error=True,
             error_code="invalid_step"

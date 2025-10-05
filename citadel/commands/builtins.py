@@ -6,6 +6,9 @@ from citadel.commands.registry import register_command
 from citadel.auth.permissions import PermissionLevel
 from citadel.commands.responses import MessageResponse
 from citadel.transport.packets import ToUser
+from citadel.auth.permissions import is_allowed
+from citadel.room.room import Room, SystemRoomIDs
+from citadel.user.user import User
 
 log = logging.getLogger(__name__)
 
@@ -31,10 +34,6 @@ class GoNextUnreadCommand(BaseCommand):
     arg_schema = {}
 
     async def run(self, context):
-        from citadel.room.room import Room, SystemRoomIDs
-        from citadel.user.user import User
-
-        import pdb; pdb.set_trace()
         state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
@@ -86,8 +85,7 @@ class EnterMessageCommand(BaseCommand):
 
     async def run(self, context):
         from citadel.workflows.registry import get as get_workflow
-        from citadel.session.state import WorkflowState
-        from citadel.room.room import SystemRoomIDs
+        from citadel.workflows.base import WorkflowState
 
         state = context.session_mgr.get_session_state(context.session_id)
         if not state:
@@ -133,8 +131,6 @@ class ReadNewMessagesCommand(BaseCommand):
 
     async def run(self, context):
         from citadel.commands.responses import MessageResponse
-        from citadel.room.room import Room
-        from citadel.user.user import User
 
         state = context.session_mgr.get_session_state(context.session_id)
         room = Room(context.db, context.config, state.current_room)
@@ -237,13 +233,7 @@ class CancelCommand(BaseCommand):
         handler = workflow_registry.get(workflow_state.kind)
         if handler and hasattr(handler, 'cleanup'):
             try:
-                # Create processor-like context for cleanup
-                processor_context = type('ProcessorContext', (), {
-                    'db': context.db,
-                    'config': context.config,
-                    'sessions': context.session_mgr
-                })()
-                await handler.cleanup(processor_context, context.session_id, workflow_state)
+                await handler.cleanup(context)
             except Exception as e:
                 log.warning(f"Error during workflow cleanup for {workflow_state.kind}: {e}")
 
@@ -280,8 +270,6 @@ class ChangeRoomCommand(BaseCommand):
     }
 
     async def run(self, context):
-        from citadel.room.room import Room
-        from citadel.user.user import User
 
         state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
@@ -319,9 +307,6 @@ class HelpCommand(BaseCommand):
 
     async def run(self, context):
         from citadel.commands.registry import registry
-        from citadel.auth.checker import is_allowed
-        from citadel.user.user import User
-        from citadel.room.room import Room
 
         state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
@@ -349,8 +334,6 @@ class HelpCommand(BaseCommand):
 
     def _build_category_menu(self, all_commands, user, room, category):
         """Build menu for a specific category."""
-        from citadel.auth.checker import is_allowed
-
         # Filter to implemented commands user can access in this category
         available_commands = []
         for cmd_class in all_commands.values():
@@ -377,7 +360,6 @@ class HelpCommand(BaseCommand):
 
     async def _show_command_help(self, session_id, command_code, user, room):
         """Show detailed help for a specific command."""
-        from citadel.auth.checker import is_allowed
         from citadel.commands.registry import registry
 
         cmd_class = registry.get(command_code.upper())

@@ -6,7 +6,8 @@ import threading
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.room.room import SystemRoomIDs
-from citadel.session.state import SessionState, WorkflowState
+from citadel.session.state import SessionState 
+from citadel.workflows.base import WorkflowState
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)

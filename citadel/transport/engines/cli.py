@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 
 from citadel.config import Config
 from citadel.session.manager import SessionManager
-from citadel.session.state import WorkflowState
+from citadel.workflows.base import WorkflowState, WorkflowContext
 from citadel.commands.processor import CommandProcessor
 from citadel.transport.parser import TextParser
 from citadel.transport.packets import FromUser, FromUserType, ToUser
@@ -118,7 +118,7 @@ class CLITransportEngine:
                 if not data:
                     break
             except Exception as e:
-                logger.error(f"Error in client {client_id} session: {e}")
+                logger.error(f"Error reading input in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
@@ -128,7 +128,7 @@ class CLITransportEngine:
                 if not line:
                     continue
             except Exception as e:
-                logger.error(f"Error in client {client_id} session: {e}")
+                logger.error(f"Error decoding data in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
@@ -141,7 +141,7 @@ class CLITransportEngine:
                 if new_session_id:
                     session_id = new_session_id
             except Exception as e:
-                logger.error(f"Error in client {client_id} session: {e}")
+                logger.error(f"Error processing command in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
@@ -181,18 +181,22 @@ class CLITransportEngine:
         try:
             # Check if session is in a workflow and route input there
             if session_id:
-                workflow_state = self.session_manager.get_workflow(session_id)
-                if workflow_state:
+                wf_state = self.session_manager.get_workflow(session_id)
+                if wf_state:
                     from citadel.workflows import registry as workflow_registry
                     from citadel.session.state import SessionState
 
-                    handler = workflow_registry.get(workflow_state.kind)
+                    context = WorkflowContext(
+                        session_id=session_id,
+                        db=self.command_processor.db,
+                        config=self.config,
+                        session_mgr=self.session_manager,
+                        wf_state=wf_state
+                    )
+
+                    handler = workflow_registry.get(wf_state.kind)
                     if handler:
-                        session_state = self.session_manager.get_session_state(session_id)
-                        touser_result = await handler.handle(
-                            self.command_processor, session_id, session_state,
-                            command_line, workflow_state
-                        )
+                        touser_result = await handler.handle(context, command_line)
                         response = self._format_response(touser_result)
                         return (response, None, touser_result)
 
@@ -210,14 +214,15 @@ class CLITransportEngine:
                 # Get workflow handler and call start()
                 handler = workflow_registry.get("login")
                 if handler:
-                    # Create session state for workflow
-                    session_state = SessionState(
-                        username=None,
-                        current_room=None,
-                        logged_in=False
+                    context = WorkflowContext(
+                        session_id=new_session_id,
+                        db=self.command_processor.db,
+                        config=self.config,
+                        session_mgr=self.session_manager,
+                        wf_state=wf_state
                     )
 
-                    touser_result = await handler.start(self.command_processor, new_session_id, session_state, wf_state)
+                    touser_result = await handler.start(context)
                 else:
                     touser_result = ToUser(
                         session_id=new_session_id,
@@ -231,8 +236,8 @@ class CLITransportEngine:
 
             # Create appropriate FromUser packet based on context
             if session_id:
-                workflow_state = self.session_manager.get_workflow(session_id)
-                if workflow_state:
+                wf_state = self.session_manager.get_workflow(session_id)
+                if wf_state:
                     # User is in a workflow - check for special commands first
                     stripped_input = command_line.strip().lower()
                     if stripped_input in ['cancel', 'cancel_workflow']:

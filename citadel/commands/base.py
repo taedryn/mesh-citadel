@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class CommandContext:
-    """Context provided to command handlers containing all necessary provider objects."""
+    """Context provided to command handlers containing all necessary
+    provider objects."""
     db: "DatabaseManager"
     config: "Config"
     session_mgr: "SessionManager"
@@ -26,6 +27,8 @@ class CommandContext:
 
 
 class CommandCategory(IntEnum):
+    """ these values are used in the classification of different
+    commands to figure out how to display them in the help menu."""
     COMMON = 1
     UNCOMMON = 2
     UNUSUAL = 3

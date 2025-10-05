@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from citadel.commands.base import CommandContext
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
@@ -9,9 +10,11 @@ from citadel.session.manager import SessionManager
 from citadel.message.manager import MessageManager
 from citadel.transport.manager import TransportManager
 
+log = None
 
 async def initialize_system():
     """Initialize all system components."""
+    global log
     config = Config()
     initialize_logging(config)
 
@@ -35,7 +38,7 @@ async def initialize_system():
 
 async def shutdown(db_mgr, session_mgr, transport_mgr=None):
     """Gracefully shutdown system components."""
-    log = logging.getLogger('citadel')
+    global log
     log.info('Shutting down system...')
 
     # Stop transport layer first
@@ -53,6 +56,7 @@ async def shutdown(db_mgr, session_mgr, transport_mgr=None):
 
 async def main():
     """Main entry point."""
+    global log
     config = db_mgr = session_mgr = message_mgr = None
 
     try:
@@ -64,14 +68,14 @@ async def main():
         await transport_mgr.start()
 
         # Keep server running until interrupted
-        logging.getLogger('citadel').info('Server running. Press Ctrl+C to shutdown.')
+        log.info('Server running. Press Ctrl+C to shutdown.')
         while True:
             await asyncio.sleep(1)
 
     except KeyboardInterrupt:
-        logging.getLogger('citadel').info('Shutdown requested via keyboard interrupt')
+        log.info('Shutdown requested via keyboard interrupt')
     except Exception as e:
-        logging.getLogger('citadel').error(f'System error: {e}')
+        log.error(f'System error: {e}')
         raise
     finally:
         # Always attempt graceful shutdown

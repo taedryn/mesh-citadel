@@ -2,8 +2,7 @@
 
 import logging
 
-from citadel.auth.checker import is_allowed, permission_denied
-from citadel.auth.login_handler import LoginHandler
+from citadel.auth.permissions import is_allowed, permission_denied
 from citadel.commands.base import CommandContext
 from citadel.message.manager import MessageManager
 from citadel.room.room import Room, SystemRoomIDs
@@ -25,7 +24,6 @@ class CommandProcessor:
         self.db = db
         self.sessions = session_mgr
         self.msg_mgr = MessageManager(config, db)
-        self.auth = LoginHandler(db)
         self.validator = InputValidator(session_mgr)
 
     async def process(self, packet: FromUser) -> ToUser:
@@ -55,15 +53,15 @@ class CommandProcessor:
         self.sessions.touch_session(session_id)
 
         # 3. Workflow check
-        wf = self.sessions.get_workflow(session_id)
+        wf_state = self.sessions.get_workflow(session_id)
 
         # 4. Handle workflow if active
-        if wf:
-            handler = workflow_registry.get(wf.kind)
+        if wf_state:
+            handler = workflow_registry.get(wf_state.kind)
             if not handler:
                 return ToUser(
                     session_id=session_id,
-                    text=f"Unknown workflow: {wf.kind}",
+                    text=f"Unknown workflow: {wf_state.kind}",
                     is_error=True,
                     error_code="unknown_workflow"
                 )
@@ -71,7 +69,14 @@ class CommandProcessor:
             # For workflows, pass raw string response directly
             if packet.payload_type.value == "workflow_response":
                 print(f'command processor workflow response state: {state}')
-                return await handler.handle(self, session_id, state, packet.payload, wf)
+                context = WorkflowContext(
+                    session_id=session_id,
+                    db=self.db,
+                    config=self.config,
+                    session_mgr=self.sessions,
+                    wf_state=wf_state
+                )
+                return await handler.handle(context, packet.payload)
             else:
                 # Got command packet while in workflow - only allow cancel command
                 command = packet.payload
@@ -116,9 +121,8 @@ class CommandProcessor:
                 config=self.config,
                 session_mgr=self.sessions,
                 msg_mgr=self.msg_mgr,
-                session_id=session_id
+                session_id=session_id,
             )
-            # Commands will need to be updated to return ToUser - this will break temporarily
             return await command.run(context)
         except RuntimeError as e:
             log.error(f"Command execution failed: {e}")
