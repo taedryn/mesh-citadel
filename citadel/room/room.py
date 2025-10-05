@@ -211,6 +211,26 @@ class Room:
         room = Room(self.db, self.config, room_id)
         return room
 
+    @classmethod
+    async def get_all_visible_rooms(cls, db, config, user):
+        """Return rooms the user can read and hasn't ignored."""
+        rows = await db.execute("SELECT id FROM rooms ORDER BY id")
+        room_ids = [row[0] for row in rows]
+
+        visible_rooms = []
+        for room_id in room_ids:
+            room = Room(db, config, room_id)
+            await room.load()
+
+            readable = room.can_user_read(user)
+            ignored = await room.is_ignored_by(user)
+
+            if readable and not ignored:
+                visible_rooms.append(room)
+
+        return visible_rooms
+
+
     # ------------------------------------------------------------
     # message handling
     # ------------------------------------------------------------

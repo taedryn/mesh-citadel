@@ -6,6 +6,8 @@ Acts like a "remote mesh node" interface - can only send/receive text without
 knowledge of client state.
 """
 import asyncio
+from datetime import datetime
+from dateutil.parser import parse as dateparse
 import logging
 from pathlib import Path
 import traceback
@@ -19,7 +21,7 @@ from citadel.transport.parser import TextParser
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 
 class CLITransportEngine:
@@ -47,7 +49,7 @@ class CLITransportEngine:
         if self._running:
             return
 
-        logger.info(f"Starting CLI transport server on {self.socket_path}")
+        log.info(f"Starting CLI transport server on {self.socket_path}")
 
         # Remove existing socket file if it exists
         if self.socket_path.exists():
@@ -60,14 +62,14 @@ class CLITransportEngine:
         )
 
         self._running = True
-        logger.info("CLI transport server started")
+        log.info("CLI transport server started")
 
     async def stop(self) -> None:
         """Stop the CLI transport server."""
         if not self._running:
             return
 
-        logger.info("Stopping CLI transport server")
+        log.info("Stopping CLI transport server")
 
         if self.server:
             self.server.close()
@@ -78,14 +80,14 @@ class CLITransportEngine:
             self.socket_path.unlink()
 
         self._running = False
-        logger.info("CLI transport server stopped")
+        log.info("CLI transport server stopped")
 
     async def _handle_client_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a new client connection."""
         self._client_count += 1
         client_id = self._client_count
 
-        logger.info(f"CLI client connected: {client_id}")
+        log.info(f"CLI client connected: {client_id}")
 
         try:
             # Send connection acknowledgment
@@ -102,11 +104,11 @@ class CLITransportEngine:
             await self._handle_client_session(reader, writer, client_id)
 
         except Exception as e:
-            logger.error(f"Error handling CLI client {client_id}: {e}")
+            log.error(f"Error handling CLI client {client_id}: {e}")
         finally:
             writer.close()
             await writer.wait_closed()
-            logger.info(f"CLI client disconnected: {client_id}")
+            log.info(f"CLI client disconnected: {client_id}")
 
     async def _handle_client_session(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, client_id: int) -> None:
         """Handle the text communication session with a client."""
@@ -119,7 +121,7 @@ class CLITransportEngine:
                 if not data:
                     break
             except Exception as e:
-                logger.error(f"Error reading input in client {client_id} session: {e}")
+                log.error(f"Error reading input in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
@@ -129,12 +131,12 @@ class CLITransportEngine:
                 if not line:
                     continue
             except Exception as e:
-                logger.error(f"Error decoding data in client {client_id} session: {e}")
+                log.error(f"Error decoding data in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
 
-                logger.debug(f"Client {client_id} sent: {line}")
+                log.debug(f"Client {client_id} sent: {line}")
 
             try:
                 # Process the command through BBS system
@@ -142,7 +144,7 @@ class CLITransportEngine:
                 if new_session_id:
                     session_id = new_session_id
             except Exception as e:
-                logger.error(f"Error processing command in client {client_id} session: {e}")
+                log.error(f"Error processing command in client {client_id} session: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
                 await writer.drain()
@@ -168,7 +170,7 @@ class CLITransportEngine:
                 await writer.drain()
 
             except Exception as e:
-                logger.error(
+                log.error(
                     f"Error sending response to client {client_id}: {e}")
                 error_msg = f"ERROR: {str(e)}\n"
                 writer.write(error_msg.encode('utf-8'))
@@ -219,7 +221,7 @@ class CLITransportEngine:
             return (response, None, touser_result)
 
         except (KeyError, AttributeError, ValueError) as e:
-            logger.error(f"Workflow handling failed: {e}")
+            log.error(f"Workflow handling failed: {e}")
             traceback.print_exc()
             return ("ERROR: Workflow execution failed", None, None)
 
@@ -253,28 +255,41 @@ class CLITransportEngine:
             return (response, new_session_id, touser_result)
 
         except (IndexError, KeyError, AttributeError) as e:
-            logger.error(f"Login workflow bootstrap failed: {e}")
+            log.error(f"Login workflow bootstrap failed: {e}")
             traceback.print_exc()
             return ("ERROR: Login workflow failed", None, None)
 
     def build_packet(self, command_line: str, session_id: Optional[str]) -> Optional[FromUser]:
         try:
             command = self.text_parser.parse_command(command_line)
+            log.info(f'parsed command is: {command}')
             if command is False:
                 return None
 
             wf_state = self.session_manager.get_workflow(session_id) if session_id else None
-            stripped = command_line.strip().lower()
+            stripped = command_line.strip()
 
-            if wf_state and stripped in ['cancel', 'cancel_workflow']:
-                return FromUser(session_id=session_id, payload_type=FromUserType.COMMAND, payload=command)
+            if wf_state and stripped.lower() in ['cancel', 'cancel_workflow']:
+                return FromUser(
+                    session_id=session_id,
+                    payload_type=FromUserType.COMMAND,
+                    payload=command
+                )
             elif wf_state:
-                return FromUser(session_id=session_id, payload_type=FromUserType.WORKFLOW_RESPONSE, payload=command_line.strip())
+                return FromUser(
+                    session_id=session_id,
+                    payload_type=FromUserType.WORKFLOW_RESPONSE,
+                    payload=stripped
+                )
             else:
-                return FromUser(session_id=session_id or "", payload_type=FromUserType.COMMAND, payload=command)
+                return FromUser(
+                    session_id=session_id or "",
+                    payload_type=FromUserType.COMMAND,
+                    payload=command
+                )
 
         except (ValueError, AttributeError) as e:
-            logger.error(f"Packet construction failed: {e}")
+            log.error(f"Packet construction failed: {e}")
             traceback.print_exc()
             return None
 
@@ -282,11 +297,11 @@ class CLITransportEngine:
         try:
             return await self.command_processor.process(packet)
         except RuntimeError as e:
-            logger.error(f"Command processor runtime error: {e}")
+            log.error(f"Command processor runtime error: {e}")
             traceback.print_exc()
             return None
         except Exception as e:
-            logger.error(f"Command processor failed: {e}")
+            log.error(f"Command processor failed: {e}")
             traceback.print_exc()
             return None
 
@@ -294,7 +309,7 @@ class CLITransportEngine:
         try:
             return (self._format_response(result), None, result)
         except Exception as e:
-            logger.error(f"Response formatting failed: {e}")
+            log.error(f"Response formatting failed: {e}")
             traceback.print_exc()
             return ("ERROR: Failed to format response", None, None)
 
@@ -343,7 +358,9 @@ class CLITransportEngine:
     def _format_message(self, message):
         """Format a MessageResponse object for BBS-style display."""
         # Format: "From: DisplayName (username) - Timestamp\nContent"
-        header = f"From: {message.display_name} ({message.sender}) - {message.timestamp}"
+        timestamp = dateparse(message.timestamp)
+        msg_time = timestamp.strftime('%d%b%y %H:%M')
+        header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {msg_time}"
         if message.blocked:
             content = "[Message from blocked sender]"
         else:

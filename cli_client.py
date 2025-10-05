@@ -66,7 +66,17 @@ class MeshCitadelCLI:
 
     def _complete_command(self, text, state):
         """Tab completion for CLI commands."""
-        local_commands = ['/help', '/connect', '/info', '/quit', '/exit']
+        local_commands = [
+            '/help',
+            '/h',
+            '/connect',
+            '/c',
+            '/info',
+            '/i',
+            '/quit',
+            '/q',
+            '/exit'
+        ]
 
         # Filter commands that match the current text
         matches = [cmd for cmd in local_commands if cmd.startswith(text)]
@@ -219,7 +229,7 @@ class MeshCitadelCLI:
             print("  /quit             - Exit CLI")
             print("\nFor BBS commands, type them directly after connecting")
 
-        elif cmd == 'connect':
+        elif cmd in['connect', 'c']:
             if not args:
                 print("Usage: /connect <node_id>")
                 return True
@@ -238,18 +248,14 @@ class MeshCitadelCLI:
             else:
                 print("(Connection may have failed - check server status)")
 
-        elif cmd == 'info':
+        elif cmd in ['info', 'i']:
             print(f'Node ID:           {self.node_id}')
             print(f'Session ID:        {self.session_id}')
             print(f'In workflow:       {self.in_workflow}')
             print(f'Logged in:         {self.logged_in}')
             print(f'Socket connected:  {self.socket_connected}')
-            # print out connection info
-            # * node id
-            # * session id
-            # * username
-            # * last activity time
-        elif cmd in ['quit', 'exit']:
+
+        elif cmd in ['quit', 'exit', 'q']:
             print("Goodbye!")
             return False
 

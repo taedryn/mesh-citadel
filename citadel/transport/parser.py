@@ -44,7 +44,7 @@ class TextParser:
         command = command_cls(username="")
 
         # Store raw args text - individual commands can parse as needed
-        if hasattr(command, 'args_text'):
-            command.args_text = args_text
+        if hasattr(command, 'args'):
+            command.args = args_text
 
         return command

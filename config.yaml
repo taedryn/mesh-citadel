@@ -43,5 +43,5 @@ database:
   db_path: "citadel.db"             # (restart required)
 
 logging:
-  log_level: "INFO"
+  log_level: "DEBUG"
   log_file_path: "citadel.log"

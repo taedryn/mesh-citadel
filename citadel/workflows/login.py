@@ -1,11 +1,11 @@
 import logging
 
 from citadel.auth.passwords import authenticate
-from citadel.workflows.base import Workflow
-from citadel.workflows.registry import register
+from citadel.room.room import Room
 from citadel.transport.packets import ToUser
-from citadel.workflows.base import WorkflowState
 from citadel.user.user import User
+from citadel.workflows.base import WorkflowState, Workflow
+from citadel.workflows.registry import register
 
 log = logging.getLogger(__name__)
 
@@ -121,9 +121,12 @@ class LoginWorkflow(Workflow):
             context.session_mgr.mark_logged_in(context.session_id)
             context.session_mgr.clear_workflow(context.session_id)
             state = context.session_mgr.get_session_state(context.session_id)
+            room = Room(context.db, context.config, state.current_room)
+            await room.load()
             return ToUser(
                 session_id=context.session_id,
-                text=f"Welcome, {username}! You are now logged in.\nCurrent room: {state.current_room}"
+                text=(f"Welcome, {username}! You are now logged in.\n"
+                    f"Current room: {room.name}")
             )
 
         return ToUser(

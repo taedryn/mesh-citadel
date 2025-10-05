@@ -34,7 +34,6 @@ class CommandRegistry:
                 "name": cls.name,
                 "permission_level": cls.permission_level.value,
                 "help": cls.help_text,
-                "args": cls.arg_schema,
             }
             for code, cls in self._commands.items()
         }

@@ -33,7 +33,6 @@ class GoNextUnreadCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Goto next unread room"
     help_text = "Go to the next room with unread messages. This skips over rooms you've already read completely."
-    arg_schema = {}
 
     async def run(self, context):
         state = context.session_mgr.get_session_state(context.session_id)
@@ -75,14 +74,10 @@ class EnterMessageCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Enter message"
     help_text = "Compose and post a message to the current room"
-    arg_schema = {
-        "content": {"required": True, "type": "str", "help": "The body of the message"},
-        "recipient": {"required": False, "type": "str", "help": "Recipient username (required in Mail)"},
-    }
 
     def validate(self, context=None):
         super().validate(context)
-        if context and context.get("room") == "Mail" and "recipient" not in self.args:
+        if context and context.get("room") == "Mail" and not self.args:
             raise ValueError("Recipient required in Mail room")
 
     async def run(self, context):
@@ -121,9 +116,6 @@ class ReadMessagesCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Read messages"
     help_text = "Read messages in the current room. Provide ID to read a specific message."
-    arg_schema = {
-        "message_id": {"required": False, "type": "str", "help": "ID of the message to read"}
-    }
 
 
 @register_command
@@ -134,7 +126,6 @@ class ReadNewMessagesCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Read new messages"
     help_text = "Read new messages since last visit. Starts with the oldest mesasage you haven't read yet in this room."
-    arg_schema = {}
 
     async def run(self, context):
         from citadel.commands.responses import MessageResponse
@@ -179,7 +170,47 @@ class KnownRoomsCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Known rooms"
     help_text = "List all rooms known to you."
-    arg_schema = {}
+
+    async def run(self, context):
+        from citadel.room.room import Room
+        from citadel.user.user import User
+
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+
+        current_room_id = state.current_room
+
+        rooms = await Room.get_all_visible_rooms(
+            context.db, context.config, user
+        )
+
+        if not rooms:
+            return ToUser(
+                session_id=context.session_id,
+                text="No rooms available to you."
+            )
+
+        lines = []
+        for room in rooms:
+            markers = []
+
+            if room.room_id == current_room_id:
+                markers.append("📍")
+
+            unread = await room.has_unread_messages(user)
+            if unread:
+                markers.append("📨")
+
+            marker_str = "".join(markers)
+            line = f"{room.name}{marker_str}"
+            lines.append(line)
+
+        room_list = "\n".join(lines)
+        return ToUser(
+            session_id=context.session_id,
+            text=f"Known rooms:\n\n{room_list}"
+        )
 
 
 @register_command
@@ -190,7 +221,6 @@ class IgnoreRoomCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Ignore room"
     help_text = "Ignore or unignore the current room"
-    arg_schema = {}
 
 
 @register_command
@@ -201,7 +231,6 @@ class QuitCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Quit"
     help_text = "Quit or log off"
-    arg_schema = {}
 
     async def run(self, context):
         state = context.session_mgr.get_session_state(context.session_id)
@@ -221,7 +250,6 @@ class CancelCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Cancel workflow"
     help_text = "Cancel the current workflow and return to normal command mode"
-    arg_schema = {}
 
     async def run(self, context):
         from citadel.workflows import registry as workflow_registry
@@ -261,7 +289,6 @@ class ScanMessagesCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Scan messages"
     help_text = "Show message summaries in the current room."
-    arg_schema = {}
 
 
 @register_command
@@ -272,10 +299,10 @@ class ChangeRoomCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Change room"
     help_text = "Change to a room by name or number. Specify the room name or ID after the command letter."
-    arg_schema = {
-        "room": {"required": True, "type": "str", "help": "Name or number of the room to enter"}
-    }
+    # add an args attribute for any command that takes an argument
+    args = ""
 
+    # TODO: sort out arguments here
     async def run(self, context):
 
         state = context.session_mgr.get_session_state(context.session_id)
@@ -283,12 +310,13 @@ class ChangeRoomCommand(BaseCommand):
         await user.load()
         current_room = Room(context.db, context.config, state.current_room)
         await current_room.load()
-        next_room = await current_room.go_to_room(self.args["room"])
-        log.debug(f'preparing to go to room {self.args["room"]}')
+        next_room = await current_room.go_to_room(self.args)
+        await next_room.load()
+        log.debug(f'preparing to go to room {self.args}')
         if not next_room:
             return ToUser(
                 session_id=context.session_id,
-                text=f"Room {self.args['room']} not found.",
+                text=f"Room {self.args} not found.",
                 is_error=True,
                 error_code="no_next_room"
             )
@@ -308,9 +336,6 @@ class HelpCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Help"
     help_text = "Display a help menu of available commands"
-    arg_schema = {
-        "command": {"required": False, "type": "str", "help": "Optional command code for detailed help"}
-    }
 
     async def run(self, context):
         from citadel.commands.registry import registry
@@ -395,13 +420,6 @@ class HelpCommand(BaseCommand):
         # Build detailed help text
         help_text = f"{cmd_class.code} - {cmd_class.short_text}\n{cmd_class.help_text}"
 
-        if cmd_class.arg_schema:
-            help_text += "\n\nArguments:"
-            for arg, spec in cmd_class.arg_schema.items():
-                required = " (required)" if spec.get(
-                    "required") else " (optional)"
-                help_text += f"\n  {arg}: {spec.get('help', 'No description')}{required}"
-
         return ToUser(
             session_id=session_id,
             text=help_text
@@ -417,9 +435,6 @@ class MenuCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Help"
     help_text = "Display a help menu of available commands"
-    arg_schema = {
-        "command": {"required": False, "type": "str", "help": "Optional command code for detailed help"}
-    }
 
     # Use the same implementation as HelpCommand
     run = HelpCommand.run
@@ -435,7 +450,6 @@ class MailCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Go to Mail"
     help_text = "Go directly to the Mail room to send/receive private messages."
-    arg_schema = {}
 
 
 @register_command
@@ -446,7 +460,6 @@ class WhoCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Who's online"
     help_text = "List active users currently online."
-    arg_schema = {}
 
 
 @register_command
@@ -457,9 +470,6 @@ class DeleteMessageCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Delete message"
     help_text = "Delete either the most recently displayed message, or a message ID specified after the command letter. Only Aides and Sysops can delete others' messages."
-    arg_schema = {
-        "message_id": {"required": True, "type": "str", "help": "ID of the message to delete"}
-    }
 
 
 @register_command
@@ -470,9 +480,6 @@ class BlockUserCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "(Un)Block user"
     help_text = "Block or unblock another user. Specify username or display name after the command letter. Prevents you seeing their messages/mails (they can still see yours)."
-    arg_schema = {
-        "target_user": {"required": True, "type": "str", "help": "Username of the user to block/unblock"}
-    }
 
 
 @register_command
@@ -483,7 +490,6 @@ class ValidateUsersCommand(BaseCommand):
     permission_level = PermissionLevel.AIDE
     short_text = "Validate users"
     help_text = "Enter the user validation workflow to approve new users."
-    arg_schema = {}  # no args; interactive workflow
 
 
 # -------------------
@@ -498,10 +504,6 @@ class CreateRoomCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Create room"
     help_text = "Create a new room. Sends you into an interactive workflow to create the new room."
-    arg_schema = {
-        "room": {"required": True, "type": "str", "help": "Name of the new room"},
-        "description": {"required": False, "type": "str", "help": "Optional description of the room"}
-    }
 
 
 @register_command
@@ -512,10 +514,6 @@ class EditRoomCommand(BaseCommand):
     permission_level = PermissionLevel.SYSOP
     short_text = "Edit room"
     help_text = "Edit a room's characteristics"
-    arg_schema = {
-        "room": {"required": True, "type": "str", "help": "Room to edit"},
-        "attributes": {"required": True, "type": "dict", "help": "Room attributes to update"}
-    }
 
 
 @register_command
@@ -526,10 +524,6 @@ class EditUserCommand(BaseCommand):
     permission_level = PermissionLevel.SYSOP
     short_text = "Edit user"
     help_text = "Edit a user's characteristics"
-    arg_schema = {
-        "target_user": {"required": True, "type": "str", "help": "Username of the user to edit"},
-        "attributes": {"required": True, "type": "dict", "help": "User attributes to update"}
-    }
 
 
 @register_command
@@ -540,4 +534,3 @@ class FastForwardCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Fast-forward"
     help_text = "Fast-forward to the latest message in the current room, skipping over unread messages. This resets your last-read pointer to the latest message."
-    arg_schema = {}

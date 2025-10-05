@@ -53,18 +53,11 @@ class BaseCommand(ABC):
     short_text: str = ""
     help_text: str = ""
 
-    # Argument schema: dict of arg_name →
-    # { "required": bool, "type": str, "help": str }
-    arg_schema: Dict[str, Dict[str, Any]] = {}
-
-    # Schema version for forward compatibility
-    schema_version: str = "1.0"
-
     def __init__(
         self,
         username: str,
         room: Optional[str] = None,
-        args: Optional[Dict[str, Any]] = None,
+        args: Optional[str] = ""
     ):
         # username must always be supplied (can be empty string, but not None)
         if username is None:
@@ -72,18 +65,13 @@ class BaseCommand(ABC):
                 "username must be supplied (can be empty string, but not None)")
         self.username = username
         self.room = room
-        self.args: Dict[str, Any] = args or {}
+        self.args = args
 
     def validate(self, context: Optional[Dict[str, Any]] = None) -> None:
-        # Check for required args
-        for arg, spec in self.arg_schema.items():
-            if spec.get("required") and arg not in self.args:
-                raise ValueError(f"Missing required argument: {arg}")
-
-        # Check for extraneous args
-        for arg in self.args:
-            if arg not in self.arg_schema:
-                raise ValueError(f"Unexpected argument: {arg}")
+        """this was providing validation of a too-complex argument
+        schema system, and is temporarily being left in place to aid
+        the transition away from that too-complex system."""
+        return None
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -91,7 +79,6 @@ class BaseCommand(ABC):
         or transport across system boundaries.
         """
         return {
-            "version": self.schema_version,
             "code": self.code,
             "name": self.name,
             "username": self.username,
