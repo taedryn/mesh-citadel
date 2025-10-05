@@ -1,6 +1,7 @@
 # bbs/commands/builtins.py
 
 import logging
+
 from citadel.commands.base import BaseCommand, CommandCategory
 from citadel.commands.registry import register_command
 from citadel.auth.permissions import PermissionLevel
@@ -9,6 +10,7 @@ from citadel.transport.packets import ToUser
 from citadel.auth.permissions import is_allowed
 from citadel.room.room import Room, SystemRoomIDs
 from citadel.user.user import User
+from citadel.workflows.base import WorkflowContext
 
 log = logging.getLogger(__name__)
 
@@ -96,14 +98,19 @@ class EnterMessageCommand(BaseCommand):
                 error_code="no_session"
             )
 
+        wf_state = WorkflowState(kind="enter_message", step=1, data={})
         # Start the workflow
-        context.session_mgr.set_workflow(
-            context.session_id,
-            WorkflowState(kind="enter_message", step=1, data={})
+        context.session_mgr.set_workflow(context.session_id, wf_state)
+        wf_context = WorkflowContext(
+            session_id=context.session_id,
+            db=context.db,
+            config=context.config,
+            session_mgr=context.session_mgr,
+            wf_state=wf_state
         )
 
         workflow = get_workflow("enter_message")
-        return await workflow.start(processor, context.session_id, state, WorkflowState(kind="enter_message", step=1, data={}))
+        return await workflow.start(wf_context)
 
 
 @register_command

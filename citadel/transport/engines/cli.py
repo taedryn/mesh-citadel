@@ -8,6 +8,7 @@ knowledge of client state.
 import asyncio
 import logging
 from pathlib import Path
+import traceback
 from typing import Dict, Any, Optional
 
 from citadel.config import Config
@@ -137,7 +138,7 @@ class CLITransportEngine:
 
             try:
                 # Process the command through BBS system
-                response, new_session_id, result = await self._process_command(line, session_id, client_id)
+                response, new_session_id, result = await self.process_command(line, session_id, client_id)
                 if new_session_id:
                     session_id = new_session_id
             except Exception as e:
@@ -147,7 +148,7 @@ class CLITransportEngine:
                 await writer.drain()
 
             try:
-                # Response is now a formatted string from _process_command
+                # Response is now a formatted string from process_command
                 # A None response is used when entering messages
                 if response:
                     response_line = f"{response}\n"
@@ -176,123 +177,126 @@ class CLITransportEngine:
             # Session management is now handled by the session manager directly
             # No need to extract session_id from response payload
 
-    async def _process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> tuple[str, Optional[str], Optional[object]]:
+    async def process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> tuple[str, Optional[str], Optional[object]]:
         """Process a command through the BBS command system."""
+
+        if session_id:
+            result = await self.get_workflow_response(command_line, session_id)
+            if result:
+                return result
+
+        if command_line.startswith("__workflow:login:"):
+            return await self.start_login_workflow(command_line)
+
+        packet = self.build_packet(command_line, session_id)
+        if packet is None:
+            return self._handle_parse_failure(command_line, session_id)
+
+        result = await self.execute_packet(packet)
+        return self.format_result(result)
+
+    async def get_workflow_response(self, command_line: str, session_id: str) -> Optional[tuple[str, Optional[str], Optional[object]]]:
         try:
-            # Check if session is in a workflow and route input there
-            if session_id:
-                wf_state = self.session_manager.get_workflow(session_id)
-                if wf_state:
-                    from citadel.workflows import registry as workflow_registry
-                    from citadel.session.state import SessionState
+            wf_state = self.session_manager.get_workflow(session_id)
+            if not wf_state:
+                return None
 
-                    context = WorkflowContext(
-                        session_id=session_id,
-                        db=self.command_processor.db,
-                        config=self.config,
-                        session_mgr=self.session_manager,
-                        wf_state=wf_state
-                    )
+            from citadel.workflows import registry as workflow_registry
+            handler = workflow_registry.get(wf_state.kind)
+            if not handler:
+                return ("ERROR: Workflow handler not found", None, None)
 
-                    handler = workflow_registry.get(wf_state.kind)
-                    if handler:
-                        touser_result = await handler.handle(context, command_line)
-                        response = self._format_response(touser_result)
-                        return (response, None, touser_result)
+            context = WorkflowContext(
+                session_id=session_id,
+                db=self.command_processor.db,
+                config=self.config,
+                session_mgr=self.session_manager,
+                wf_state=wf_state
+            )
 
-            if command_line.startswith("__workflow:login:"):
-                from citadel.workflows import registry as workflow_registry
-                from citadel.session.state import SessionState
+            touser_result = await handler.handle(context, command_line)
+            response = self._format_response(touser_result)
+            return (response, None, touser_result)
 
-                nodename = command_line.split(":", 2)[2]
-                new_session_id = self.session_manager.create_session()
+        except (KeyError, AttributeError, ValueError) as e:
+            logger.error(f"Workflow handling failed: {e}")
+            traceback.print_exc()
+            return ("ERROR: Workflow execution failed", None, None)
 
-                # Create workflow state
-                wf_state = WorkflowState(kind="login", step=1, data={"nodename": nodename})
-                self.session_manager.set_workflow(new_session_id, wf_state)
+    async def start_login_workflow(self, command_line: str) -> tuple[str, Optional[str], Optional[object]]:
+        try:
+            nodename = command_line.split(":", 2)[2]
+            new_session_id = self.session_manager.create_session()
+            wf_state = WorkflowState(kind="login", step=1, data={"nodename": nodename})
+            self.session_manager.set_workflow(new_session_id, wf_state)
 
-                # Get workflow handler and call start()
-                handler = workflow_registry.get("login")
-                if handler:
-                    context = WorkflowContext(
-                        session_id=new_session_id,
-                        db=self.command_processor.db,
-                        config=self.config,
-                        session_mgr=self.session_manager,
-                        wf_state=wf_state
-                    )
-
-                    touser_result = await handler.start(context)
-                else:
-                    touser_result = ToUser(
-                        session_id=new_session_id,
-                        text="Error: Login workflow not found",
-                        is_error=True,
-                        error_code="workflow_not_found"
-                    )
-
-                response = self._format_response(touser_result)
-                return (response, new_session_id, touser_result)
-
-            # Create appropriate FromUser packet based on context
-            if session_id:
-                wf_state = self.session_manager.get_workflow(session_id)
-                if wf_state:
-                    # User is in a workflow - check for special commands first
-                    stripped_input = command_line.strip().lower()
-                    if stripped_input in ['cancel', 'cancel_workflow']:
-                        # Allow canceling workflows with special command
-                        command = self.text_parser.parse_command(command_line)
-                        if command is False:
-                            return self._handle_parse_failure(command_line, session_id)
-
-                        packet = FromUser(
-                            session_id=session_id,
-                            payload_type=FromUserType.COMMAND,
-                            payload=command
-                        )
-                    else:
-                        # Treat all other input as workflow response - send raw string
-                        packet = FromUser(
-                            session_id=session_id,
-                            payload_type=FromUserType.WORKFLOW_RESPONSE,
-                            payload=command_line.strip()
-                        )
-                else:
-                    # Not in workflow, parse as command
-                    command = self.text_parser.parse_command(command_line)
-                    if command is False:
-                        return self._handle_parse_failure(command_line, session_id)
-
-                    packet = FromUser(
-                        session_id=session_id,
-                        payload_type=FromUserType.COMMAND,
-                        payload=command
-                    )
-            else:
-                # No session, parse as command
-                command = self.text_parser.parse_command(command_line)
-
-                # Handle parser failure - command not recognized
-                if command is False:
-                    return self._handle_parse_failure(command_line, session_id)
-
-                packet = FromUser(
-                    session_id="",  # No session yet
-                    payload_type=FromUserType.COMMAND,
-                    payload=command
+            from citadel.workflows import registry as workflow_registry
+            handler = workflow_registry.get("login")
+            if not handler:
+                touser_result = ToUser(
+                    session_id=new_session_id,
+                    text="Error: Login workflow not found",
+                    is_error=True,
+                    error_code="workflow_not_found"
                 )
+            else:
+                context = WorkflowContext(
+                    session_id=new_session_id,
+                    db=self.command_processor.db,
+                    config=self.config,
+                    session_mgr=self.session_manager,
+                    wf_state=wf_state
+                )
+                touser_result = await handler.start(context)
 
-            # Process through command processor with new packet interface
-            result = await self.command_processor.process(packet)
+            response = self._format_response(touser_result)
+            return (response, new_session_id, touser_result)
 
-            # Return the formatted result (no session change for regular commands)
-            return (self._format_response(result), None, result)
+        except (IndexError, KeyError, AttributeError) as e:
+            logger.error(f"Login workflow bootstrap failed: {e}")
+            traceback.print_exc()
+            return ("ERROR: Login workflow failed", None, None)
 
+    def build_packet(self, command_line: str, session_id: Optional[str]) -> Optional[FromUser]:
+        try:
+            command = self.text_parser.parse_command(command_line)
+            if command is False:
+                return None
+
+            wf_state = self.session_manager.get_workflow(session_id) if session_id else None
+            stripped = command_line.strip().lower()
+
+            if wf_state and stripped in ['cancel', 'cancel_workflow']:
+                return FromUser(session_id=session_id, payload_type=FromUserType.COMMAND, payload=command)
+            elif wf_state:
+                return FromUser(session_id=session_id, payload_type=FromUserType.WORKFLOW_RESPONSE, payload=command_line.strip())
+            else:
+                return FromUser(session_id=session_id or "", payload_type=FromUserType.COMMAND, payload=command)
+
+        except (ValueError, AttributeError) as e:
+            logger.error(f"Packet construction failed: {e}")
+            traceback.print_exc()
+            return None
+
+    async def execute_packet(self, packet: FromUser) -> Optional[object]:
+        try:
+            return await self.command_processor.process(packet)
+        except RuntimeError as e:
+            logger.error(f"Command processor runtime error: {e}")
+            traceback.print_exc()
+            return None
         except Exception as e:
-            logger.error(
-                f"Error processing command '{command_line}' for client {client_id}: {e}")
-            return (f"ERROR: Command processing failed - {str(e)}", None, None)
+            logger.error(f"Command processor failed: {e}")
+            traceback.print_exc()
+            return None
+
+    def format_result(self, result: Optional[object]) -> tuple[str, Optional[str], Optional[object]]:
+        try:
+            return (self._format_response(result), None, result)
+        except Exception as e:
+            logger.error(f"Response formatting failed: {e}")
+            traceback.print_exc()
+            return ("ERROR: Failed to format response", None, None)
 
     def _format_response(self, response):
         """Format ToUser response(s) for CLI display."""

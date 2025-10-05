@@ -47,7 +47,7 @@ class Workflow:
         Default implementation delegates to handle() with None command,
         but workflows can override for custom start behavior.
         """
-        return await self.handle(context, session_id, None)
+        return await self.handle(context, None)
 
     async def cleanup(self, context):
         """Clean up workflow state when cancelled.

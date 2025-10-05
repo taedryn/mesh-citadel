@@ -11,7 +11,7 @@ class EnterMessageWorkflow(Workflow):
     kind = "enter_message"
 
     async def start(self, context):
-        state = context.session_mgr.get_session_state(session_id)
+        state = context.session_mgr.get_session_state(context.session_id)
         room_id = state.current_room
         if room_id == SystemRoomIDs.MAIL_ID:
             context.session_mgr.set_workflow(
@@ -19,7 +19,7 @@ class EnterMessageWorkflow(Workflow):
                 WorkflowState(
                     kind=self.kind,
                     step=1,
-                    data=data
+                    data={}
                 )
             )
             return ToUser(
@@ -33,7 +33,7 @@ class EnterMessageWorkflow(Workflow):
                 WorkflowState(
                     kind=self.kind,
                     step=2,
-                    data=data
+                    data={}
                 )
             )
             return ToUser(

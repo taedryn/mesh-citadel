@@ -1,5 +1,6 @@
 import logging
 
+from citadel.auth.passwords import authenticate
 from citadel.workflows.base import Workflow
 from citadel.workflows.registry import register
 from citadel.transport.packets import ToUser
