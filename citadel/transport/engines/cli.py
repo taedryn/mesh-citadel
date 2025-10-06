@@ -1,188 +1,144 @@
-"""
-CLI Transport Engine for mesh-citadel.
-
-Provides a simple Unix socket server that accepts connections from CLI clients.
-Acts like a "remote mesh node" interface - can only send/receive text without
-knowledge of client state.
-"""
 import asyncio
-from datetime import datetime
-from dateutil.parser import parse as dateparse
+import os
 import logging
 from pathlib import Path
-import traceback
-from typing import Dict, Any, Optional
+from contextlib import suppress
+from dateutil.parser import parse as dateparse
 
 from citadel.config import Config
-from citadel.session.manager import SessionManager
-from citadel.workflows.base import WorkflowState, WorkflowContext
+from citadel.db.manager import DatabaseManager
+from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.commands.processor import CommandProcessor
 from citadel.transport.parser import TextParser
-from citadel.transport.packets import FromUser, FromUserType, ToUser
-
+from citadel.session.manager import SessionManager
+from citadel.workflows.base import WorkflowContext, WorkflowState
+from citadel.workflows import registry as workflow_registry
 
 log = logging.getLogger(__name__)
 
-
 class CLITransportEngine:
-    """
-    Simple CLI transport engine that provides Unix socket communication.
-
-    This engine accepts connections from standalone CLI clients and passes
-    text commands to the BBS command processor. It models the interaction
-    between the BBS and remote mesh nodes.
-    """
-
-    def __init__(self, socket_path: Path, config: Config, db_manager, session_manager):
+    def __init__(self, socket_path: Path, config: Config, 
+                 db_manager: DatabaseManager, session_manager: SessionManager):
         self.socket_path = socket_path
         self.config = config
-        self.server = None
+        self.db_manager = db_manager
         self.session_manager = session_manager
-        self.command_processor = CommandProcessor(
-            config, db_manager, session_manager)
+        self.command_processor = CommandProcessor(config, db_manager,
+                                                  session_manager)
         self.text_parser = TextParser()
-        self._running = False
         self._client_count = 0
+        self._running = False
+        self.server = None
 
     async def start(self) -> None:
-        """Start the CLI transport server."""
         if self._running:
             return
-
-        log.info(f"Starting CLI transport server on {self.socket_path}")
-
-        # Remove existing socket file if it exists
         if self.socket_path.exists():
             self.socket_path.unlink()
-
-        # Start Unix socket server
         self.server = await asyncio.start_unix_server(
-            self._handle_client_connection,
-            str(self.socket_path)
+            self._handle_client_connection, str(self.socket_path)
         )
-
+        log.info("CLI transport engine started")
         self._running = True
-        log.info("CLI transport server started")
 
     async def stop(self) -> None:
-        """Stop the CLI transport server."""
         if not self._running:
             return
-
-        log.info("Stopping CLI transport server")
-
         if self.server:
             self.server.close()
             await self.server.wait_closed()
-
-        # Clean up socket file
         if self.socket_path.exists():
             self.socket_path.unlink()
-
+        log.info("CLI transport engine stopped")
         self._running = False
-        log.info("CLI transport server stopped")
 
-    async def _handle_client_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        """Handle a new client connection."""
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    async def _handle_client_connection(self, reader, writer):
         self._client_count += 1
         client_id = self._client_count
-
         log.info(f"CLI client connected: {client_id}")
+        self.send_line(writer, b"CONNECTED\n")
+        welcome = self.config.bbs.get("welcome_message", "Welcome to Mesh-Citadel.")
+        self.send_line(writer, f"{welcome}\n".encode("utf-8"))
+        await writer.drain()
+        await self._handle_client_session(reader, writer, client_id)
 
-        try:
-            # Send connection acknowledgment
-            writer.write(b"CONNECTED\n")
-            await writer.drain()
-
-            # Send welcome message from config
-            welcome = self.config.bbs.get(
-                "welcome_message", "Welcome to Mesh-Citadel.")
-            writer.write(f"{welcome}\n".encode('utf-8'))
-            await writer.drain()
-
-            # Handle client session
-            await self._handle_client_session(reader, writer, client_id)
-
-        except Exception as e:
-            log.error(f"Error handling CLI client {client_id}: {e}")
-        finally:
-            writer.close()
-            await writer.wait_closed()
-            log.info(f"CLI client disconnected: {client_id}")
-
-    async def _handle_client_session(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, client_id: int) -> None:
-        """Handle the text communication session with a client."""
+    async def _handle_client_session(self, reader, writer, client_id):
         session_id = None
+        listener_task = None
+
+        log.info(f"Starting CLI user listener for '{session_id}'")
 
         while True:
             try:
-                # Read line from client
                 data = await reader.readline()
                 if not data:
                     break
-            except Exception as e:
-                log.error(f"Error reading input in client {client_id} session: {e}")
-                error_msg = f"ERROR: {str(e)}\n"
-                writer.write(error_msg.encode('utf-8'))
-                await writer.drain()
-
-            try:
-                line = data.decode('utf-8').strip()
+                line = data.decode("utf-8").strip()
                 if not line:
                     continue
-            except Exception as e:
-                log.error(f"Error decoding data in client {client_id} session: {e}")
-                error_msg = f"ERROR: {str(e)}\n"
-                writer.write(error_msg.encode('utf-8'))
+            except (asyncio.IncompleteReadError, UnicodeDecodeError):
+                self.send_line(writer, b"ERROR: Invalid input\n")
                 await writer.drain()
+                continue
 
-                log.debug(f"Client {client_id} sent: {line}")
+            response, new_session_id, result = await self.process_command(
+                line,
+                session_id,
+                client_id
+            )
 
+            if new_session_id and new_session_id != session_id:
+                session_id = new_session_id
+                self.send_line(writer, f"SESSION_ID: {session_id}\n".encode("utf-8"))
+                self.send_line(writer, b"CONNECTED\n")
+                await writer.drain()
+                listener_task = asyncio.create_task(
+                    self._listen_for_messages(
+                        writer,
+                        session_id
+                    )
+                )
+
+            if response:
+                self.send_line(writer, f"{response}\n".encode("utf-8"))
+            if result:
+                input_mode = self._get_input_mode(result)
+                self.send_line(writer, f"INPUT_MODE: {input_mode}\n".encode("utf-8"))
+            await writer.drain()
+
+        if listener_task:
+            listener_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await listener_task
+
+    async def _listen_for_messages(self, writer, session_id):
+        log.info(f'Starting CLI BBS message listener for "{session_id}"')
+        state = self.session_manager.get_session_state(session_id)
+        while True:
             try:
-                # Process the command through BBS system
-                response, new_session_id, result = await self.process_command(line, session_id, client_id)
-                if new_session_id:
-                    session_id = new_session_id
+                message = await state.msg_queue.get()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                log.error(f"Error processing command in client {client_id} session: {e}")
-                error_msg = f"ERROR: {str(e)}\n"
-                writer.write(error_msg.encode('utf-8'))
+                self.send_line(writer, f"ERROR: {e}\n".encode("utf-8"))
                 await writer.drain()
+                continue
 
-            try:
-                # Response is now a formatted string from process_command
-                # A None response is used when entering messages
-                if response:
-                    response_line = f"{response}\n"
-                    writer.write(response_line.encode('utf-8'))
+            formatted = self._format_single_touser(message)
+            self.send_line(writer, f"{formatted}\n".encode("utf-8"))
 
-                # If a new session was created, send the session_id to the client
-                if new_session_id:
-                    session_id_line = f"SESSION_ID: {new_session_id}\n"
-                    writer.write(session_id_line.encode('utf-8'))
+            if message.hints and "input_mode" in message.hints:
+                self.send_line(writer, f"INPUT_MODE: {message.hints['input_mode']}\n".encode("utf-8"))
+            if message.is_error:
+                self.send_line(writer, f"ERROR: {message.error_code or 'Unknown error'}\n".encode("utf-8"))
+            await writer.drain()
 
-                # Send input mode based on the ToUser packet
-                if result:
-                    input_mode = self._get_input_mode(result)
-                    mode_line = f"INPUT_MODE: {input_mode}\n"
-                    writer.write(mode_line.encode('utf-8'))
-
-                await writer.drain()
-
-            except Exception as e:
-                log.error(
-                    f"Error sending response to client {client_id}: {e}")
-                error_msg = f"ERROR: {str(e)}\n"
-                writer.write(error_msg.encode('utf-8'))
-                await writer.drain()
-
-            # Session management is now handled by the session manager directly
-            # No need to extract session_id from response payload
-
-    async def process_command(self, command_line: str, session_id: Optional[str], client_id: int) -> tuple[str, Optional[str], Optional[object]]:
-        """Process a command through the BBS command system."""
-
-        if session_id:
+    async def process_command(self, command_line, session_id, client_id):
+        if session_id and self.session_manager.get_workflow(session_id):
             result = await self.get_workflow_response(command_line, session_id)
             if result:
                 return result
@@ -197,156 +153,77 @@ class CLITransportEngine:
         result = await self.execute_packet(packet)
         return self.format_result(result)
 
-    async def get_workflow_response(self, command_line: str, session_id: str) -> Optional[tuple[str, Optional[str], Optional[object]]]:
-        try:
-            wf_state = self.session_manager.get_workflow(session_id)
-            if not wf_state:
-                return None
+    async def get_workflow_response(self, command_line, session_id):
+        wf_state = self.session_manager.get_workflow(session_id)
+        if not wf_state:
+            return (None, None, None)
+        handler = workflow_registry.get(wf_state.kind)
+        context = WorkflowContext(
+            session_id=session_id,
+            config=self.config,
+            db=self.db_manager,
+            session_mgr=self.session_manager,
+            wf_state=wf_state,
+        )
+        touser_result = await handler.handle(context, command_line)
+        return (self._format_response(touser_result), None, touser_result)
 
-            from citadel.workflows import registry as workflow_registry
-            handler = workflow_registry.get(wf_state.kind)
-            if not handler:
-                return ("ERROR: Workflow handler not found", None, None)
-
-            context = WorkflowContext(
-                session_id=session_id,
-                db=self.command_processor.db,
-                config=self.config,
-                session_mgr=self.session_manager,
-                wf_state=wf_state
-            )
-
-            touser_result = await handler.handle(context, command_line)
-            response = self._format_response(touser_result)
-            return (response, None, touser_result)
-
-        except (KeyError, AttributeError, ValueError) as e:
-            log.error(f"Workflow handling failed: {e}")
-            traceback.print_exc()
-            return ("ERROR: Workflow execution failed", None, None)
-
-    async def start_login_workflow(self, command_line: str) -> tuple[str, Optional[str], Optional[object]]:
+    async def start_login_workflow(self, command_line):
         try:
             nodename = command_line.split(":", 2)[2]
-            new_session_id = self.session_manager.create_session()
-            wf_state = WorkflowState(kind="login", step=1, data={"nodename": nodename})
-            self.session_manager.set_workflow(new_session_id, wf_state)
+        except IndexError:
+            nodename = "default"
+        new_session_id = self.session_manager.create_session()
+        wf_state = WorkflowState(
+            kind="login",
+            step=1,
+            data={}
+        )
+        self.session_manager.set_workflow(new_session_id, wf_state)
+        handler = workflow_registry.get("login")
+        context = WorkflowContext(
+            session_id=new_session_id,
+            config=self.config,
+            db=self.db_manager,
+            session_mgr=self.session_manager,
+            wf_state=wf_state,
+        )
+        touser_result = await handler.start(context)
+        return (self._format_response(touser_result), new_session_id, touser_result)
 
-            from citadel.workflows import registry as workflow_registry
-            handler = workflow_registry.get("login")
-            if not handler:
-                touser_result = ToUser(
-                    session_id=new_session_id,
-                    text="Error: Login workflow not found",
-                    is_error=True,
-                    error_code="workflow_not_found"
-                )
-            else:
-                context = WorkflowContext(
-                    session_id=new_session_id,
-                    db=self.command_processor.db,
-                    config=self.config,
-                    session_mgr=self.session_manager,
-                    wf_state=wf_state
-                )
-                touser_result = await handler.start(context)
-
-            response = self._format_response(touser_result)
-            return (response, new_session_id, touser_result)
-
-        except (IndexError, KeyError, AttributeError) as e:
-            log.error(f"Login workflow bootstrap failed: {e}")
-            traceback.print_exc()
-            return ("ERROR: Login workflow failed", None, None)
-
-    def build_packet(self, command_line: str, session_id: Optional[str]) -> Optional[FromUser]:
-        try:
-            command = self.text_parser.parse_command(command_line)
-            log.info(f'parsed command is: {command}')
-            if command is False:
-                return None
-
-            wf_state = self.session_manager.get_workflow(session_id) if session_id else None
-            stripped = command_line.strip()
-
-            if wf_state and stripped.lower() in ['cancel', 'cancel_workflow']:
-                return FromUser(
-                    session_id=session_id,
-                    payload_type=FromUserType.COMMAND,
-                    payload=command
-                )
-            elif wf_state:
-                return FromUser(
-                    session_id=session_id,
-                    payload_type=FromUserType.WORKFLOW_RESPONSE,
-                    payload=stripped
-                )
-            else:
-                return FromUser(
-                    session_id=session_id or "",
-                    payload_type=FromUserType.COMMAND,
-                    payload=command
-                )
-
-        except (ValueError, AttributeError) as e:
-            log.error(f"Packet construction failed: {e}")
-            traceback.print_exc()
-            return None
-
-    async def execute_packet(self, packet: FromUser) -> Optional[object]:
-        try:
-            return await self.command_processor.process(packet)
-        except RuntimeError as e:
-            log.error(f"Command processor runtime error: {e}")
-            traceback.print_exc()
-            return None
-        except Exception as e:
-            log.error(f"Command processor failed: {e}")
-            traceback.print_exc()
-            return None
-
-    def format_result(self, result: Optional[object]) -> tuple[str, Optional[str], Optional[object]]:
-        try:
-            return (self._format_response(result), None, result)
-        except Exception as e:
-            log.error(f"Response formatting failed: {e}")
-            traceback.print_exc()
-            return ("ERROR: Failed to format response", None, None)
-
-    def _format_response(self, response):
-        """Format ToUser response(s) for CLI display."""
-        if isinstance(response, list):
-            # Handle list[ToUser] for multiple items (like messages)
-            formatted_lines = []
-            for item in response:
-                formatted_lines.append(self._format_single_touser(item))
-            return "\n".join(formatted_lines)
+    def build_packet(self, command_line, session_id):
+        command = self.text_parser.parse_command(command_line)
+        wf_state = self.session_manager.get_workflow(session_id)
+        if wf_state and command_line.strip().lower() in ["cancel", "cancel_workflow"]:
+            return FromUser(
+                session_id=session_id,
+                payload_type=FromUserType.COMMAND,
+                payload=command
+            )
+        elif wf_state:
+            return FromUser(
+                session_id=session_id,
+                payload_type=FromUserType.WORKFLOW_RESPONSE,
+                payload=command_line.strip()
+            )
         else:
-            # Handle single ToUser packet
-            return self._format_single_touser(response)
+            return FromUser(
+                session_id=session_id or "",
+                payload_type=FromUserType.COMMAND,
+                payload=command
+            )
 
-    def _format_single_touser(self, touser):
-        """Format a single ToUser packet for display."""
-        if not hasattr(touser, 'text'):
-            # Fallback for non-ToUser responses
-            return str(touser)
+    def send_line(self, writer, message):
+        writer.write(message)
+        print(message)
 
-        # If there's a message field, format it as a BBS message
-        if hasattr(touser, 'message') and touser.message:
-            return self._format_message(touser.message)
+    async def execute_packet(self, packet):
+        return await self.command_processor.process(packet)
 
-        # Otherwise, just return the text field
-        return touser.text if touser.text else ""
+    def format_result(self, result):
+        return (self._format_response(result), None, result)
 
-    def _get_input_mode(self, touser):
-        """Determine input mode from ToUser packet hints."""
-        if hasattr(touser, 'hints') and touser.hints:
-            if 'workflow' in touser.hints:
-                return "WORKFLOW"
-        return "COMMAND"
-
-    def _handle_parse_failure(self, command_line: str, session_id: Optional[str]) -> tuple[str, None, ToUser]:
-        """Handle command parser failure by returning appropriate error response."""
+    def _handle_parse_failure(self, command_line, session_id):
         error_result = ToUser(
             session_id=session_id or "",
             text=f"Unknown command: {command_line.strip()}. Type H for help.",
@@ -355,20 +232,24 @@ class CLITransportEngine:
         )
         return (self._format_response(error_result), None, error_result)
 
-    def _format_message(self, message):
-        """Format a MessageResponse object for BBS-style display."""
-        # Format: "From: DisplayName (username) - Timestamp\nContent"
-        timestamp = dateparse(message.timestamp)
-        msg_time = timestamp.strftime('%d%b%y %H:%M')
-        header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {msg_time}"
-        if message.blocked:
-            content = "[Message from blocked sender]"
-        else:
-            content = message.content
+    def _format_response(self, response):
+        if isinstance(response, list):
+            return "\n".join([self._format_single_touser(item) for item in response])
+        return self._format_single_touser(response)
 
+    def _format_single_touser(self, touser):
+        if touser.message:
+            return self._format_message(touser.message)
+        return touser.text or ""
+
+    def _format_message(self, message):
+        timestamp = dateparse(message.timestamp).strftime('%d%b%y %H:%M')
+        header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
+        content = "[Message from blocked sender]" if message.blocked else message.content
         return f"{header}\n{content}"
 
-    @property
-    def is_running(self) -> bool:
-        """Check if the CLI transport server is running."""
-        return self._running
+    def _get_input_mode(self, touser):
+        if touser.hints and "workflow" in touser.hints:
+            return "WORKFLOW"
+        return "COMMAND"
+

@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, UTC
 import logging
 import secrets
@@ -8,6 +9,7 @@ from citadel.db.manager import DatabaseManager
 from citadel.room.room import SystemRoomIDs
 from citadel.session.state import SessionState 
 from citadel.workflows.base import WorkflowState
+from citadel.transport.packets import ToUser
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
@@ -29,7 +31,8 @@ class SessionManager:
         state = SessionState(
             username=None,
             current_room=SystemRoomIDs.LOBBY_ID,
-            logged_in=False
+            logged_in=False,
+            msg_queue=asyncio.Queue()
         )
         with self.lock:
             self.sessions[session_id] = (state, datetime.now(UTC))
@@ -91,6 +94,18 @@ class SessionManager:
                 threading.Event().wait(60)
                 self.sweep_expired_sessions()
         threading.Thread(target=sweep, daemon=True).start()
+
+    # --- Commands for communicating to sessions ---
+
+    async def send_msg(self, session_id: str, message: "ToUser") -> int:
+        """ add a message to the outbound message queue.  returns the
+        number of items currently in the outbound queue. """
+        if not isinstance(message, ToUser):
+            raise ValueError("Sent messages must be ToUser type")
+        state = self.get_session_state(session_id)
+        log.info(f'adding message to queue: {message}')
+        await state.msg_queue.put(message)
+        return state.msg_queue.qsize()
 
     # --- New helpers for richer state ---
 
