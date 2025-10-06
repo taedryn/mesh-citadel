@@ -93,21 +93,15 @@ class Room:
     # ------------------------------------------------------------
     def can_user_read(self, user: User) -> bool:
         if user.permission_level == PermissionLevel.SYSOP:
-            print('sysop: yes')
             return True
         if self.permission_level == PermissionLevel.AIDE:
             answer = user.permission_level >= PermissionLevel.AIDE
-            print(f'aide: {answer}')
             return answer
         if self.permission_level == PermissionLevel.USER:
             answer = user.permission_level >= PermissionLevel.USER
-            print(f'user: {answer}')
             return answer
         if self.permission_level == PermissionLevel.TWIT:
-            print('twit: yes')
             return True
-        print(f'permission: {user.permission_level}')
-        print('unknown: False')
         return False
 
     def can_user_post(self, user: User) -> bool:
@@ -283,11 +277,9 @@ class Room:
         )
         current_count = count_result[0][0]
         max_messages = self.config.bbs["max_messages_per_room"]
-        print(f'count is: {current_count}, max is: {max_messages}')
         if current_count >= max_messages:
             oldest_id = await self.get_oldest_message_id()
             if oldest_id:
-                print(f'deleting {oldest_id}')
                 await msg_mgr.delete_message(oldest_id)
                 await self.db.execute("DELETE FROM room_messages WHERE room_id = ? AND message_id = ?", (self.room_id, oldest_id))
 

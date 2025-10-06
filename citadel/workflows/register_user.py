@@ -24,9 +24,12 @@ class RegisterUserWorkflow(Workflow):
 
     async def start(self, context):
         """Start the registration workflow by prompting for username."""
+        text = ("--Registration--\nPlease register for an account. "
+            "Your application will be reviewed by a sysop, but until then "
+            "you'll only have limited access.\n\nChoose a username:")
         return ToUser(
             session_id=context.session_id,
-            text="Choose a username:",
+            text=text,
             hints={"type": "text", "workflow": self.kind, "step": 1}
         )
 
@@ -222,7 +225,6 @@ class RegisterUserWorkflow(Workflow):
             context.session_mgr.mark_logged_in(context.session_id)
 
             user_count = await User.get_user_count(db)
-            print(f"[DEBUG] user count: {user_count}")
             if user_count == 1: # single provisional user entry created
                 await user.set_permission_level(PermissionLevel.SYSOP)
                 context.session_mgr.clear_workflow(context.session_id)

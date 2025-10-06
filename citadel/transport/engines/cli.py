@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from contextlib import suppress
 from dateutil.parser import parse as dateparse
+from typing import Optional
 
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
@@ -106,8 +107,9 @@ class CLITransportEngine:
             if response:
                 self.send_line(writer, f"{response}\n".encode("utf-8"))
             if result:
-                input_mode = self._get_input_mode(result)
-                self.send_line(writer, f"INPUT_MODE: {input_mode}\n".encode("utf-8"))
+                # Send authoritative session state instead of inferred input mode
+                session_state = self._get_session_state_line(session_id)
+                self.send_line(writer, f"{session_state}\n".encode("utf-8"))
             await writer.drain()
 
         if listener_task:
@@ -131,8 +133,9 @@ class CLITransportEngine:
             formatted = self._format_single_touser(message)
             self.send_line(writer, f"{formatted}\n".encode("utf-8"))
 
-            if message.hints and "input_mode" in message.hints:
-                self.send_line(writer, f"INPUT_MODE: {message.hints['input_mode']}\n".encode("utf-8"))
+            # Send authoritative session state for every message
+            session_state = self._get_session_state_line(session_id)
+            self.send_line(writer, f"{session_state}\n".encode("utf-8"))
             if message.is_error:
                 self.send_line(writer, f"ERROR: {message.error_code or 'Unknown error'}\n".encode("utf-8"))
             await writer.drain()
@@ -215,7 +218,6 @@ class CLITransportEngine:
 
     def send_line(self, writer, message):
         writer.write(message)
-        print(message)
 
     async def execute_packet(self, packet):
         return await self.command_processor.process(packet)
@@ -238,6 +240,8 @@ class CLITransportEngine:
         return self._format_single_touser(response)
 
     def _format_single_touser(self, touser):
+        if not touser or not isinstance(touser, ToUser):
+            return ""
         if touser.message:
             return self._format_message(touser.message)
         return touser.text or ""
@@ -252,4 +256,16 @@ class CLITransportEngine:
         if touser.hints and "workflow" in touser.hints:
             return "WORKFLOW"
         return "COMMAND"
+
+    def _get_session_state_line(self, session_id: Optional[str]) -> str:
+        """Get current session state as control line for client."""
+        if not session_id:
+            return "SESSION_STATE: logged_in=false,in_workflow=false,username="
+
+        logged_in = self.session_manager.is_logged_in(session_id)
+        username = self.session_manager.get_username(session_id) or ""
+        workflow_state = self.session_manager.get_workflow(session_id)
+        in_workflow = workflow_state is not None
+
+        return f"SESSION_STATE: logged_in={str(logged_in).lower()},in_workflow={str(in_workflow).lower()},username={username}"
 

@@ -68,7 +68,6 @@ class CommandProcessor:
 
             # For workflows, pass raw string response directly
             if packet.payload_type.value == "workflow_response":
-                print(f'command processor workflow response state: {state}')
                 context = WorkflowContext(
                     session_id=session_id,
                     db=self.db,
@@ -111,7 +110,6 @@ class CommandProcessor:
             await room.load()
 
         if not is_allowed(command.name, user, room):
-            print('processor is denying this one')
             return permission_denied(session_id, command.name, user, room)
 
         # 6. Execute command via its run method

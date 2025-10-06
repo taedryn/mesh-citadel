@@ -1,340 +1,484 @@
 #!/usr/bin/env python3
 """
-Standalone CLI client for mesh-citadel BBS.
-
-This acts as the "remote mesh node" client that connects to the BBS
-via Unix socket. It handles local commands (like /login, /create)
-and passes BBS commands through to the server.
+Async CLI client for mesh-citadel BBS using prompt_toolkit.
+This replaces the synchronous cli_client.py with a modern async architecture.
 """
-import argparse
+
 import asyncio
-import logging
-import readline
 import sys
 from pathlib import Path
-from typing import Optional
 
-log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
+from prompt_toolkit.application import Application
+from prompt_toolkit.layout import Layout, HSplit, VSplit, Window
+from prompt_toolkit.layout.containers import WindowAlign
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.widgets import TextArea
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.styles import Style
 
-class MeshCitadelCLI:
-    """
-    CLI client that connects to mesh-citadel BBS via Unix socket.
 
-    Handles terminal interaction and local commands, while passing
-    BBS commands to the remote server.
-    """
-
-    def __init__(self, socket_path: Path, node_id: Optional[str] = None):
+class AsyncMeshCitadelCLI:
+    def __init__(self, socket_path: Path, node_id: str = None):
         self.socket_path = socket_path
         self.node_id = node_id
-        self.session_id = None
+
+        # Connection state
+        self.socket_connected = False
         self.reader = None
         self.writer = None
-        self.socket_connected = False
+        self.session_id = None
+
+        # BBS state (will be updated by SESSION_STATE messages)
         self.logged_in = False
-        self.welcome = ""
         self.in_workflow = False
+        self.username = ""
+        self.password_mode = False  # True when current workflow input should be masked
 
-        # Configure readline for better CLI experience
-        self._setup_readline()
-        print("startup complete")
+        # Create UI components
+        self._setup_ui()
 
-    def _setup_readline(self):
-        """Configure readline for better CLI experience."""
-        # Enable history
-        readline.set_history_length(1000)
+    def _setup_ui(self):
+        """Create the prompt_toolkit UI layout."""
 
-        # Set up tab completion for local commands
-        readline.set_completer(self._complete_command)
-        readline.parse_and_bind("tab: complete")
+        # Message display area (top, scrollable, read-only, not focusable)
+        self.message_area = TextArea(
+            text="Welcome to mesh-citadel CLI (async version)\n"
+                 "Type '/help' for local commands\n\n",
+            read_only=True,
+            focusable=False,  # Prevent focus from going here
+            scrollbar=True,
+            wrap_lines=True,
+        )
 
-        # Enable emacs-style line editing (default, but explicit)
-        readline.parse_and_bind("set editing-mode emacs")
+        # Status bar showing connection and session state
+        self.status_control = FormattedTextControl(
+            text=self._get_status_text
+        )
 
-        # Load command history if it exists
-        history_file = Path.home() / ".mesh_citadel_history"
-        try:
-            readline.read_history_file(str(history_file))
-        except FileNotFoundError:
-            pass  # No history file yet, that's fine
-        except (OSError, PermissionError) as e:
-            log.warning(f"Could not load history file: {e}")
+        # Command input area (minimal prompt, just a cursor)
+        self.input_area = TextArea(
+            height=1,
+            prompt="> ",  # Minimal prompt like meshcore
+            multiline=False,
+            wrap_lines=False,
+            password=False,  # Will be toggled for password input
+        )
 
-        # Save history file path for later
-        self.history_file = history_file
+        # Create layout with message area, status bar, and input
+        root_container = HSplit([
+            # Main message area (expandable)
+            self.message_area,
 
-    def _complete_command(self, text, state):
-        """Tab completion for CLI commands."""
-        local_commands = [
-            '/help',
-            '/h',
-            '/connect',
-            '/c',
-            '/info',
-            '/i',
-            '/quit',
-            '/q',
-            '/exit'
-        ]
+            # Separator line
+            Window(height=1, char='-', style="class:separator"),
 
-        # Filter commands that match the current text
-        matches = [cmd for cmd in local_commands if cmd.startswith(text)]
+            # Status bar (connection info)
+            Window(content=self.status_control, height=1, style="class:status-bar"),
 
-        # Return the appropriate match for the current state
-        if state < len(matches):
-            return matches[state]
-        return None
+            # Input area with minimal prompt
+            self.input_area,
+        ])
 
-    async def socket_connect(self) -> bool:
-        """Connect to the BBS server via Unix socket."""
-        try:
-            self.reader, self.writer = await asyncio.open_unix_connection(str(self.socket_path))
+        # Create key bindings
+        self.kb = self._create_key_bindings()
 
-            # Read connection acknowledgment
-            response = await self.reader.readline()
-            if response.strip() == b"CONNECTED":
-                self.socket_connected = True
-                print("Connected to mesh-citadel BBS")
+        # Create application
+        self.app = Application(
+            layout=Layout(root_container),
+            key_bindings=self.kb,
+            style=self._get_style(),
+            full_screen=True,
+        )
 
-                # welcome message
-                welcome = await self.reader.readline()
-                self.welcome = welcome.decode('utf-8').strip()
+        # Set focus to input area
+        self.app.layout.focus(self.input_area)
 
-                return True
-            else:
-                print(f"Unexpected response from server: {response}")
-                return False
+    def _create_key_bindings(self):
+        """Create key bindings for the application."""
+        kb = KeyBindings()
 
-        except Exception as e:
-            print(f"Failed to connect to BBS server: {e}")
-            return False
+        @kb.add('enter')
+        def handle_enter(event):
+            """Handle command submission on Enter."""
+            command = self.input_area.text.strip()
+            if command:
+                # Add command to message area as feedback (mask if password mode)
+                if self.password_mode:
+                    masked_command = '*' * len(command)
+                    self._add_message(f"> {masked_command}")
+                else:
+                    self._add_message(f"> {command}")
 
-    async def disconnect(self):
-        """Disconnect from the BBS server."""
-        if self.writer:
-            self.writer.close()
-            await self.writer.wait_closed()
-        self.socket_connected = False
-        self.logged_in = False
+                # Clear input
+                self.input_area.text = ""
 
-        # Save command history
-        if hasattr(self, 'history_file') and self.history_file:
-            try:
-                readline.write_history_file(str(self.history_file))
-            except (OSError, PermissionError) as e:
-                log.warning(f"Could not save history file: {e}")
+                # Process command asynchronously
+                asyncio.create_task(self._process_user_command(command))
 
-    async def run(self):
-        """Run the CLI client main loop."""
-        if not await self.socket_connect():
-            return
+        @kb.add('c-c')
+        def handle_ctrl_c(event):
+            """Handle Ctrl+C to exit."""
+            event.app.exit()
 
-        try:
-            # Handle automatic login if node_id name provided
-            if self.node_id:
-                await self._auto_connect()
+        @kb.add('c-d')
+        def handle_ctrl_d(event):
+            """Handle Ctrl+D to exit."""
+            event.app.exit()
 
-            # Main interaction loop
-            await self._interaction_loop()
+        return kb
 
-        finally:
-            await self.disconnect()
+    def _get_style(self):
+        """Create the application style."""
+        return Style.from_dict({
+            'status-bar': 'reverse bold',
+            'separator': '#888888',
+        })
 
-    async def _auto_connect(self):
-        response = await self.bbs_connect()
-        print(response)
+    def _get_status_text(self):
+        """Get current status bar text (replaces /info command)."""
+        # Connection status
+        conn_status = "Conn" if self.socket_connected else "No conn"
 
-    async def _interaction_loop(self):
-        """Main interaction loop for CLI commands."""
-        print("\nWelcome to mesh-citadel CLI")
-        print("Type '/help' for local commands or 'help' for BBS commands")
-
-        while self.socket_connected:
-            try:
-                # Get user input with appropriate prompt
-                command = input(self._get_prompt()).strip()
-                if not command:
-                    continue
-
-                # Process command with clean separation of concerns
-                if not await self._process_command(command):
-                    break  # Exit requested
-
-            except KeyboardInterrupt:
-                print("\nExiting...")
-                break
-            except EOFError:
-                break
-            except Exception as e:
-                print(f"Error: {e}")
-
-    def _get_prompt(self) -> str:
-        """Get the appropriate prompt based on current state."""
-        if self.in_workflow:
-            return f"workflow:{self.node_id or 'guest'}> "
-        elif self.logged_in:
-            return f"command:{self.node_id}> "
+        # Authentication and mode
+        if self.logged_in:
+            auth_status = f"User: {self.username or self.node_id or 'unknown'}"
         else:
-            return "logged_out:guest> "
+            auth_status = "Not logged in"
 
-    async def _process_command(self, command: str) -> bool:
-        """
-        Process a user command with clean separation of concerns.
-        Returns False if exit is requested, True otherwise.
-        """
-        # 1. Always handle slash commands first (they're always local)
+        mode_status = "Workflow" if self.in_workflow else "Command"
+
+        # Session info
+        session_info = f"SID: {self.session_id or 'none'}"
+
+        # Build status line
+        if self.socket_connected:
+            return f"{conn_status} | {auth_status} | {mode_status} | {session_info}"
+        else:
+            return f"{conn_status} | Socket: {self.socket_path} | Use '/connect <node>' to begin"
+
+    def _add_message(self, text: str):
+        """Add a message to the display area."""
+        current_text = self.message_area.text
+        self.message_area.text = current_text + text + "\n"
+
+        # Auto-scroll to bottom
+        self.message_area.buffer.cursor_position = len(self.message_area.text)
+
+    def _update_ui(self):
+        """Update UI elements that depend on state."""
+        # Status control updates automatically via the callable
+        # Force a refresh of the application
+        if hasattr(self, 'app'):
+            self.app.invalidate()
+
+    def _set_password_mode(self, enabled: bool):
+        """Enable or disable password masking in input area."""
+        self.password_mode = enabled
+        self.input_area.password = enabled
+
+    async def _process_user_command(self, command: str):
+        """Process a user command."""
         if command.startswith('/'):
-            return await self._handle_local_command(command)
-
-        # 2. Route non-slash commands based on current state
-        if self.in_workflow:
-            # In workflow mode - send directly to server
-            response = await self._send_command(command)
-            print(response)
-            self._check_login_completion(response)
-        elif self.logged_in:
-            # Logged in - send BBS command to server
-            response = await self._send_command(command)
-            print(response)
+            await self._handle_local_command(command)
         else:
-            # Not connected/logged in - require connection first
-            print("You must connect first. Use '/connect <node_id>'")
+            # Send BBS command to server
+            await self._send_bbs_command(command)
 
-        return True
-
-    def _check_login_completion(self, response: str):
-        """Check if login workflow just completed successfully."""
-        if (not self.in_workflow and  # Just exited workflow mode
-            "Welcome" in response and "logged in" in response):
-            self.logged_in = True
-
-    async def _handle_local_command(self, command: str) -> bool:
-        """
-        Handle local CLI commands (starting with /).
-        Returns False if exit is requested.
-        """
+    async def _handle_local_command(self, command: str):
+        """Handle local slash commands."""
         parts = command[1:].split()
         if not parts:
-            return True
+            return
 
         cmd = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
 
         if cmd == 'help':
-            print("Local CLI commands:")
-            print("  /help             - Show this help")
-            print("  /connect <node_id>   - Connect to BBS as a node_id")
-            print("  /info             - Connection information")
-            print("  /quit             - Exit CLI")
-            print("\nFor BBS commands, type them directly after connecting")
+            self._add_message("Local CLI commands:")
+            self._add_message("  /help             - Show this help")
+            self._add_message("  /connect <node>   - Connect to BBS as node")
+            self._add_message("  /disconnect       - Disconnect from BBS")
+            self._add_message("  /info             - Show detailed connection info")
+            self._add_message("  /quit             - Exit CLI")
+            self._add_message("")
+            self._add_message("Connection status is always shown in the status bar below.")
+            self._add_message("After connecting, type BBS commands directly (no / prefix).")
+            self._add_message("")
 
-        elif cmd in['connect', 'c']:
+        elif cmd == 'info':
+            # Detailed info (beyond what's in status bar)
+            self._add_message("=== Connection Information ===")
+            self._add_message(f"Socket path: {self.socket_path}")
+            self._add_message(f"Socket exists: {self.socket_path.exists()}")
+            self._add_message(f"Socket connected: {self.socket_connected}")
+            self._add_message(f"Node ID: {self.node_id or 'none'}")
+            self._add_message(f"Session ID: {self.session_id or 'none'}")
+            self._add_message(f"Username: {self.username or 'none'}")
+            self._add_message(f"Logged in: {self.logged_in}")
+            self._add_message(f"In workflow: {self.in_workflow}")
+            self._add_message("")
+
+        elif cmd in ['connect', 'c', 'conn']:
             if not args:
-                print("Usage: /connect <node_id>")
-                return True
+                self._add_message("Usage: /connect <node_id>")
+                self._add_message("")
+                return
 
-            self.node_id = args[0]
-            response = await self.bbs_connect()
-            print(self.welcome)
-            print(response)
+            await self._connect_to_bbs(args[0])
 
-            # Provide user feedback based on resulting state
-            if self.in_workflow:
-                pass
-                #print("(Entering login workflow - type your username)")
-            elif response and "error" not in response.lower():
-                print("(Connected - type 'help' for BBS commands)")
-            else:
-                print("(Connection may have failed - check server status)")
+        elif cmd in ['disconnect', 'd']:
+            await self._disconnect_from_bbs()
 
-        elif cmd in ['info', 'i']:
-            print(f'Node ID:           {self.node_id}')
-            print(f'Session ID:        {self.session_id}')
-            print(f'In workflow:       {self.in_workflow}')
-            print(f'Logged in:         {self.logged_in}')
-            print(f'Socket connected:  {self.socket_connected}')
-
-        elif cmd in ['quit', 'exit', 'q']:
-            print("Goodbye!")
-            return False
+        elif cmd in ['quit', 'q']:
+            self._add_message("Goodbye!")
+            self.app.exit()
 
         else:
-            print(f"Unknown local command: /{cmd}")
-            print("Type '/help' for available commands")
+            self._add_message(f"Unknown local command: /{cmd}")
+            self._add_message("Type '/help' for available commands")
+            self._add_message("")
 
-        return True
+    async def _connect_to_bbs(self, node_id: str):
+        """Connect to the BBS server."""
+        if self.socket_connected:
+            self._add_message("Already connected. Use /disconnect first.")
+            self._add_message("")
+            return
 
-    async def _send_command(self, command: str) -> str:
-        """Send a command to the BBS server and return the full response."""
+        self.node_id = node_id
+        self._add_message(f"Connecting to BBS as '{node_id}'...")
+
+        # Connect to Unix socket
         try:
-            # Send command
+            self.reader, self.writer = await asyncio.open_unix_connection(str(self.socket_path))
+        except (ConnectionRefusedError, FileNotFoundError):
+            self._add_message("Connection failed: BBS server not running or socket not found")
+            self._add_message("")
+            return
+        except OSError as e:
+            self._add_message(f"Connection failed: {e}")
+            self._add_message("")
+            return
+
+        # Send initial connection message
+        try:
+            self.writer.write(b"CONNECTED\n")
+            await self.writer.drain()
+        except (ConnectionResetError, BrokenPipeError):
+            self._add_message("Connection failed: Server closed connection")
+            self._add_message("")
+            await self._cleanup_connection()
+            return
+
+        # Connection established - start message listener to handle all server messages
+        self.socket_connected = True
+        self._update_ui()
+
+        # Start message listener task (it will handle welcome message and everything else)
+        self.listener_task = asyncio.create_task(self._message_listener())
+
+        # Automatically start login workflow
+        login_command = f"__workflow:login:{node_id}"
+        try:
+            self.writer.write(f"{login_command}\n".encode('utf-8'))
+            await self.writer.drain()
+        except (ConnectionResetError, BrokenPipeError):
+            self._add_message("Connection lost while starting login")
+            await self._disconnect_from_bbs()
+            return
+
+        self._add_message("")
+
+    async def _disconnect_from_bbs(self):
+        """Disconnect from the BBS server."""
+        if self.socket_connected:
+            self._add_message("Disconnecting...")
+            await self._cleanup_connection()
+            self._add_message("Disconnected.")
+        else:
+            self._add_message("Not connected")
+        self._add_message("")
+
+    async def _cleanup_connection(self):
+        """Clean up connection resources and reset state."""
+        self.socket_connected = False
+
+        # Cancel message listener task
+        if hasattr(self, 'listener_task') and not self.listener_task.done():
+            self.listener_task.cancel()
+            try:
+                await self.listener_task
+            except asyncio.CancelledError:
+                pass
+
+        # Close writer
+        if self.writer:
+            try:
+                self.writer.close()
+                await self.writer.wait_closed()
+            except OSError:
+                pass  # Already closed
+            finally:
+                self.writer = None
+                self.reader = None
+
+        # Reset session state
+        self.session_id = None
+        self.logged_in = False
+        self.in_workflow = False
+        self.username = ""
+        self._set_password_mode(False)  # Disable password mode
+        self._update_ui()
+
+    async def _send_bbs_command(self, command: str):
+        """Send a command to the BBS server."""
+        if not self.socket_connected or not self.writer:
+            self._add_message("Not connected to BBS")
+            self._add_message("")
+            return
+
+        try:
             self.writer.write(f"{command}\n".encode('utf-8'))
             await self.writer.drain()
+        except (ConnectionResetError, BrokenPipeError):
+            self._add_message("Connection lost")
+            await self._disconnect_from_bbs()
 
-            # Read all response lines until a short pause
-            lines = []
-            while True:
+    def _parse_session_state(self, state_data: str):
+        """Parse session state from server and update client state."""
+        # Parse: "logged_in=true,in_workflow=false,username=bar"
+        try:
+            for pair in state_data.split(','):
+                key, value = pair.split('=', 1)
+                if key == 'logged_in':
+                    self.logged_in = (value == 'true')
+                elif key == 'in_workflow':
+                    self.in_workflow = (value == 'true')
+                elif key == 'username':
+                    # Update username from server
+                    if value and value != self.username:
+                        self.username = value
+        except ValueError:
+            self._add_message(f"Invalid session state format: {state_data}")
+            return
+
+        # Update UI to reflect new state
+        self._update_ui()
+
+    def _detect_password_prompt(self, message: str):
+        """Detect if a message is asking for password input and enable masking."""
+        # Look for common password prompt patterns
+        message_lower = message.lower()
+        password_indicators = [
+            "enter your password",
+            "password:",
+            "choose a password",
+            "new password",
+            "current password"
+        ]
+
+        is_password = any(indicator in message_lower for indicator in password_indicators)
+
+        # Enable password mode only for password prompts, disable for anything else
+        self._set_password_mode(is_password)
+
+    async def _message_listener(self):
+        """Listen for incoming messages from the server."""
+        while self.socket_connected and self.reader:
+            try:
+                line = await self.reader.readline()
+            except (ConnectionResetError, asyncio.IncompleteReadError):
+                # Connection closed by server
+                break
+            except asyncio.CancelledError:
+                break
+
+            if not line:
+                # EOF - connection closed
+                break
+
+            try:
+                decoded = line.decode('utf-8').strip()
+            except UnicodeDecodeError:
+                self._add_message("Received invalid text from server")
+                continue
+
+            # Handle control messages
+            if decoded.startswith('SESSION_ID:'):
                 try:
-                    line = await asyncio.wait_for(self.reader.readline(), timeout=0.2)
-                    if not line:
-                        break
-                    decoded = line.decode('utf-8').strip()
-                    if decoded.startswith('SESSION_ID:'):
-                        self.session_id = decoded.split(': ', 1)[1]
-                    elif decoded.startswith('INPUT_MODE:'):
-                        mode = decoded.split(': ', 1)[1]
-                        self.in_workflow = (mode == 'WORKFLOW')
-                    else:
-                        lines.append(decoded)
-                except asyncio.TimeoutError:
-                    break
+                    self.session_id = decoded.split(': ', 1)[1]
+                    self._update_ui()
+                except IndexError:
+                    self._add_message("Invalid SESSION_ID format")
 
-            return "\n".join(lines)
+            elif decoded.startswith('SESSION_STATE:'):
+                try:
+                    state_data = decoded.split(': ', 1)[1]
+                    self._parse_session_state(state_data)
+                except IndexError:
+                    self._add_message("Invalid SESSION_STATE format")
 
-        except Exception as e:
-            return f"Communication error: {e}"
+            elif decoded.startswith('ERROR:'):
+                try:
+                    error_msg = decoded.split(': ', 1)[1]
+                    self._add_message(f"Error: {error_msg}")
+                except IndexError:
+                    self._add_message("Error: Unknown error")
 
-    async def bbs_connect(self) -> None:
-        response = await self._send_command(f"__workflow:login:{self.node_id}")
-        return response
+            else:
+                # Regular message - display it
+                if decoded:  # Don't show empty lines
+                    self._add_message(decoded)
+
+                    # Check if this is a password prompt
+                    if self.in_workflow:
+                        self._detect_password_prompt(decoded)
+
+        # Connection lost
+        if self.socket_connected:
+            self._add_message("Connection lost")
+            await self._disconnect_from_bbs()
+
+    async def run(self):
+        """Run the async CLI application."""
+        try:
+            # Just run the UI - connection and message listener are started on-demand
+            await self.app.run_async()
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            # Clean up any active connections
+            await self._cleanup_connection()
 
 
 async def main():
-    """Main entry point for CLI client."""
-    parser = argparse.ArgumentParser(description="mesh-citadel CLI client")
-    parser.add_argument(
-        '--socket',
-        default='/tmp/mesh-citadel-cli.sock',
-        help='Unix socket path for BBS server (default: /tmp/mesh-citadel-cli.sock)'
-    )
-    parser.add_argument(
-        '--node',
-        help='Node name to login as automatically'
-    )
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
-    )
+    """Main entry point."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="mesh-citadel async CLI client")
+    parser.add_argument("--socket", "-s",
+                       default="/tmp/mesh-citadel-cli.sock",
+                       help="Path to BBS server socket")
+    parser.add_argument("--node", "-n",
+                       help="Node ID for automatic connection")
+    parser.add_argument("--verbose", "-v",
+                       action="store_true",
+                       help="Enable verbose logging")
 
     args = parser.parse_args()
-
-    # Setup logging
-    if args.verbose:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.WARNING)
 
     # Check if socket exists
     socket_path = Path(args.socket)
     if not socket_path.exists():
         print(f"BBS server socket not found at {socket_path}")
         print("Make sure the mesh-citadel server is running")
-        sys.exit(1)
+        print("You can still test the UI, but connection features won't work")
+        print()
 
     # Run CLI client
-    cli = MeshCitadelCLI(socket_path, args.node)
+    cli = AsyncMeshCitadelCLI(socket_path, args.node)
     await cli.run()
 
 
