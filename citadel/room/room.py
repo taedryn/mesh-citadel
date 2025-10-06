@@ -181,8 +181,7 @@ class Room:
         if not newest:
             return False
 
-        pointer = await self.get_last_unread_message_id(user)
-        last_seen = pointer[0][0] if pointer else None
+        last_seen = await self.get_last_unread_message_id(user)
         return last_seen != newest
 
     async def get_room_id(self, identifier: int | str) -> int:

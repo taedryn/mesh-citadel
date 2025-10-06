@@ -131,6 +131,8 @@ class ReadNewMessagesCommand(BaseCommand):
         from citadel.commands.responses import MessageResponse
 
         state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
         room = Room(context.db, context.config, state.current_room)
         await room.load()
         msg_ids = await room.get_unread_message_ids(state.username)
@@ -159,6 +161,9 @@ class ReadNewMessagesCommand(BaseCommand):
                 text="",  # Message content is in the message field
                 message=message_response
             ))
+
+        # Mark all displayed messages as read by advancing to latest
+        await room.skip_to_latest(user)
         return to_user_list
 
 
@@ -193,17 +198,17 @@ class KnownRoomsCommand(BaseCommand):
 
         lines = []
         for room in rooms:
-            markers = []
+            pre_marker = "-"
+            post_marker = ""
 
             if room.room_id == current_room_id:
-                markers.append("📍")
+                post_marker = "<--"
 
             unread = await room.has_unread_messages(user)
             if unread:
-                markers.append("📨")
+                pre_marker = "*"
 
-            marker_str = "".join(markers)
-            line = f"{room.name}{marker_str}"
+            line = f"{pre_marker} {room.name} {post_marker}"
             lines.append(line)
 
         room_list = "\n".join(lines)
