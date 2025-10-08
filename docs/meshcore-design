@@ -1,0 +1,81 @@
+for the purposes of this discussion, it will be important to clearly
+understand the functioning of the meshcore USB companion firmware,
+which can be found at https://github.com/meshcore-dev/MeshCore.
+
+i would like to create the meshcore transport engine for the
+mesh-citadel project.
+
+physical layer
+
+the physical layer will consist of a LoRa node, most likely based on an
+nRF52840 CPU linked to an SX1262 lora radio.  it will be running the
+meshcore USB firmware, which communicates with a host over a USB
+connection.  i know comparatively little about the communications
+between the node and the host computer, so this will require more
+research to figure out.
+
+meshcore considerations
+
+cryptography 
+
+meshcore uses public key cryptography to encrypt all
+communications.  public keys are shared through adverts from individual
+nodes, and it will be important that our system collects all adverts it
+hears from user nodes (as opposed to repeaters or room servers) and
+stores them in the database.  meshcore also uses shared-secret
+cryptography to communicate on shared channels.  channel communication
+has the advantages of a UDP connection, being stateless and
+connectionless, but also the disadvantage of not being guaranteed.
+hashtag channels are a way to easily share secrets, using a
+deterministic hashing algorithm to generate the actual secret channel
+key by hashing the channel name.
+
+mesh-citadel may use both direct messages (which require mutual
+knowledge of each party's public key), and channel communication,
+although the initial implementation will be limited to DMs.  the
+plausible uses for channel communication are shared channels between
+the system and a single user, as an alternative to DMs when the path is
+not reliable enough, and as an announcement platform.
+
+we must also send our own adverts on a regular basis, to ensure that
+users attempting to connect to the BBS have the best chance of success.
+
+node:username association
+
+each meshcore node has a node id, which is a hash of its public key.
+this node id will be used by the meshcore engine to establish sessions
+(as governed by the SessionManager class) in a 1:1 manner.  when a user
+connects to the BBS over meshcore, we will record that user's node id
+both to associate the session with the node, but also to associate the
+user's username with the node id.  this association will be used to
+prompt the user (at the user's discretion) with a suggested username
+the next time they connect from that node, or to allow them to log in
+without a password once registered.  we will need to track this
+preference per user and per node, and offer the user a way to modify
+their choice should it change in the future.
+
+the session's node_id must be stored alongside their username, so we
+always send that session's messages to the correct node.  a user may
+log in with the same username from several different nodes, and we
+should be able to keep those sessions separate.
+
+packet size
+
+careful consideration will need to be made of packet size.  lora
+packets can only be 256 bytes total, and meshcore uses a sizeable chunk
+of that space for headers and protocol information.  we may need to
+calculate the remaining space available for payload based on the
+meshcore protocol specifications.
+
+our communications to users must be broken up into appropriate packet
+sizes.  they should always break on word boundaries, and the meshcore
+engine will be responsible for this.  packet payloads
+must be in exactly the form we expect the user to read them, as we will
+be working with the currently-available meshcore client, which is a
+simple text transmission system.
+
+CLI engine as inspiration
+
+the patterns demonstrated in the existing CLI engine of the mesh-citadel
+project should serve as inspiration for how we shape and create the
+meshcore engine.  
