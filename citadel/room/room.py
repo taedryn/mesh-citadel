@@ -177,12 +177,9 @@ class Room:
         return last_read[0][0]
 
     async def has_unread_messages(self, user: User) -> bool:
-        newest = await self.get_newest_message_id()
-        if not newest:
-            return False
-
-        last_seen = await self.get_last_unread_message_id(user)
-        return last_seen != newest
+        # Check if user has any unread messages they can actually read
+        unread_ids = await self.get_unread_message_ids(user.username)
+        return len(unread_ids) > 0
 
     async def get_room_id(self, identifier: int | str) -> int:
         if isinstance(identifier, int):
@@ -236,7 +233,7 @@ class Room:
 
     async def get_unread_message_ids(self, username: str) -> list[int]:
         """ return a list of message ids which have not yet been seen
-        by this user """
+        by this user and which they are authorized to read """
         user = User(self.db, username)
         await user.load()
         last_read = await self.get_last_unread_message_id(user)
@@ -245,7 +242,17 @@ class Room:
             WHERE room_id = ?
             AND message_id > ?
             """, (self.room_id, last_read))
-        return [msg_id[0] for msg_id in id_list]
+
+        # Filter out messages the user cannot read (privacy check)
+        from citadel.message.manager import MessageManager
+        msg_mgr = MessageManager(self.config, self.db)
+        readable_ids = []
+        for msg_id in [row[0] for row in id_list]:
+            msg = await msg_mgr.get_message(msg_id, recipient_user=user)
+            if msg:  # Only include messages the user can read
+                readable_ids.append(msg_id)
+
+        return readable_ids
 
     async def get_oldest_message_id(self) -> int | None:
         result = await self.db.execute(

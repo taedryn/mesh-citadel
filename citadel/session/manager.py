@@ -136,6 +136,60 @@ class SessionManager:
         if state:
             state.workflow = None
 
+    async def start_login_workflow(self, config, db, session_id: str = None) -> tuple[str, "ToUser | None"]:
+        """Start login workflow on existing or new session.
+
+        Args:
+            config: Configuration manager
+            db: Database manager
+            session_id: If provided, reuse this session ID; otherwise create new one
+
+        Returns a tuple of (session_id, login_prompt_touser).
+        The login_prompt_touser will be None if the login workflow couldn't be started.
+
+        This is a common pattern used when transitioning users back to login state
+        (e.g., after logout, workflow cancellation, etc.)
+        """
+        from citadel.workflows.base import WorkflowState, WorkflowContext
+        from citadel.workflows import registry as workflow_registry
+        from citadel.transport.packets import ToUser
+
+        # Use existing session or create new one
+        if session_id:
+            # Reset existing session to anonymous state
+            self.mark_logged_in(session_id, False)
+            self.mark_username(session_id, None)
+            self.clear_workflow(session_id)
+            target_session_id = session_id
+        else:
+            # Create new session
+            target_session_id = self.create_session()
+
+        # Set up login workflow
+        login_wf_state = WorkflowState(kind="login", step=1, data={})
+        self.set_workflow(target_session_id, login_wf_state)
+
+        # Get the login prompt
+        login_handler = workflow_registry.get("login")
+        if login_handler:
+            try:
+                login_context = WorkflowContext(
+                    session_id=target_session_id,
+                    config=config,
+                    db=db,
+                    session_mgr=self,
+                    wf_state=login_wf_state
+                )
+                login_prompt = await login_handler.start(login_context)
+                login_prompt.session_id = target_session_id
+                return target_session_id, login_prompt
+            except Exception as e:
+                log.warning(f"Failed to start login workflow: {e}")
+                return target_session_id, None
+        else:
+            log.warning("Login workflow handler not found")
+            return target_session_id, None
+
     def set_notification_callback(self, callback):
         """Set callback function for sending logout notifications.
         Callback should accept (username: str, message: str) -> None"""
@@ -150,12 +204,13 @@ class SessionManager:
             state.username = username
             log.info(f"Username '{username}' bound to session '{session_id}'")
 
-    def mark_logged_in(self, session_id: str):
-        """Mark a session as authenticated."""
+    def mark_logged_in(self, session_id: str, logged_in: bool = True):
+        """Mark a session as authenticated or unauthenticated."""
         state = self.get_session_state(session_id)
         if state:
-            state.logged_in = True
-            log.info(f"Session '{session_id}' marked as logged in")
+            state.logged_in = logged_in
+            status = "logged in" if logged_in else "logged out"
+            log.info(f"Session '{session_id}' marked as {status}")
 
     def is_logged_in(self, session_id: str):
         """Return True if the session is logged in"""

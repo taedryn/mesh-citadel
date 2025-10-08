@@ -144,7 +144,9 @@ class ReadNewMessagesCommand(BaseCommand):
 
         to_user_list = []
         for msg_id in msg_ids:
-            msg = await context.msg_mgr.get_message(msg_id)
+            msg = await context.msg_mgr.get_message(msg_id, recipient_user=user)
+            if not msg:  # Message not authorized for this user (privacy check failed)
+                continue
             sender = User(context.db, msg["sender"])
             await sender.load()
             message_response = MessageResponse(
@@ -239,12 +241,24 @@ class QuitCommand(BaseCommand):
 
     async def run(self, context):
         state = context.session_mgr.get_session_state(context.session_id)
-        context.session_mgr.expire_session(context.session_id)
-        log.info(f"User '{state.username}' logged out via quit command")
-        return ToUser(
-            session_id=context.session_id,
-            text="Goodbye!"
+        old_username = state.username if state else "unknown"
+
+        log.info(f"User '{old_username}' logged out via quit command")
+
+        # Start login workflow on existing session (resets to anonymous state)
+        session_id, login_prompt = await context.session_mgr.start_login_workflow(
+            context.config, context.db, context.session_id
         )
+
+        if login_prompt:
+            login_prompt.text = "Goodbye!\n\n" + login_prompt.text
+            return login_prompt
+        else:
+            # Fallback if login workflow unavailable
+            return ToUser(
+                session_id=session_id,
+                text="Goodbye! Please reconnect to log in again."
+            )
 
 
 @register_command
@@ -279,6 +293,16 @@ class CancelCommand(BaseCommand):
 
         # Clear the workflow
         context.session_mgr.clear_workflow(context.session_id)
+
+        # If the user is not logged in (e.g., cancelling registration/login), start login workflow
+        session_state = context.session_mgr.get_session_state(context.session_id)
+        if not session_state or not context.session_mgr.is_logged_in(context.session_id):
+            session_id, login_prompt = await context.session_mgr.start_login_workflow(
+                context.config, context.db, context.session_id
+            )
+            if login_prompt:
+                login_prompt.text = f"Cancelled {workflow_state.kind} workflow.\n\n" + login_prompt.text
+                return login_prompt
 
         return ToUser(
             session_id=context.session_id,
@@ -495,6 +519,50 @@ class ValidateUsersCommand(BaseCommand):
     permission_level = PermissionLevel.AIDE
     short_text = "Validate users"
     help_text = "Enter the user validation workflow to approve new users."
+
+    async def run(self, context):
+        from citadel.workflows.base import WorkflowState
+
+        # Check if there are any pending validations
+        pending_users = await context.db.execute(
+            "SELECT username, submitted_at FROM pending_validations ORDER BY submitted_at"
+        )
+
+        if not pending_users:
+            return ToUser(
+                session_id=context.session_id,
+                text="No users pending validation."
+            )
+
+        # Start validation workflow
+        context.session_mgr.set_workflow(
+            context.session_id,
+            WorkflowState(
+                kind="validate_users",
+                step=1,
+                data={"pending_users": [user[0] for user in pending_users], "current_index": 0}
+            )
+        )
+
+        from citadel.workflows import registry as workflow_registry
+        handler = workflow_registry.get("validate_users")
+        if handler:
+            from citadel.workflows.base import WorkflowContext
+            workflow_context = WorkflowContext(
+                session_id=context.session_id,
+                config=context.config,
+                db=context.db,
+                session_mgr=context.session_mgr,
+                wf_state=context.session_mgr.get_workflow(context.session_id)
+            )
+            return await handler.start(workflow_context)
+
+        return ToUser(
+            session_id=context.session_id,
+            text="Validation workflow not available.",
+            is_error=True,
+            error_code="workflow_unavailable"
+        )
 
 
 # -------------------

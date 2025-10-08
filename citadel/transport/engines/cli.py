@@ -62,8 +62,6 @@ class CLITransportEngine:
         client_id = self._client_count
         log.info(f"CLI client connected: {client_id}")
         self.send_line(writer, b"CONNECTED\n")
-        welcome = self.config.bbs.get("welcome_message", "Welcome to Mesh-Citadel.")
-        self.send_line(writer, f"{welcome}\n".encode("utf-8"))
         await writer.drain()
         await self._handle_client_session(reader, writer, client_id)
 
@@ -110,6 +108,11 @@ class CLITransportEngine:
                 # Send authoritative session state instead of inferred input mode
                 session_state = self._get_session_state_line(session_id)
                 self.send_line(writer, f"{session_state}\n".encode("utf-8"))
+
+                # Send standard prompt if appropriate
+                prompt = await self._get_standard_prompt(session_id, result)
+                if prompt:
+                    self.send_line(writer, f"{prompt}\n".encode("utf-8"))
             await writer.drain()
 
         if listener_task:
@@ -268,4 +271,46 @@ class CLITransportEngine:
         in_workflow = workflow_state is not None
 
         return f"SESSION_STATE: logged_in={str(logged_in).lower()},in_workflow={str(in_workflow).lower()},username={username}"
+
+    async def _get_standard_prompt(self, session_id: Optional[str], result) -> Optional[str]:
+        """Generate standard command prompt if appropriate.
+
+        Returns prompt if:
+        - User is logged in
+        - No active workflow
+        - Result hints suggest prompting (prompt_next=True) OR no workflow hints
+        """
+        if not session_id:
+            return None
+
+        # Check if user is logged in
+        if not self.session_manager.is_logged_in(session_id):
+            return None
+
+        # Check if user has active workflow
+        if self.session_manager.get_workflow(session_id):
+            return None
+
+        # Check result hints - only prompt if explicitly requested or no workflow hints
+        if hasattr(result, 'hints') and isinstance(result.hints, dict):
+            # If workflow-related hints exist but no prompt_next, don't prompt
+            workflow_hints = any(key in result.hints for key in ['type', 'workflow', 'step'])
+            if workflow_hints and not result.hints.get('prompt_next', False):
+                return None
+
+        # Get current room for prompt
+        session_state = self.session_manager.get_session_state(session_id)
+        if not session_state or not session_state.current_room:
+            return "What now? (H for help)"
+
+        # Get room name
+        from citadel.room.room import Room
+        try:
+            room = Room(self.db_manager, self.config, session_state.current_room)
+            await room.load()
+            room_name = room.name
+        except Exception:
+            room_name = f"Room {session_state.current_room}"
+
+        return f"In {room_name}. What now? (H for help)"
 

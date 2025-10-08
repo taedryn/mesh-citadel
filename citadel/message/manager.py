@@ -35,7 +35,11 @@ class MessageManager:
         return msg_id
 
     async def get_message(self, message_id: int, recipient_user: Optional["User"] = None) -> Optional[dict]:
-        """Returns message data structure, including blocked status and sender's display name."""
+        """Returns message data structure, including blocked status and sender's display name.
+
+        For private messages (with recipient), only returns the message if recipient_user
+        is the sender or recipient. No admin override for private message privacy.
+        """
         query = "SELECT id, sender, recipient, content, timestamp FROM messages WHERE id = ?"
         result = await self.db.execute(query, (message_id,))
         if not result:
@@ -43,6 +47,17 @@ class MessageManager:
 
         msg = dict(
             zip(["id", "sender", "recipient", "content", "timestamp"], result[0]))
+
+        # Privacy check for private messages
+        if msg["recipient"] and recipient_user:
+            # Private message - only sender and recipient can read
+            user_can_read = (
+                msg["sender"] == recipient_user.username or  # Sender can read
+                msg["recipient"] == recipient_user.username   # Recipient can read
+            )
+            if not user_can_read:
+                return None  # User not authorized to read this private message
+
         sender_user = User(self.db, msg["sender"])
         await sender_user.load()
         msg["display_name"] = sender_user.display_name or msg["sender"]

@@ -20,13 +20,15 @@ class LoginWorkflow(Workflow):
 
         if step == 1:
             # Prompt for username (called on workflow start or with command=None)
+            # Include welcome message at start of login process
+            welcome = context.config.bbs.get("welcome_message", "Welcome to Mesh-Citadel.")
             context.session_mgr.set_workflow(
                 context.session_id,
                 WorkflowState(kind=self.kind, step=2, data=data)
             )
             return ToUser(
                 session_id=context.session_id,
-                text="Enter your username:",
+                text=f"{welcome}\n\nEnter your username:",
                 hints={"type": "text", "workflow": self.kind, "step": 2}
             )
 

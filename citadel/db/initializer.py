@@ -93,7 +93,8 @@ async def initialize_database(db_manager, config=None):
         username TEXT PRIMARY KEY,
         submitted_at TEXT NOT NULL,
         transport_engine TEXT,
-        transport_metadata TEXT  -- JSON-encoded metadata (IP, node ID, etc.)
+        transport_metadata TEXT,  -- JSON-encoded metadata (IP, node ID, etc.)
+        intro_text TEXT  -- User's introduction from registration
     );
     """
 

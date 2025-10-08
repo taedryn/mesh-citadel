@@ -8,7 +8,7 @@ from citadel.auth.passwords import generate_salt, hash_password
 from citadel.auth.permissions import PermissionLevel
 from citadel.transport.packets import ToUser
 from citadel.user.user import User, UserStatus
-from citadel.workflows.base import Workflow, WorkflowState
+from citadel.workflows.base import Workflow, WorkflowState, WorkflowContext
 from citadel.workflows.registry import register
 
 log = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ class RegisterUserWorkflow(Workflow):
                 temp_password_hash,
                 temp_salt,
                 username,  # Use username as initial display name
-                UserStatus.PROVISIONAL
+                UserStatus.ACTIVE  # Users start as ACTIVE with UNVERIFIED permissions
             )
 
             # Update existing session with the new username
@@ -173,11 +173,43 @@ class RegisterUserWorkflow(Workflow):
         if step == 4:
             agree = command.lower() if command else ""
             if agree not in ("yes", "y"):
+                # Track rejection attempts
+                reject_count = data.get("terms_reject_count", 0) + 1
+                data["terms_reject_count"] = reject_count
+
+                if reject_count >= 3:
+                    # User has rejected terms 3 times, cancel registration
+                    await self.cleanup(context)
+                    context.session_mgr.clear_workflow(context.session_id)
+
+                    # Start login workflow to return user to login prompt
+                    session_id, login_prompt = await context.session_mgr.start_login_workflow(
+                        context.config, context.db, context.session_id
+                    )
+
+                    if login_prompt:
+                        login_prompt.text = "Registration cancelled due to terms rejection.\n\n" + login_prompt.text
+                        return login_prompt
+                    else:
+                        return ToUser(
+                            session_id=session_id,
+                            text="Registration cancelled due to terms rejection. Please reconnect to try again.",
+                            is_error=True,
+                            error_code="terms_rejected_final"
+                        )
+
+                # Give another chance
+                context.session_mgr.set_workflow(
+                    context.session_id,
+                    WorkflowState(kind=self.kind, step=4, data=data)
+                )
+
+                attempts_left = 3 - reject_count
+                terms = context.config.bbs["registration"]["terms"]
                 return ToUser(
                     session_id=context.session_id,
-                    text="You must agree to the terms to continue.",
-                    is_error=True,
-                    error_code="terms_not_accepted"
+                    text=f"You must agree to the terms to continue. {attempts_left} attempt(s) remaining.\n\n{terms}\nDo you agree to the terms?",
+                    hints={"type": "choice", "options": ["yes", "no"], "workflow": self.kind, "step": 4}
                 )
             data["agreed"] = True
             context.session_mgr.set_workflow(
@@ -215,40 +247,45 @@ class RegisterUserWorkflow(Workflow):
                     is_error=True,
                     error_code="registration_cancelled"
                 )
-            # Activate the provisional user by changing status to active
+            # Check if this is the first user (before activation)
             username = data["username"]
             user = User(db, username)
             await user.load()
-            await user.set_status(UserStatus.ACTIVE)
-
-            # Mark session as fully logged in
-            context.session_mgr.mark_logged_in(context.session_id)
 
             user_count = await User.get_user_count(db)
-            if user_count == 1: # single provisional user entry created
+            if user_count == 1: # This is the first and only user
+                # First user becomes sysop automatically (no validation needed)
+                await user.set_status(UserStatus.ACTIVE)
                 await user.set_permission_level(PermissionLevel.SYSOP)
+                context.session_mgr.mark_logged_in(context.session_id)
                 context.session_mgr.clear_workflow(context.session_id)
                 return ToUser(
                     session_id=context.session_id,
-                    text="Registering you as the Sysop, my first user"
+                    text="Welcome, Sysop! You now have full system access.",
+                    hints={"prompt_next": True}
                 )
             else:
-                # TODO: update transport information
+                # Subsequent users get limited access until validated
+                # Store user registration for validation
                 await db.execute(
                     "INSERT INTO pending_validations "
-                    "(username, submitted_at, transport_engine, transport_metadata) "
-                    "VALUES (?, ?, ?, ?)",
+                    "(username, submitted_at, transport_engine, transport_metadata, intro_text) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
                         username,
                         datetime.now(UTC).isoformat(),
-                        "unknown",
-                        "{}"
+                        "cli",
+                        "{}",
+                        data.get("intro", "")
                     )
                 )
+                # Keep user logged in with UNVERIFIED access
+                context.session_mgr.mark_logged_in(context.session_id)
+
             context.session_mgr.clear_workflow(context.session_id)
             return ToUser(
                 session_id=context.session_id,
-                text="Your registration has been submitted for validation."
+                text="Registration complete! You have limited access until an admin validates your account."
             )
 
         return ToUser(
@@ -295,3 +332,4 @@ class RegisterUserWorkflow(Workflow):
             # Reset session to anonymous state
             context.session_mgr.mark_username(context.session_id, None)
             log.info(f"Reset session '{context.session_id}' to anonymous state")
+            # Note: Login workflow will be started by the cancel command
