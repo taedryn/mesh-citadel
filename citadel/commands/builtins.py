@@ -145,7 +145,8 @@ class ReadNewMessagesCommand(BaseCommand):
         to_user_list = []
         for msg_id in msg_ids:
             msg = await context.msg_mgr.get_message(msg_id, recipient_user=user)
-            if not msg:  # Message not authorized for this user (privacy check failed)
+            # Message not authorized for this user (privacy check failed)
+            if not msg:
                 continue
             sender = User(context.db, msg["sender"])
             await sender.load()
@@ -289,19 +290,22 @@ class CancelCommand(BaseCommand):
             try:
                 await handler.cleanup(context)
             except Exception as e:
-                log.warning(f"Error during workflow cleanup for {workflow_state.kind}: {e}")
+                log.warning(
+                    f"Error during workflow cleanup for {workflow_state.kind}: {e}")
 
         # Clear the workflow
         context.session_mgr.clear_workflow(context.session_id)
 
         # If the user is not logged in (e.g., cancelling registration/login), start login workflow
-        session_state = context.session_mgr.get_session_state(context.session_id)
+        session_state = context.session_mgr.get_session_state(
+            context.session_id)
         if not session_state or not context.session_mgr.is_logged_in(context.session_id):
             session_id, login_prompt = await context.session_mgr.start_login_workflow(
                 context.config, context.db, context.session_id
             )
             if login_prompt:
-                login_prompt.text = f"Cancelled {workflow_state.kind} workflow.\n\n" + login_prompt.text
+                login_prompt.text = f"Cancelled {workflow_state.kind} workflow.\n\n" + \
+                    login_prompt.text
                 return login_prompt
 
         return ToUser(
@@ -540,7 +544,8 @@ class ValidateUsersCommand(BaseCommand):
             WorkflowState(
                 kind="validate_users",
                 step=1,
-                data={"pending_users": [user[0] for user in pending_users], "current_index": 0}
+                data={"pending_users": [user[0]
+                                        for user in pending_users], "current_index": 0}
             )
         )
 

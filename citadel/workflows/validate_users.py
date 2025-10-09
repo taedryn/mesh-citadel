@@ -117,13 +117,16 @@ Introduction:
             await user.set_permission_level(PermissionLevel.USER)
 
             await context.db.execute(
-                "DELETE FROM pending_validations WHERE username = ?", (username,)
+                "DELETE FROM pending_validations WHERE username = ?", (
+                    username,)
             )
 
             # Get validator info for logging
-            validator_state = context.session_mgr.get_session_state(context.session_id)
+            validator_state = context.session_mgr.get_session_state(
+                context.session_id)
             validator_username = validator_state.username if validator_state else "unknown"
-            log.info(f"User '{username}' validated by '{validator_username}' - promoted to USER level")
+            log.info(
+                f"User '{username}' validated by '{validator_username}' - promoted to USER level")
 
             # Move to next user
             await self._advance_to_next_user(context)
@@ -148,17 +151,21 @@ Introduction:
         try:
             await context.db.execute(
                 "DELETE FROM users WHERE username = ? AND status = ?",
-                (username, UserStatus.ACTIVE.value)  # Users are now ACTIVE/UNVERIFIED, not PROVISIONAL
+                # Users are now ACTIVE/UNVERIFIED, not PROVISIONAL
+                (username, UserStatus.ACTIVE.value)
             )
 
             await context.db.execute(
-                "DELETE FROM pending_validations WHERE username = ?", (username,)
+                "DELETE FROM pending_validations WHERE username = ?", (
+                    username,)
             )
 
             # Get validator info for logging
-            validator_state = context.session_mgr.get_session_state(context.session_id)
+            validator_state = context.session_mgr.get_session_state(
+                context.session_id)
             validator_username = validator_state.username if validator_state else "unknown"
-            log.info(f"User '{username}' rejected by '{validator_username}' - account deleted")
+            log.info(
+                f"User '{username}' rejected by '{validator_username}' - account deleted")
 
             # Move to next user
             await self._advance_to_next_user(context)

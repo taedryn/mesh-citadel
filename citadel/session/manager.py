@@ -7,7 +7,7 @@ import threading
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.room.room import SystemRoomIDs
-from citadel.session.state import SessionState 
+from citadel.session.state import SessionState
 from citadel.workflows.base import WorkflowState
 from citadel.transport.packets import ToUser
 

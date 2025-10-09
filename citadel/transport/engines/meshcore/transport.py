@@ -150,4 +150,3 @@ class MeshCoreTransport:
                     node_id,
                     advert["public_key"],
                     advert.get("node_type", "user"),
-

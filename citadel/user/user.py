@@ -89,7 +89,7 @@ class User:
     async def get_user_count(cls, db_mgr) -> int:
         """Count the users currently in the system and return the
         number"""
-        query = "SELECT count(username) from users";
+        query = "SELECT count(username) from users"
         result = await db_mgr.execute(query, [])
         if not result:
             return 0

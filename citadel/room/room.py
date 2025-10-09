@@ -220,10 +220,10 @@ class Room:
 
         return visible_rooms
 
-
     # ------------------------------------------------------------
     # message handling
     # ------------------------------------------------------------
+
     async def get_message_ids(self) -> list[int]:
         rows = await self.db.execute(
             "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id",

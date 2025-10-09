@@ -36,7 +36,8 @@ def verify_password(password: str, salt: bytes, stored_hash: str) -> bool:
 
 async def authenticate(db_mgr, username_input: str, password_input: str):
     from citadel.user.user import User
-    username = username_input.strip()  # Preserve case, User methods handle case-insensitive lookup
+    # Preserve case, User methods handle case-insensitive lookup
+    username = username_input.strip()
 
     # Check if user exists
     if not await User.username_exists(db_mgr, username):

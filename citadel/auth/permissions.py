@@ -6,6 +6,7 @@ from citadel.transport.packets import ToUser
 
 log = logging.getLogger(__name__)
 
+
 class PermissionLevel(IntEnum):
     UNVERIFIED = 0
     TWIT = 1
@@ -32,7 +33,7 @@ ACTION_REQUIREMENTS = {
     "read_new_messages": PermissionInfo(level=PermissionLevel.TWIT,
                                         description="read new messages"),
     "known_rooms": PermissionInfo(level=PermissionLevel.USER,
-                                 description="known rooms"),
+                                  description="known rooms"),
     "ignore_room": PermissionInfo(level=PermissionLevel.USER,
                                   description="ignore rooms"),
     "quit": PermissionInfo(level=PermissionLevel.UNVERIFIED,
@@ -66,7 +67,8 @@ def is_allowed(action: str, user, room=None) -> bool:
     permission = ACTION_REQUIREMENTS.get(action)
 
     if permission is None:  # permission type not set up
-        log.debug(f"{action} not allowed in {room} because permission not set up")
+        log.debug(
+            f"{action} not allowed in {room} because permission not set up")
         return False
 
     # Special case: twit room is visible to twits but not most users
@@ -78,8 +80,9 @@ def is_allowed(action: str, user, room=None) -> bool:
             PermissionLevel.TWIT,
             PermissionLevel.AIDE,
             PermissionLevel.SYSOP,
-            }:
-            log.debug(f"{action} is allowed in {room} because user is a twit (or aide/sysop)")
+        }:
+            log.debug(
+                f"{action} is allowed in {room} because user is a twit (or aide/sysop)")
             return True
 
     min_permission = permission.level
@@ -95,10 +98,12 @@ def is_allowed(action: str, user, room=None) -> bool:
             "ignore_room",
         ]
         if action in read_actions and not room.can_user_read(user):
-            log.debug(f"{action} is not allowed in {room} because {user} can't read from this room")
+            log.debug(
+                f"{action} is not allowed in {room} because {user} can't read from this room")
             return False
         if action == "enter_message" and not room.can_user_post(user):
-            log.debug(f"{action} is not allowed in {room} because {user} can't post in this room")
+            log.debug(
+                f"{action} is not allowed in {room} because {user} can't post in this room")
             return False
 
     log.debug(f"{action} is allowed in {room}")

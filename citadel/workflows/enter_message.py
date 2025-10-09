@@ -6,6 +6,7 @@ from citadel.workflows.base import WorkflowState
 from citadel.room.room import Room, SystemRoomIDs
 from citadel.user.user import User
 
+
 @register
 class EnterMessageWorkflow(Workflow):
     kind = "enter_message"
@@ -116,4 +117,3 @@ class EnterMessageWorkflow(Workflow):
             is_error=True,
             error_code="invalid_step"
         )
-

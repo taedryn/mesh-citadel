@@ -17,8 +17,9 @@ from citadel.workflows import registry as workflow_registry
 
 log = logging.getLogger(__name__)
 
+
 class CLITransportEngine:
-    def __init__(self, socket_path: Path, config: Config, 
+    def __init__(self, socket_path: Path, config: Config,
                  db_manager: DatabaseManager, session_manager: SessionManager):
         self.socket_path = socket_path
         self.config = config
@@ -92,7 +93,8 @@ class CLITransportEngine:
 
             if new_session_id and new_session_id != session_id:
                 session_id = new_session_id
-                self.send_line(writer, f"SESSION_ID: {session_id}\n".encode("utf-8"))
+                self.send_line(
+                    writer, f"SESSION_ID: {session_id}\n".encode("utf-8"))
                 self.send_line(writer, b"CONNECTED\n")
                 await writer.drain()
                 listener_task = asyncio.create_task(
@@ -140,7 +142,8 @@ class CLITransportEngine:
             session_state = self._get_session_state_line(session_id)
             self.send_line(writer, f"{session_state}\n".encode("utf-8"))
             if message.is_error:
-                self.send_line(writer, f"ERROR: {message.error_code or 'Unknown error'}\n".encode("utf-8"))
+                self.send_line(
+                    writer, f"ERROR: {message.error_code or 'Unknown error'}\n".encode("utf-8"))
             await writer.drain()
 
     async def process_command(self, command_line, session_id, client_id):
@@ -294,7 +297,8 @@ class CLITransportEngine:
         # Check result hints - only prompt if explicitly requested or no workflow hints
         if hasattr(result, 'hints') and isinstance(result.hints, dict):
             # If workflow-related hints exist but no prompt_next, don't prompt
-            workflow_hints = any(key in result.hints for key in ['type', 'workflow', 'step'])
+            workflow_hints = any(key in result.hints for key in [
+                                 'type', 'workflow', 'step'])
             if workflow_hints and not result.hints.get('prompt_next', False):
                 return None
 
@@ -306,11 +310,11 @@ class CLITransportEngine:
         # Get room name
         from citadel.room.room import Room
         try:
-            room = Room(self.db_manager, self.config, session_state.current_room)
+            room = Room(self.db_manager, self.config,
+                        session_state.current_room)
             await room.load()
             room_name = room.name
         except Exception:
             room_name = f"Room {session_state.current_room}"
 
         return f"In {room_name}. What now? (H for help)"
-

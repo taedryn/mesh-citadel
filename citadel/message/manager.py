@@ -53,7 +53,8 @@ class MessageManager:
             # Private message - only sender and recipient can read
             user_can_read = (
                 msg["sender"] == recipient_user.username or  # Sender can read
-                msg["recipient"] == recipient_user.username   # Recipient can read
+                # Recipient can read
+                msg["recipient"] == recipient_user.username
             )
             if not user_can_read:
                 return None  # User not authorized to read this private message

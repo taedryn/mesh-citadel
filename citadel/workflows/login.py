@@ -21,7 +21,8 @@ class LoginWorkflow(Workflow):
         if step == 1:
             # Prompt for username (called on workflow start or with command=None)
             # Include welcome message at start of login process
-            welcome = context.config.bbs.get("welcome_message", "Welcome to Mesh-Citadel.")
+            welcome = context.config.bbs.get(
+                "welcome_message", "Welcome to Mesh-Citadel.")
             context.session_mgr.set_workflow(
                 context.session_id,
                 WorkflowState(kind=self.kind, step=2, data=data)
@@ -47,7 +48,8 @@ class LoginWorkflow(Workflow):
                 # Get registration workflow and call start()
                 handler = workflow_registry.get("register_user")
                 if handler:
-                    session_state = context.session_mgr.get_session_state(context.session_id)
+                    session_state = context.session_mgr.get_session_state(
+                        context.session_id)
                     return await handler.start(context)
                 else:
                     return ToUser(
@@ -71,8 +73,8 @@ class LoginWorkflow(Workflow):
                 return ToUser(
                     session_id=context.session_id,
                     text=(f"User '{data['username']}' not found. Try again or "
-                        "type 'new' to register as a new user.\nEnter your "
-                        "username:"),
+                          "type 'new' to register as a new user.\nEnter your "
+                          "username:"),
                     hints={"type": "text", "workflow": self.kind, "step": 2},
                     is_error=True,
                     error_code="invalid_username"
@@ -128,7 +130,7 @@ class LoginWorkflow(Workflow):
             return ToUser(
                 session_id=context.session_id,
                 text=(f"Welcome, {username}! You are now logged in.\n"
-                    f"Current room: {room.name}")
+                      f"Current room: {room.name}")
             )
 
         return ToUser(
@@ -148,4 +150,5 @@ class LoginWorkflow(Workflow):
         # If username was bound to session during login, reset to anonymous
         if "username" in data:
             context.session_mgr.mark_username(context.session_id, None)
-            log.info(f"Reset session '{context.session_id}' to anonymous state after login cancellation")
+            log.info(
+                f"Reset session '{context.session_id}' to anonymous state after login cancellation")

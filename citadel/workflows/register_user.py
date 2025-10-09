@@ -25,8 +25,8 @@ class RegisterUserWorkflow(Workflow):
     async def start(self, context):
         """Start the registration workflow by prompting for username."""
         text = ("--Registration--\nPlease register for an account. "
-            "Your application will be reviewed by a sysop, but until then "
-            "you'll only have limited access.\n\nChoose a username:")
+                "Your application will be reviewed by a sysop, but until then "
+                "you'll only have limited access.\n\nChoose a username:")
         return ToUser(
             session_id=context.session_id,
             text=text,
@@ -209,7 +209,8 @@ class RegisterUserWorkflow(Workflow):
                 return ToUser(
                     session_id=context.session_id,
                     text=f"You must agree to the terms to continue. {attempts_left} attempt(s) remaining.\n\n{terms}\nDo you agree to the terms?",
-                    hints={"type": "choice", "options": ["yes", "no"], "workflow": self.kind, "step": 4}
+                    hints={"type": "choice", "options": [
+                        "yes", "no"], "workflow": self.kind, "step": 4}
                 )
             data["agreed"] = True
             context.session_mgr.set_workflow(
@@ -253,7 +254,7 @@ class RegisterUserWorkflow(Workflow):
             await user.load()
 
             user_count = await User.get_user_count(db)
-            if user_count == 1: # This is the first and only user
+            if user_count == 1:  # This is the first and only user
                 # First user becomes sysop automatically (no validation needed)
                 await user.set_status(UserStatus.ACTIVE)
                 await user.set_permission_level(PermissionLevel.SYSOP)
@@ -322,14 +323,18 @@ class RegisterUserWorkflow(Workflow):
                         "DELETE FROM users WHERE username = ? AND status = ?",
                         (username, UserStatus.PROVISIONAL.value)
                     )
-                    log.info(f"Deleted provisional user '{username}' during workflow cancellation")
+                    log.info(
+                        f"Deleted provisional user '{username}' during workflow cancellation")
                 except RuntimeError as e:
-                    log.error(f"Failed to delete provisional user '{username}': {e}")
+                    log.error(
+                        f"Failed to delete provisional user '{username}': {e}")
             else:
-                log.warning(f"User '{username}' was not provisional during cleanup (status: {user.status})")
+                log.warning(
+                    f"User '{username}' was not provisional during cleanup (status: {user.status})")
                 log.warning(f"'{username}' not cleaned up")
 
             # Reset session to anonymous state
             context.session_mgr.mark_username(context.session_id, None)
-            log.info(f"Reset session '{context.session_id}' to anonymous state")
+            log.info(
+                f"Reset session '{context.session_id}' to anonymous state")
             # Note: Login workflow will be started by the cancel command
