@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 
 from citadel.commands.base import CommandContext
 from citadel.config import Config
@@ -12,10 +13,12 @@ from citadel.transport.manager import TransportManager
 
 log = None
 
-async def initialize_system():
+async def initialize_system(log_level=None):
     """Initialize all system components."""
     global log
     config = Config()
+    if log_level:
+        config.logging["log_level"] = log_level
     initialize_logging(config)
 
     log = logging.getLogger('citadel')
@@ -59,9 +62,14 @@ async def main():
     global log
     config = db_mgr = session_mgr = message_mgr = None
 
+    log_level = None
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-d':
+            log_level = "DEBUG"
+
     try:
         # Initialize system components
-        config, db_mgr, session_mgr, message_mgr = await initialize_system()
+        config, db_mgr, session_mgr, message_mgr = await initialize_system(log_level)
 
         # Start transport layer
         transport_mgr = TransportManager(config, db_mgr, session_mgr)
