@@ -14,9 +14,13 @@ connection.  i know comparatively little about the communications
 between the node and the host computer, so this will require more
 research to figure out.
 
+the mesh-citadel code will be running on a raspberry pi zero (v1, not
+v2) and powered by solar energy, so energy efficiency and computational
+efficiency are both important considerations.
+
 meshcore considerations
 
-cryptography 
+cryptography
 
 meshcore uses public key cryptography to encrypt all
 communications.  public keys are shared through adverts from individual
@@ -52,12 +56,16 @@ prompt the user (at the user's discretion) with a suggested username
 the next time they connect from that node, or to allow them to log in
 without a password once registered.  we will need to track this
 preference per user and per node, and offer the user a way to modify
-their choice should it change in the future.
+their choice should it change in the future.  we will also need to
+decide on a password cache expiration system, so that a user must still
+enter their password every so often, even with the node ID
+authentication.
 
 the session's node_id must be stored alongside their username, so we
 always send that session's messages to the correct node.  a user may
 log in with the same username from several different nodes, and we
 should be able to keep those sessions separate.
+
 
 packet size
 
@@ -74,8 +82,115 @@ must be in exactly the form we expect the user to read them, as we will
 be working with the currently-available meshcore client, which is a
 simple text transmission system.
 
+the nature of DMs
+
+our primary method of communication with a user will be through the
+direct message paradigm in meshcore.  these can be sent either
+flood-routed, or via a specific path, and we need to research whether
+the determination of path happens in the companion firmware, or if we need
+to be handling it in our engine.  i suspect we will need to handle
+specifying the path for the companion to use.
+
+every DM has a full message/ack exchange, and because to and from paths
+are frequently asymmetrical, many DMs may require a large number of
+retries until the full message/ack exchange can be fulfilled.  it's
+important that we get confirmation that the user's node received our
+message before we send the next packet to them.
+
+discovering the correct path to a user's node is a very difficult
+problem, which is out of scope of this effort for now, but the simple
+method of reversing the path by which their message arrived at our
+companion should be used to start.  there is not currently a more
+useful path-discovery method available.  development work on this
+problem is happening right now, and we should design the meshcore
+engine so that more advanced path discovery methods can be added later.
+
+because of this path discovery requirement, we should build in the
+option to capture non-user node adverts, in case it becomes
+advantageous to know specifically about repeaters in the network.
+
 CLI engine as inspiration
 
 the patterns demonstrated in the existing CLI engine of the mesh-citadel
 project should serve as inspiration for how we shape and create the
-meshcore engine.  
+meshcore engine.  it was designed to be approximately meshcore-like in
+its user interactions and experience.  the cli_client.py file may serve
+as an interesting reference, but the primary focus should be on the CLI
+engine.
+
+the same focus on brevity and simple text exchanges is very important
+for the meshcore engine.  because the meshcore client software can't
+send an empty message (the equivalent of pressing enter on a telnet
+session), we should by default use sending a single period character as
+the interaction indicating that the suggested action should be taken.
+for instance, if a workflow presents a multi-option choice, with one
+indicated as the default (and presented in the ToUser.hints field as
+the default choice), the user sending just "." should be interpreted as
+choosing the default.  likewise, we will be offering the user the
+option to read messages in limited groups of messages for bandwidth
+reasons, and the "send me the next batch" command should also be ".".
+
+local-to-engine configuration
+
+the meshcore engine will add both local configuration, as well as local
+data to keep track of.  we will be utilizing the database manager to
+perform any database transactions, and reading the config.yaml file to
+understand options for this engine.  the database initializer will need
+to be updated to understand which optional tables need to be created
+when a meshcore transport engine is enabled.  meshcore-specific
+information (mapping node ids to usernames, user preferences, etc.)
+will be kept in separate tables, so that the bbs tables are completely
+independent of the engine's needs, and bbs operation is not affected by
+engine choice.  this separation is important, and must be preserved.
+
+to this end, we will probably want to create a user configuration
+table, which will link users (either by username or user ID) to
+configuration options (how many messages to batch at a time, whether to
+associate username and node id, etc.).  we will also want to create an
+advert table which stores all heard adverts for user nodes, and
+possibly other node types in the future.  we should consider whether it
+makes sense to store this information in a separate sqlite database
+file, or if we should maintain one big database for the whole system.
+most likely it can stay in the same database file for simplicity, but
+it's a discussion worth having.
+
+meshcore development
+
+the meshcore protocol and firmware is currently undergoing rapid
+development and change.  it has, for the most part, been backwards
+compatible, but we know that there's a breaking change coming in the
+foreseeable future, which is generally referred to as v2 of the
+protocol.  we should include a version specification in the engine,
+such that we will be able to switch to the v2 protocol when it arrives,
+with further development work.  we don't know exactly what might break,
+but we know that it will be a breaking change.
+
+in the future, we may want to support both v1 and v2 packets at the
+same time by using multiple companion nodes connected to our system.
+we don't need to design the implementation of this system yet, but do
+need to keep it in mind while developing the meshcore engine.
+
+development strategy
+
+the first thing we should do is discuss any questions you have about
+developing the meshcore transport engine.  what information do you feel
+is missing from this document?  once we've developed a complete
+understanding of this phase of effort, we will produce a summary
+document which can be referred back to, which includes all the relevant
+points, and may be referred to alongside this document to form a
+complete understanding of the meshcore transport engine.
+
+based on this planning work, we will design the engine in phases,
+always focusing on making clean code, with clear separation of
+concerns, and a modular architecture.  the meshcore engine isn't likely
+to be computationally heavy, but it will be significantly more
+complicated to build than the CLI engine, and we need to work on it in
+small, reasonable-sized chunks to ensure that it doesn't suffer from
+any code smells.  when code smells do develop, we need to address them
+immediately, rather than leaving them to be cleaned up later.
+
+please examine citadel/transports/engine/cli.py, and the meshcore
+depot, which was linked above, paying particular attention to the
+communication protocol with the USB companion firmware, then let's
+discuss what else we need to establish before proceeding with this
+work.
