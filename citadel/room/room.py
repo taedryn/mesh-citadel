@@ -176,9 +176,15 @@ class Room:
             return 0
         return last_read[0][0]
 
-    async def has_unread_messages(self, user: User) -> bool:
+    async def has_unread_messages(self, user: [User|str]) -> bool:
         # Check if user has any unread messages they can actually read
-        unread_ids = await self.get_unread_message_ids(user.username)
+        if isinstance(user, User):
+            username = user.username
+        elif isinstance(user, str):
+            username = user
+        else:
+            raise ValueError(f"user argument must be either User or str")
+        unread_ids = await self.get_unread_message_ids(username)
         return len(unread_ids) > 0
 
     async def get_room_id(self, identifier: int | str) -> int:
