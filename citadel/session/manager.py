@@ -157,7 +157,9 @@ class SessionManager:
         # Use existing session or create new one
         if session_id:
             # Reset existing session to anonymous state
-            self.reset_session_to_anonymous(session_id)
+            self.mark_logged_in(session_id, False)
+            self.mark_username(session_id, None)
+            self.clear_workflow(session_id)
             target_session_id = session_id
         else:
             # Create new session
@@ -194,27 +196,6 @@ class SessionManager:
         self.notification_callback = callback
 
     # --- helpers for working with the pre-login state ---
-
-    def reset_session_to_anonymous(self, session_id: str):
-        """Reset session to anonymous state, clearing all user-specific data.
-
-        This should be called when a user logs out to ensure no user-specific
-        information persists for the next user who uses this session.
-        """
-        state = self.get_session_state(session_id)
-        if state:
-            old_username = state.username
-            # Reset all user-specific fields
-            state.username = None
-            state.current_room = SystemRoomIDs.LOBBY_ID
-            state.workflow = None
-            state.logged_in = False
-
-            # Clear message queue to prevent next user from seeing previous user's messages
-            # Create new empty queue to discard any pending messages
-            state.msg_queue = asyncio.Queue()
-
-            log.info(f"Session '{session_id}' reset to anonymous state (was user '{old_username}')")
 
     def mark_username(self, session_id: str, username: str):
         """Bind a username to a session once validated."""

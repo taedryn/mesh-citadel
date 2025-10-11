@@ -494,73 +494,6 @@ class WhoCommand(BaseCommand):
     short_text = "Who's online"
     help_text = "List active users currently online."
 
-    async def run(self, context):
-        from datetime import datetime, UTC
-
-        state = context.session_mgr.get_session_state(context.session_id)
-        user = User(context.db, state.username)
-        await user.load()
-
-        # Check if user is privileged (aide or sysop)
-        is_privileged = user.permission_level.value >= PermissionLevel.AIDE.value
-
-        # Get all active sessions
-        online_users = []
-        now = datetime.now(UTC)
-
-        with context.session_mgr.lock:
-            for session_id, (session_state, last_active) in context.session_mgr.sessions.items():
-                if not session_state.logged_in or not session_state.username:
-                    continue
-
-                # Load user to check public status
-                online_user = User(context.db, session_state.username)
-                await online_user.load()
-
-                # TODO: Add has_posted_publicly field to users table and User model
-                # For now, show all users (will be restricted once field is added)
-                # For non-privileged users, only show users who have posted publicly
-                # if not is_privileged and not online_user.has_posted_publicly:
-                #     continue
-
-                # Calculate activity status
-                seconds_idle = (now - last_active).total_seconds()
-
-                if is_privileged:
-                    # Show granular timing for privileged users
-                    if seconds_idle < 60:
-                        activity_str = f"active ({int(seconds_idle)}s)"
-                    elif seconds_idle < 3600:  # Less than 1 hour
-                        activity_str = f"idle ({int(seconds_idle // 60)}m)"
-                    else:  # 1+ hours
-                        activity_str = f"idle ({int(seconds_idle // 3600)}h)"
-
-                    # Include public/private status for privileged users
-                    # TODO: Replace with actual has_posted_publicly check
-                    visibility = "public"  # Placeholder until has_posted_publicly is implemented
-                    user_info = f"{session_state.username} ({activity_str}) [{visibility}]"
-                else:
-                    # Simple active/idle for regular users
-                    activity_str = "active" if seconds_idle < 60 else "idle"
-                    user_info = f"{session_state.username} ({activity_str})"
-
-                online_users.append(user_info)
-
-        if not online_users:
-            return ToUser(
-                session_id=context.session_id,
-                text="No users currently online."
-            )
-
-        # Sort alphabetically
-        online_users.sort()
-        user_list = "\n".join(online_users)
-
-        return ToUser(
-            session_id=context.session_id,
-            text=f"Users currently online:\n{user_list}"
-        )
-
 
 @register_command
 class DeleteMessageCommand(BaseCommand):
@@ -679,13 +612,3 @@ class FastForwardCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Fast-forward"
     help_text = "Fast-forward to the latest message in the current room, skipping over unread messages. This resets your last-read pointer to the latest message."
-
-
-@register_command
-class ElevatePrivilegeCommand(BaseCommand):
-    code = ".EP"
-    name = "elevate_privilege"
-    category = CommandCategory.SYSOP
-    permission_level = PermissionLevel.SYSOP
-    short_text = "Elevate privilege"
-    help_text = "Temporarily assume elevated privileges with password authentication. Similar to sudo in Unix systems. Can be used for a single command or for a time period."
