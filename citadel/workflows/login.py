@@ -1,7 +1,7 @@
 import logging
 
 from citadel.auth.passwords import authenticate
-from citadel.room.room import Room
+from citadel.room.room import Room, SystemRoomIDs
 from citadel.transport.packets import ToUser
 from citadel.user.user import User
 from citadel.workflows.base import WorkflowState, Workflow
@@ -121,6 +121,12 @@ class LoginWorkflow(Workflow):
                     error_code="login_failed"
                 )
 
+            mail = Room(context.db, context.config, SystemRoomIDs.MAIL_ID)
+            await mail.load()
+            has_mail = await mail.has_unread_messages(username)
+            mail_msg = ""
+            if has_mail:
+                mail_msg = "\n* You have unread mail"
             context.session_mgr.mark_username(context.session_id, username)
             context.session_mgr.mark_logged_in(context.session_id)
             context.session_mgr.clear_workflow(context.session_id)
@@ -130,7 +136,7 @@ class LoginWorkflow(Workflow):
             return ToUser(
                 session_id=context.session_id,
                 text=(f"Welcome, {username}! You are now logged in.\n"
-                      f"Current room: {room.name}")
+                      f"Current room: {room.name}{mail_msg}")
             )
 
         return ToUser(

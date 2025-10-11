@@ -7,6 +7,10 @@ from meshcore.packet import MeshCorePacket
 from meshcore.command import MeshCoreCommand
 from meshcore.event import EventType
 
+from citadel.transport.packets import FromUser, FromUserType, ToUser
+from citadel.commands.processor import CommandProcessor
+from citadel.transport.parser import TextParser
+
 log = logging.getLogger(__name__)
 
 
@@ -16,6 +20,8 @@ class MeshCoreTransport:
         self.session_mgr = session_mgr
         self.config = config
         self.db = db
+        self.command_processor = CommandProcessor(config, db, session_mgr)
+        self.text_parser = TextParser()
         self.meshcore = None
         self._running = False
 
@@ -103,11 +109,14 @@ class MeshCoreTransport:
                 return
 
             # If logged in, route to command processor
-            msg = FromUser(session_id=session_id, text=payload)
+            command = self.text_parser.parse_command(payload)
+            packet = FromUser(
+                session_id=session_id,
+                payload_type=FromUserType.COMMAND,
+                payload=command
+            )
             asyncio.create_task(
-                # TODO: this isn't a real function. send to command
-                # processor instead
-                self.session_mgr.process_input(session_id, msg)
+                self._process_command_packet(packet)
             )
         except Exception as e:
             log.error(f"Error handling message from {node_id}: {e}")
@@ -132,7 +141,7 @@ class MeshCoreTransport:
             node_id = packet.sender_id
             advert = packet.payload  # Assumes structured dict
 
-            self.db.execute(
+            await self.db.execute(
                 """
                 INSERT INTO mc_adverts (
                     node_id, public_key, node_type,
@@ -150,3 +159,44 @@ class MeshCoreTransport:
                     node_id,
                     advert["public_key"],
                     advert.get("node_type", "user"),
+                    datetime.now().isoformat(),
+                    advert.get("signal_strength", 0),
+                    advert.get("hop_count", 0)
+                )
+            )
+            log.debug(f"Updated advert for node {node_id}")
+        except KeyError as e:
+            log.error(f"Missing required field in advert from {node_id}: {e}")
+        except (TypeError, ValueError) as e:
+            log.error(f"Invalid advert data format from {node_id}: {e}")
+
+    async def _handle_confirmation(self, packet: MeshCorePacket):
+        """Handle delivery confirmation from MeshCore."""
+        try:
+            log.debug(f"Message delivery confirmed: {packet}")
+            # TODO: Update packet tracking table with delivery status
+            # For now, just log the confirmation
+        except Exception as e:
+            log.error(f"Error handling confirmation: {e}")
+
+    def _node_has_password_cache(self, node_id: str) -> bool:
+        """Check if node has valid password cache.
+
+        TODO: This method needs implementation once mc_password_cache table exists.
+        Should query database for node_id and check expiration timestamp.
+        """
+        # Placeholder implementation - always return False until database schema is ready
+        return False
+
+    async def send_to_node(self, session_id: str, message: str):
+        """Send a message to a mesh node via MeshCore.
+
+        TODO: This method needs full implementation:
+        1. Look up node_id from session_id using SessionManager.get_nodes_for_session()
+        2. Handle message chunking if message exceeds MeshCore packet size limits
+        3. Create MeshCoreCommand to send application message
+        4. Queue message for retry if delivery fails
+        """
+        log.debug(f"TODO: Send message to session {session_id}: {message[:50]}...")
+        # Placeholder implementation
+        pass
