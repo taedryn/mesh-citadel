@@ -25,14 +25,15 @@ class SessionManager:
         self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
 
-    def create_session(self) -> str:
+    def create_session(self, node_id: str=None) -> str:
         """Create a session not yet tied to a user."""
         session_id = secrets.token_urlsafe(24)
         state = SessionState(
             username=None,
             current_room=SystemRoomIDs.LOBBY_ID,
             logged_in=False,
-            msg_queue=asyncio.Queue()
+            msg_queue=asyncio.Queue(),
+            node_id=node_id
         )
         with self.lock:
             self.sessions[session_id] = (state, datetime.now(UTC))
@@ -47,6 +48,13 @@ class SessionManager:
             state, _ = data
             return state
 
+    def get_session_by_node_id(self, node_id: str) -> str:
+        """ retrieve the session_id baseed on node_id """
+        for session_id, state in self.sessions.items():
+            if state.node_id == node_id:
+                return session_id
+        return None
+
     def touch_session(self, session_id: str) -> bool:
         now = datetime.now(UTC)
         with self.lock:
@@ -55,6 +63,16 @@ class SessionManager:
             state, _ = self.sessions[session_id]
             self.sessions[session_id] = (state, now)
             return True
+
+    def is_expired(self, session_id: str) -> bool:
+        """ check if a session is expired or not """
+        timeout = self.config.auth["session_timeout"]
+        if session_id in self.sessions:
+            _, last_activity = self.sessions[session_id]
+           if datetime.utcnow() - last_activity > timedelta(seconds=timeout):
+               return True # session registered, expired
+           return False # session registered, not expired
+       return True # session isn't registered
 
     def expire_session(self, session_id: str) -> bool:
         with self.lock:

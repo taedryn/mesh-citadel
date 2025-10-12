@@ -98,6 +98,26 @@ async def initialize_database(db_manager, config=None):
     );
     """
 
+    mc_adverts_table = """
+    CREATE TABLE mc_adverts (
+        node_id TEXT PRIMARY KEY,
+        public_key BLOB NOT NULL,
+        node_type TEXT DEFAULT 'user',  -- 'user', 'repeater', 'room_server'
+        last_heard DATETIME DEFAULT CURRENT_TIMESTAMP,
+        signal_strength INTEGER,        -- If available from MeshCore
+        hop_count INTEGER               -- If available from MeshCore
+    );
+    """
+
+    mc_passwd_cache_table = """
+    CREATE TABLE IF NOT EXISTS mc_passwd_cache (
+        node_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        last_pw_use DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+
+
     # all tables to be initialized
     tables = [
         user_table,
@@ -109,6 +129,7 @@ async def initialize_database(db_manager, config=None):
         room_ignores_table,
         workflow_state_table,
         pending_validations_table,
+        mc_adverts_table,
     ]
 
     for sql in tables:

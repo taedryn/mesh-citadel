@@ -18,6 +18,8 @@ class MeshCoreTransport:
     def __init__(self, device_path, session_mgr, config, db):
         self.device_path = device_path
         self.session_mgr = session_mgr
+        # session_id -> login_prompted: bool
+        self.login_prompted = {}
         self.config = config
         self.db = db
         self.command_processor = CommandProcessor(config, db, session_mgr)
@@ -81,22 +83,25 @@ class MeshCoreTransport:
         try:
             node_id = packet.sender_id
             payload = packet.payload.decode("utf-8")
-            # TODO: this method needs to be created
-            session_id = self.session_mgr.get_session_by_node(node_id)
+            session_id = self.session_mgr.get_session_by_node_id(node_id)
 
             if not session_id:
-                session_id = self.session_mgr.create_session()
-                # TODO: this method needs to be created
-                self.session_mgr.bind_node_to_session(node_id, session_id)
+                session_id = self.session_mgr.create_session(node_id)
 
             if self._node_has_password_cache(node_id):
                 self.session_mgr.mark_logged_in(session_id)
+                self.session_mgr.touch_session(sesson_id)
                 log.info(f"Auto-login for cached node {node_id}")
 
             if not self.session_mgr.is_logged_in(session_id):
+                if not self.login_prompted.get(session_id, False):
+                    self.login_prompted[session_id] = True
+                   return self._send_login_prompt(session_id, node_id) 
                 # Treat payload as password attempt
                 if self.session_mgr.authenticate(session_id, payload):
                     self.session_mgr.mark_logged_in(session_id)
+                    self.session_mgr.touch_session(sesson_id)
+                    self.login_prompted[session_id] = False
                     log.info(f"Login successful for {node_id}")
                     asyncio.create_task(
                         self.send_to_node(session_id, "Login successful.")
@@ -122,11 +127,13 @@ class MeshCoreTransport:
             log.error(f"Error handling message from {node_id}: {e}")
 
     async def _send_login_prompt(self, session_id: str, node_id: str):
+        bbs_name = self.config.bbs.get("system_name", "Mesh-Citadel BBS")
         payload = {
             "type": "room_server_handshake",
-            "room_name": "Citadel BBS",
+            "room_name": bbs_name,
             "login_required": True,
-            "challenge": "Please enter your password"
+            "challenge": "Please enter your login credentials",
+            "username_required": True
         }
         try:
             command = MeshCoreCommand.send_application_message(payload)
@@ -180,13 +187,20 @@ class MeshCoreTransport:
             log.error(f"Error handling confirmation: {e}")
 
     def _node_has_password_cache(self, node_id: str) -> bool:
-        """Check if node has valid password cache.
-
-        TODO: This method needs implementation once mc_password_cache table exists.
-        Should query database for node_id and check expiration timestamp.
-        """
-        # Placeholder implementation - always return False until database schema is ready
-        return False
+        """Check if node has valid password cache. This function forces
+        password expiration such that a user must input their password at
+        least every 2 weeks."""
+        days = self.config.auth.get("password_cache_duration", 14)
+        query = "SELECT last_pw_use FROM mc_passwd_cache WHERE node_id = ?"
+        result = await self.db.execute(query, (node_id,))
+        if result:
+            dt = datetime.strptime(result[0][0], "%Y-%m-%d %H:%M:%S")
+            two_weeks_ago = datetime.utcnow() - timedelta(days=days)
+            if dt < two_weeks_ago:
+                log.debug(f"Password cache for {node_id} is expired")
+                return False # cache is expired
+            return True # has a cache and it's not expired
+        return False # has no cache at all
 
     async def send_to_node(self, session_id: str, message: str):
         """Send a message to a mesh node via MeshCore.

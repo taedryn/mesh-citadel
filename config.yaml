@@ -17,12 +17,12 @@ bbs:
     twit: "Purgatory"               # Room ID 6
   registration:
     terms_required: true
-    terms: "To register with this system, you must agree to the following conditions of membership:
+    terms: """To register with this system, you must agree to the following conditions of membership:
   1. Bigotry or hatred will not be tolerated.
   2. Be kind, and assume best intent.
   3. No illegal content.
   4. This is a welcoming, friendly community, and we expect everyone to respect all other members.
-  5. The sysop and aides are in charge, and you agree to abide by their decisions."
+  5. The sysop and aides are in charge, and you agree to abide by their decisions."""
   welcome_message: "Welcome to Mesh-Citadel. This is a decentralized bulletin board system. Please log in to continue."
 
 
@@ -30,6 +30,7 @@ auth:
   session_timeout: 3600             # seconds
   max_password_length: 64
   max_username_length: 32
+  password_cache_duration: 14 # days
   recovery_questions:
     - "What is your favorite color?"
     - "What was your first pet's name?"

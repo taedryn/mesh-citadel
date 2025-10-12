@@ -14,3 +14,4 @@ class SessionState:
     workflow: Optional[WorkflowState] = None
     logged_in: bool = False
     msg_queue: asyncio.Queue = None
+    node_id: Optional[str] = None
