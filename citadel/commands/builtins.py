@@ -8,7 +8,7 @@ from citadel.auth.permissions import PermissionLevel
 from citadel.commands.responses import MessageResponse
 from citadel.transport.packets import ToUser
 from citadel.auth.permissions import is_allowed
-from citadel.room.room import Room, SystemRoomIDs
+from citadel.room.room import Room, SystemRoomIDs, RoomNotFoundError
 from citadel.user.user import User
 from citadel.workflows.base import WorkflowContext
 
@@ -335,7 +335,6 @@ class ChangeRoomCommand(BaseCommand):
     # add an args attribute for any command that takes an argument
     args = ""
 
-    # TODO: sort out arguments here
     async def run(self, context):
 
         state = context.session_mgr.get_session_state(context.session_id)
@@ -343,10 +342,11 @@ class ChangeRoomCommand(BaseCommand):
         await user.load()
         current_room = Room(context.db, context.config, state.current_room)
         await current_room.load()
-        next_room = await current_room.go_to_room(self.args)
-        await next_room.load()
-        log.debug(f'preparing to go to room {self.args}')
-        if not next_room:
+        try:
+            next_room = await current_room.go_to_room(self.args)
+            await next_room.load()
+            log.debug(f'preparing to go to room {self.args}')
+        except RoomNotFoundError:
             return ToUser(
                 session_id=context.session_id,
                 text=f"Room {self.args} not found.",
