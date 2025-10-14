@@ -12,6 +12,8 @@ from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.transport.manager import TransportError
 from citadel.commands.processor import CommandProcessor
 from citadel.transport.parser import TextParser
+from citadel.workflows.base import WorkflowState, WorkflowContext
+from citadel.workflows import registry as workflow_registry
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class MeshCoreTransport:
         self.meshcore = None
         self._running = False
         self.tasks = []
+        self.subs = []
 
     async def start(self):
         try:
@@ -52,10 +55,12 @@ class MeshCoreTransport:
 
     async def start_meshcore(self):
         mc_config = self.config.transport.get("meshcore", {})
+
         serial_port = mc_config.get("serial_port", "/dev/ttyUSB0")
         baud_rate = mc_config.get("baud_rate", 115200)
 
-        # radio settings default to US Recommended settings
+        # radio settings default to US Recommended settings, if not
+        # otherwise set in the config file
         frequency = mc_config.get("frequency", 910.525)
         bandwidth = mc_config.get("bandwidth", 62.5)
         spreading_factor = mc_config.get("spreading_factor", 7)
@@ -64,7 +69,7 @@ class MeshCoreTransport:
         node_name = mc_config.get("name", "Mesh-Citadel BBS")
 
         log.info(f"Connecting MeshCore transport at {serial_port}")
-        mc = await MeshCore.create_serial(serial_port, baudrate=baud_rate)
+        mc = await MeshCore.create_serial(serial_port, baud_rate)
         log.info(f"Setting MeshCore frequency to {frequency} MHz")
         log.info(f"Setting MeshCore bandwidth to {bandwidth} kHz")
         log.info(f"Setting MeshCore spreading factor to {spreading_factor}")
@@ -98,9 +103,13 @@ class MeshCoreTransport:
             for task in self.tasks:
                 task.cancel()
                 await task
+            for subs in self.subs:
+                self.meshcore.unsubscribe(sub)
             if self.meshcore:
                 try:
                     self.meshcore.stop()
+                    self.meshcore.stop_auto_message_fetching()
+                    self.meshcore.disconnect()
                     log.info("MeshCore transport shut down")
             self._running = False
         else:
@@ -108,83 +117,99 @@ class MeshCoreTransport:
 
     async def _register_event_handlers(self):
         try:
-            self.priv_sub = self.meshcore.subscribe(
+            self.subs.append(self.meshcore.subscribe(
                 EventType.CONTACT_MGS_RECV,
                 self._handle_message
-            )
-            self.chan_sub = self.meshcore.subscribe(
+            ))
+            self.subs.append(self.meshcore.subscribe(
                 EventType.CHANNEL_MSG_RECV
                 self._handle_advert
-            )
+            ))
             await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
         except Exception as e:
             log.error(f"Failed to register handlers: {e}")
             raise
 
-    def _handle_message(self, packet: MeshCorePacket):
-        log.debug(f"Received message packet: {packet}")
-        try:
-            node_id = packet.sender_id
-            payload = packet.payload.decode("utf-8")
-            session_id = self.session_mgr.get_session_by_node_id(node_id)
+    def _handle_message(self, event):
+        log.debug(f"Received message event: {event}")
+        data = event.payload
+        node_id = data['pubkey_prefix']
+        text = data['text'].decode("utf-8")
+        session_id = self.session_mgr.get_session_by_node_id(node_id)
 
-            if not session_id:
-                session_id = self.session_mgr.create_session(node_id)
+        if not session_id:
+            session_id = self.session_mgr.create_session(node_id)
 
-            if self._node_has_password_cache(node_id):
+        if self._node_has_password_cache(node_id):
+            self.session_mgr.mark_logged_in(session_id)
+            self.session_mgr.touch_session(sesson_id)
+            log.info(f"Auto-login for cached node {node_id}")
+
+        if not self.session_mgr.is_logged_in(session_id):
+            if not self.login_prompted.get(session_id, False):
+                self.login_prompted[session_id] = True
+               return self._send_login_prompt(session_id, node_id) 
+
+            # Treat payload as password attempt
+            if self.session_mgr.authenticate(session_id, payload):
                 self.session_mgr.mark_logged_in(session_id)
                 self.session_mgr.touch_session(sesson_id)
-                log.info(f"Auto-login for cached node {node_id}")
+                self.login_prompted[session_id] = False
+                log.info(f"Login successful for {node_id}")
+                asyncio.create_task(
+                    self.send_to_node(session_id, "Login successful.")
+                )
+            else:
+                log.info(f"Login failed for {node_id}")
+                asyncio.create_task(
+                    self.send_to_node(session_id, "Invalid password.")
+                )
+            return
 
-            if not self.session_mgr.is_logged_in(session_id):
-                if not self.login_prompted.get(session_id, False):
-                    self.login_prompted[session_id] = True
-                   return self._send_login_prompt(session_id, node_id) 
-                # Treat payload as password attempt
-                if self.session_mgr.authenticate(session_id, payload):
-                    self.session_mgr.mark_logged_in(session_id)
-                    self.session_mgr.touch_session(sesson_id)
-                    self.login_prompted[session_id] = False
-                    log.info(f"Login successful for {node_id}")
-                    asyncio.create_task(
-                        self.send_to_node(session_id, "Login successful.")
-                    )
-                else:
-                    log.info(f"Login failed for {node_id}")
-                    asyncio.create_task(
-                        self.send_to_node(session_id, "Invalid password.")
-                    )
-                return
-
-            # If logged in, route to command processor
-            command = self.text_parser.parse_command(payload)
-            packet = FromUser(
-                session_id=session_id,
-                payload_type=FromUserType.COMMAND,
-                payload=command
-            )
-            asyncio.create_task(
-                self._process_command_packet(packet)
-            )
-        except Exception as e:
-            log.error(f"Error handling message from {node_id}: {e}")
+        # If logged in, route to command processor
+        command = self.text_parser.parse_command(payload)
+        packet = FromUser(
+            session_id=session_id,
+            payload_type=FromUserType.COMMAND,
+            payload=command
+        )
+        asyncio.create_task(
+            self._process_command_packet(packet)
+        )
 
     async def _send_login_prompt(self, session_id: str, node_id: str):
-        bbs_name = self.config.bbs.get("name", "Mesh-Citadel BBS")
-        payload = {
-            "type": "room_server_handshake",
-            "room_name": bbs_name,
-            "login_required": True,
-            "challenge": "Please enter your login credentials",
-            "username_required": True
-        }
-        try:
-            command = MeshCoreCommand.send_application_message(payload)
-            await self.meshcore.send_command(command)
-            log.debug(f"Sent login prompt to {node_id}")
-        except Exception as e:
-            log.error(f"Failed to send login prompt to {node_id}: {e}")
+        """launch the user into the login workflow. this is a temporary
+        workaround to use pure DMs, until there's a KISS modem style meshcore
+        radio firmware available, which would enable room-server-style login
+        prompts."""
+        self.session_mgr.set_workflow(
+            session_id,
+            WorkflowState(
+                kind="login",
+                step=1,
+                data={}
+            )
+        )
+        context = WorkflowContext(
+            session_id=session_id,
+            db=self.db,
+            config=self.config,
+            session_mgr=self.session_mgr,
+            wf_state=None
+        )
+        handler = workflow_registry.get("login")
+        if handler:
+            session_state = self.session_mgr.get_session_state(session_id)
+            return await handler.start(context)
+        else:
+            return ToUser(
+                session_id=context.session_id,
+                text="Error: Login workflow not found",
+                is_error=True,
+                error_code="workflow_not_found"
+            )
+
 
     def _handle_advert(self, packet: MeshCorePacket):
         log.debug(f"Received advert packet: {packet}")
