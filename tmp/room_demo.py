@@ -44,7 +44,6 @@ async def main():
     print('setting tx power')
     print(result)
 
-    """
     # Set node identity
     print("🪪 Setting node identity...")
     await meshcore.commands.set_name("Citadel Test Node")
@@ -59,7 +58,6 @@ async def main():
         print(f'setting "{key}: {value}"')
         print(result)
     # end failure block
-    """
 
     # Send room server handshake
     print("📣 Sending advert")

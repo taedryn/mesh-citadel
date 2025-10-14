@@ -6,8 +6,10 @@ from meshcore.serial import MeshCoreSerial
 from meshcore.packet import MeshCorePacket
 from meshcore.command import MeshCoreCommand
 from meshcore.event import EventType
+from meshcore import MeshCore, EventType
 
 from citadel.transport.packets import FromUser, FromUserType, ToUser
+from citadel.transport.manager import TransportError
 from citadel.commands.processor import CommandProcessor
 from citadel.transport.parser import TextParser
 
@@ -15,25 +17,22 @@ log = logging.getLogger(__name__)
 
 
 class MeshCoreTransport:
-    def __init__(self, device_path, session_mgr, config, db):
-        self.device_path = device_path
+    def __init__(self, session_mgr, config, db):
         self.session_mgr = session_mgr
-        # session_id -> login_prompted: bool
-        self.login_prompted = {}
         self.config = config
         self.db = db
         self.command_processor = CommandProcessor(config, db, session_mgr)
         self.text_parser = TextParser()
         self.meshcore = None
         self._running = False
+        self.tasks = []
 
     async def start(self):
         try:
-            self.meshcore = MeshCoreSerial(self.device_path)
-            self._register_event_handlers()
-            await self.meshcore.connect()
+            await self.start_meshcore()
+            await self._register_event_handlers()
             self._running = True
-            log.info(f"MeshCore device connected at {self.device_path}")
+            log.info(f"MeshCore device connected")
         except SerialException as e:
             log.error(f"Serial connection failed: {e}")
             raise
@@ -44,35 +43,80 @@ class MeshCoreTransport:
             log.error(f"Unexpected startup error: {e}")
             raise
 
+    async def interval_advert(self):
+        interval = self.config.transport.get("meshcore", {}).get("advert_interval", 6)
+        while True:
+            if self.meshcore:
+                self.meshcore.commands.send_advert(flood=True)
+            await asyncio.sleep(interval * 60 * 60) # interval is hours
+
+    async def start_meshcore(self):
+        mc_config = self.config.transport.get("meshcore", {})
+        serial_port = mc_config.get("serial_port", "/dev/ttyUSB0")
+        baud_rate = mc_config.get("baud_rate", 115200)
+
+        # radio settings default to US Recommended settings
+        frequency = mc_config.get("frequency", 910.525)
+        bandwidth = mc_config.get("bandwidth", 62.5)
+        spreading_factor = mc_config.get("spreading_factor", 7)
+        coding_rate = mc_config.get("coding_rate", 5)
+        tx_power = mc_config.get("tx_power", 22)
+        node_name = mc_config.get("name", "Mesh-Citadel BBS")
+
+        log.info(f"Connecting MeshCore transport at {serial_port}")
+        mc = await MeshCore.create_serial(serial_port, baudrate=baud_rate)
+        log.info(f"Setting MeshCore frequency to {frequency} MHz")
+        log.info(f"Setting MeshCore bandwidth to {bandwidth} kHz")
+        log.info(f"Setting MeshCore spreading factor to {spreading_factor}")
+        log.info(f"Setting MeshCore coding rate to {coding_rate}")
+        result = await mc.commands.set_radio(
+            frequency,
+            bandwidth,
+            spreading_factor,
+            coding_rate
+        )
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to set radio parameters: {result.payload}")
+        log.info(f"Setting MeshCore TX power to {tx_power} dBm")
+        result = await mc.commands.set_tx_power(tx_power)
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to set TX power: {result.payload}")
+        log.info(f"Setting MeshCore node name to '{node_name}'")
+        result = await mc.commands.set_name(node_name)
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to set node name: {result.payload}")
+        log.info("Sending MeshCore flood advert")
+        result = await mc.commands.send_advert(flood=True)
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to send advert: {result.payload}")
+        self.tasks.append(asyncio.create_task(self.interval_advert()))
+        self.meshcore = mc
+
+
     async def stop(self):
-        self._running = False
-        if self.meshcore:
-            try:
-                await self.meshcore.disconnect()
-                log.info(f"MeshCore device disconnected")
-            except SerialException as e:
-                log.warning(f"Serial disconnect error: {e}")
-            except OSError as e:
-                log.warning(f"OS error during disconnect: {e}")
-            except Exception as e:
-                log.warning(f"Unexpected disconnect error: {e}")
+        if self._running:
+            for task in self.tasks:
+                task.cancel()
+                await task
+            if self.meshcore:
+                try:
+                    self.meshcore.stop()
+                    log.info("MeshCore transport shut down")
+            self._running = False
         else:
             log.warning("MeshCoreTransport.stop() called when already stopped")
 
-    def _register_event_handlers(self):
+    async def _register_event_handlers(self):
         try:
-            self.meshcore.subscribe(
-                EventType.RESP_CODE_CONTACT_MSG_RECV_V3,
+            self.priv_sub = self.meshcore.subscribe(
+                EventType.CONTACT_MGS_RECV,
                 self._handle_message
             )
-            self.meshcore.subscribe(
-                EventType.PUSH_CODE_ADVERT,
+            self.chan_sub = self.meshcore.subscribe(
+                EventType.CHANNEL_MSG_RECV
                 self._handle_advert
             )
-            self.meshcore.subscribe(
-                EventType.PUSH_CODE_SEND_CONFIRMED,
-                self._handle_confirmation
-            )
+            await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
         except Exception as e:
             log.error(f"Failed to register handlers: {e}")
@@ -127,7 +171,7 @@ class MeshCoreTransport:
             log.error(f"Error handling message from {node_id}: {e}")
 
     async def _send_login_prompt(self, session_id: str, node_id: str):
-        bbs_name = self.config.bbs.get("system_name", "Mesh-Citadel BBS")
+        bbs_name = self.config.bbs.get("name", "Mesh-Citadel BBS")
         payload = {
             "type": "room_server_handshake",
             "room_name": bbs_name,

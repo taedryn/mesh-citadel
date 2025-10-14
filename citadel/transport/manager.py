@@ -12,6 +12,8 @@ from citadel.transport.engines.cli import CLITransportEngine
 
 logger = logging.getLogger(__name__)
 
+class TransportError(Exception):
+    """Indicates an error has occurred in the transport system"""
 
 class TransportManager:
     """
@@ -69,7 +71,10 @@ class TransportManager:
         logger.info("Starting CLI transport engine")
 
         # Create Unix socket path
-        socket_path = Path("/tmp/mesh-citadel-cli.sock")
+        socket_name = self.config.transport.get("cli",
+                                                {}).get("socket",
+                                                "/tmp/mesh-citadel-cli.sock")
+        socket_path = Path(socket_name)
         if socket_path.exists():
             socket_path.unlink()
 

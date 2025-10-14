@@ -22,7 +22,7 @@ async def initialize_system(log_level=None):
     initialize_logging(config)
 
     log = logging.getLogger('citadel')
-    log.info(f'Starting {config.bbs["system_name"]}')
+    log.info(f'Starting {config.bbs["name"]}')
 
     # Initialize database
     log.info('Starting database system')

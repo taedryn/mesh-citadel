@@ -1,5 +1,8 @@
+system: &system
+  name: "Mesh-Citadel"
+
 bbs:
-  system_name: "Mesh-Citadel"
+  <<: *system
   max_messages_per_room: 300        # (restart required)
   max_rooms: 50                     # (restart required)
   max_users: 300                    # (restart required)
@@ -37,8 +40,18 @@ auth:
     - "Who was your favorite teacher?"
 
 transport:
-  serial_port: "/dev/ttyUSB0"       # (restart required)
-  baud_rate: 9600                   # (restart required)
+  meshcore:                           # any change to mc requires restart
+    <<: *system                       # import the system name
+    serial_port: "/dev/ttyUSB0"
+    baud_rate: 115200
+    frequency: 910.525                # MHz
+    bandwidth: 62.5                   # kHz
+    spreading_factor: 7
+    coding_rate: 5
+    tx_power: 1                       # dBm
+    advert_interval: 6                # hours
+  cli:
+    socket: "/tmp/mesh-citadel-cli.sock"
 
 database:
   db_path: "citadel.db"             # (restart required)
