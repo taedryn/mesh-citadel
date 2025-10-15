@@ -12,7 +12,6 @@ from citadel.workflows.base import WorkflowState
 from citadel.transport.packets import ToUser
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
 
 
 class SessionManager:

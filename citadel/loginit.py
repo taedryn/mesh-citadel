@@ -8,7 +8,10 @@ def initialize_logging(config):
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # Avoid duplicate handlers
+    # for some reason, importing the meshcore transport engine is
+    # causing a logger.handler to get set.  this is a bandaid to stop
+    # that from being a problem:
+    logger.handlers.clear()
     if not logger.handlers:
         formatter = logging.Formatter(
             "[%(asctime)s] %(levelname)s %(name)s: %(message)s",

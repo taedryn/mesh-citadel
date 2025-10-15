@@ -8,9 +8,10 @@ from typing import Dict, Any, Optional
 
 from citadel.config import Config
 from citadel.transport.engines.cli import CLITransportEngine
+from citadel.transport.engines.meshcore import MeshCoreTransportEngine
 
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 class TransportError(Exception):
     """Indicates an error has occurred in the transport system"""
@@ -35,40 +36,43 @@ class TransportManager:
         if self._running:
             return
 
-        logger.info("Starting transport manager")
+        log.info("Starting transport manager")
 
         # Get transport configuration
         transport_config = self.config.transport
-        engine_type = transport_config.get('engine', 'cli')
-
-        if engine_type == 'cli':
-            await self._start_cli_engine(transport_config)
-        else:
-            raise ValueError(f"Unknown transport engine: {engine_type}")
+        for engine_type in transport_config:
+            if engine_type == 'cli':
+                await self._start_cli_engine(transport_config)
+            elif engine_type == 'meshcore':
+                await self._start_meshcore_engine()
+            else:
+                raise ValueError(f"Unknown transport engine: {engine_type}")
 
         self._running = True
-        logger.info("Transport manager started")
+        num_engines = len(self.engines)
+        e_word = "engine" if num_engines == 1 else "engines"
+        log.info(f"Transport manager started with {num_engines} {e_word} running")
 
     async def stop(self) -> None:
         """Stop all transport engines."""
         if not self._running:
             return
 
-        logger.info("Stopping transport manager")
+        log.info("Stopping transport manager")
 
         # Stop all engines
         for name, engine in self.engines.items():
-            logger.info(f"Stopping transport engine: {name}")
+            log.info(f"Stopping transport engine: {name}")
             if hasattr(engine, 'stop'):
                 await engine.stop()
 
         self.engines.clear()
         self._running = False
-        logger.info("Transport manager stopped")
+        log.info("Transport manager stopped")
 
     async def _start_cli_engine(self, config: Dict[str, Any]) -> None:
         """Start the CLI transport engine."""
-        logger.info("Starting CLI transport engine")
+        log.info("Starting CLI transport engine")
 
         # Create Unix socket path
         socket_name = self.config.transport.get("cli",
@@ -88,7 +92,22 @@ class TransportManager:
         await engine.start()
         self.engines['cli'] = engine
 
-        logger.info(f"CLI transport engine started on {socket_path}")
+        log.info(f"CLI transport engine started on {socket_path}")
+
+    async def _start_meshcore_engine(self) -> None:
+        """Start the MeshCore transport engine"""
+        engine = MeshCoreTransportEngine(
+            session_mgr=self.session_manager,
+            config=self.config,
+            db=self.db_manager,
+        )
+        try:
+            await engine.start()
+        except:
+            log.error("*** Unable to start MeshCore engine! Skipping")
+            return
+        self.engines['meshcore'] = engine
+        log.info("MeshCore engine started")
 
     @property
     def is_running(self) -> bool:

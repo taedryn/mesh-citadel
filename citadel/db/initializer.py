@@ -2,7 +2,6 @@ from citadel.auth.permissions import PermissionLevel
 import logging
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.DEBUG)
 
 
 async def initialize_database(db_manager, config=None):
@@ -99,7 +98,7 @@ async def initialize_database(db_manager, config=None):
     """
 
     mc_adverts_table = """
-    CREATE TABLE mc_adverts (
+    CREATE TABLE IF NOT EXISTS mc_adverts (
         node_id TEXT PRIMARY KEY,
         public_key BLOB NOT NULL,
         node_type TEXT DEFAULT 'user',  -- 'user', 'repeater', 'room_server'

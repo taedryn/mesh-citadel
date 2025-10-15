@@ -2,14 +2,9 @@ import asyncio
 import logging
 from datetime import datetime
 from serial import SerialException
-from meshcore.serial import MeshCoreSerial
-from meshcore.packet import MeshCorePacket
-from meshcore.command import MeshCoreCommand
-from meshcore.event import EventType
 from meshcore import MeshCore, EventType
 
 from citadel.transport.packets import FromUser, FromUserType, ToUser
-from citadel.transport.manager import TransportError
 from citadel.commands.processor import CommandProcessor
 from citadel.transport.parser import TextParser
 from citadel.workflows.base import WorkflowState, WorkflowContext
@@ -18,10 +13,11 @@ from citadel.workflows import registry as workflow_registry
 log = logging.getLogger(__name__)
 
 
-class MeshCoreTransport:
+class MeshCoreTransportEngine:
     def __init__(self, session_mgr, config, db):
         self.session_mgr = session_mgr
         self.config = config
+        self.mc_config = config.transport.get("meshcore", {})
         self.db = db
         self.command_processor = CommandProcessor(config, db, session_mgr)
         self.text_parser = TextParser()
@@ -54,7 +50,7 @@ class MeshCoreTransport:
             await asyncio.sleep(interval * 60 * 60) # interval is hours
 
     async def start_meshcore(self):
-        mc_config = self.config.transport.get("meshcore", {})
+        mc_config = self.mc_config
 
         serial_port = mc_config.get("serial_port", "/dev/ttyUSB0")
         baud_rate = mc_config.get("baud_rate", 115200)
@@ -80,6 +76,7 @@ class MeshCoreTransport:
             spreading_factor,
             coding_rate
         )
+        from citadel.transport.manager import TransportError
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to set radio parameters: {result.payload}")
         log.info(f"Setting MeshCore TX power to {tx_power} dBm")
@@ -106,11 +103,11 @@ class MeshCoreTransport:
             for subs in self.subs:
                 self.meshcore.unsubscribe(sub)
             if self.meshcore:
-                try:
-                    self.meshcore.stop()
-                    self.meshcore.stop_auto_message_fetching()
-                    self.meshcore.disconnect()
-                    log.info("MeshCore transport shut down")
+                # TODO: figure out exceptions for this
+                self.meshcore.stop()
+                self.meshcore.stop_auto_message_fetching()
+                self.meshcore.disconnect()
+                log.info("MeshCore transport shut down")
             self._running = False
         else:
             log.warning("MeshCoreTransport.stop() called when already stopped")
@@ -122,7 +119,7 @@ class MeshCoreTransport:
                 self._handle_message
             ))
             self.subs.append(self.meshcore.subscribe(
-                EventType.CHANNEL_MSG_RECV
+                EventType.CHANNEL_MSG_RECV,
                 self._handle_advert
             ))
             await self.meshcore.start_auto_message_fetching()
@@ -131,7 +128,7 @@ class MeshCoreTransport:
             log.error(f"Failed to register handlers: {e}")
             raise
 
-    def _handle_message(self, event):
+    async def _handle_message(self, event):
         log.debug(f"Received message event: {event}")
         data = event.payload
         node_id = data['pubkey_prefix']
@@ -141,31 +138,19 @@ class MeshCoreTransport:
         if not session_id:
             session_id = self.session_mgr.create_session(node_id)
 
-        if self._node_has_password_cache(node_id):
-            self.session_mgr.mark_logged_in(session_id)
-            self.session_mgr.touch_session(sesson_id)
-            log.info(f"Auto-login for cached node {node_id}")
-
         if not self.session_mgr.is_logged_in(session_id):
-            if not self.login_prompted.get(session_id, False):
-                self.login_prompted[session_id] = True
-               return self._send_login_prompt(session_id, node_id) 
-
-            # Treat payload as password attempt
-            if self.session_mgr.authenticate(session_id, payload):
+            username = await self._node_has_password_cache(node_id)
+            if username:
                 self.session_mgr.mark_logged_in(session_id)
+                self.session_mgr.mark_username(session_id, username)
                 self.session_mgr.touch_session(sesson_id)
-                self.login_prompted[session_id] = False
-                log.info(f"Login successful for {node_id}")
-                asyncio.create_task(
-                    self.send_to_node(session_id, "Login successful.")
-                )
+                log.info(f"Auto-login for cached node {node_id}: {username}")
             else:
-                log.info(f"Login failed for {node_id}")
-                asyncio.create_task(
-                    self.send_to_node(session_id, "Invalid password.")
-                )
-            return
+                # for now, send the user off to the login workflow, and
+                # that's the end of things.  once the login prompt is
+                # working room-server-style, this will need to be
+                # revisited.
+                return self._start_login_workflow(session_id, node_id) 
 
         # If logged in, route to command processor
         command = self.text_parser.parse_command(payload)
@@ -178,7 +163,7 @@ class MeshCoreTransport:
             self._process_command_packet(packet)
         )
 
-    async def _send_login_prompt(self, session_id: str, node_id: str):
+    async def _start_login_workflow(self, session_id: str, node_id: str):
         """launch the user into the login workflow. this is a temporary
         workaround to use pure DMs, until there's a KISS modem style meshcore
         radio firmware available, which would enable room-server-style login
@@ -203,15 +188,13 @@ class MeshCoreTransport:
             session_state = self.session_mgr.get_session_state(session_id)
             return await handler.start(context)
         else:
-            return ToUser(
-                session_id=context.session_id,
-                text="Error: Login workflow not found",
-                is_error=True,
-                error_code="workflow_not_found"
+            return await self.send_to_node(
+                session_id,
+                "Error: Login workflow not found"
             )
 
-
-    def _handle_advert(self, packet: MeshCorePacket):
+    async def _handle_advert(self, event):
+        # TODO: rework this
         log.debug(f"Received advert packet: {packet}")
         try:
             node_id = packet.sender_id
@@ -246,21 +229,12 @@ class MeshCoreTransport:
         except (TypeError, ValueError) as e:
             log.error(f"Invalid advert data format from {node_id}: {e}")
 
-    async def _handle_confirmation(self, packet: MeshCorePacket):
-        """Handle delivery confirmation from MeshCore."""
-        try:
-            log.debug(f"Message delivery confirmed: {packet}")
-            # TODO: Update packet tracking table with delivery status
-            # For now, just log the confirmation
-        except Exception as e:
-            log.error(f"Error handling confirmation: {e}")
-
-    def _node_has_password_cache(self, node_id: str) -> bool:
+    async def _node_has_password_cache(self, node_id: str) -> bool:
         """Check if node has valid password cache. This function forces
         password expiration such that a user must input their password at
         least every 2 weeks."""
         days = self.config.auth.get("password_cache_duration", 14)
-        query = "SELECT last_pw_use FROM mc_passwd_cache WHERE node_id = ?"
+        query = "SELECT last_pw_use, username FROM mc_passwd_cache WHERE node_id = ?"
         result = await self.db.execute(query, (node_id,))
         if result:
             dt = datetime.strptime(result[0][0], "%Y-%m-%d %H:%M:%S")
@@ -268,18 +242,64 @@ class MeshCoreTransport:
             if dt < two_weeks_ago:
                 log.debug(f"Password cache for {node_id} is expired")
                 return False # cache is expired
-            return True # has a cache and it's not expired
+            return result[0][1] # username, cache is valid
         return False # has no cache at all
 
     async def send_to_node(self, session_id: str, message: str):
-        """Send a message to a mesh node via MeshCore.
+        """Send a message to a mesh node via MeshCore. """
+        # TODO: figure out actual packet size measurement algo
+        max_packet_length = 140 # stay safe for now
+        node_id = self.session_mgr.get_session_state(session_id).node_id
 
-        TODO: This method needs full implementation:
-        1. Look up node_id from session_id using SessionManager.get_nodes_for_session()
-        2. Handle message chunking if message exceeds MeshCore packet size limits
-        3. Create MeshCoreCommand to send application message
-        4. Queue message for retry if delivery fails
-        """
-        log.debug(f"TODO: Send message to session {session_id}: {message[:50]}...")
-        # Placeholder implementation
-        pass
+        packets = self._chunk_message(message, max_packet_length)
+        for packet in packets:
+            retries = 0
+            while not self._send_packet(node_id, packet):
+                retries += 1
+                if retries > self.mc_config.get("max_retries", 3):
+                    log.info(f">{retries} retries with {node_id}, giving up for now")
+                    return
+
+    def _chunk_message(self, message, max_packet_length):
+        """split the message into appropriately sized chunks"""
+        words = message.split()
+        chunks = []
+        chunk = []
+        chunk_size = 0
+        for word in words:
+            wordlen = len(word)
+            if chunk_size + wordlen + 1 < max_packet_length:
+                chunk.append(word)
+                chunk_size += wordlen + 1
+            else:
+                chunks.append(" ".join(chunk))
+                chunk = [word]
+                chunk_size = wordlen + 1
+
+        if len(chunk) > 0:
+            chunks.append(" ".join(chunk))
+
+        return chunks
+
+
+    async def _send_packet(self, node_id, chunk) -> bool:
+        """Send a single packet to a node. This assumes that the packet
+        is a safe size to send. Blocks until the ack has been
+        received."""
+        result = await self.meshcore.send_msg(node_id, chunk)
+        if result.type == EventType.ERROR:
+            log.error(f"Unable to send '{message}' to '{node_id}'! "
+                      f"{result.payload}")
+            return False
+        exp_ack = result.payload["expected_ack"].hex()
+        ack = await self.meshcore.wait_for_event(
+            EventType.ACK,
+            attribute_filters={"code": exp_ack},
+            timeout=self.mc_config.get("ack_timeout", 5)
+        )
+        if ack:
+            return True
+        # this is a normal part of mesh communication, so we don't need
+        # to log it absolutely every time it happens in prod conditions
+        log.debug("Didn't receive an ack to '{message}'")
+        return False

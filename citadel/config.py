@@ -4,7 +4,6 @@ import copy
 import logging
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
 
 ENV_PREFIX = "CITADEL_"
 
@@ -34,8 +33,7 @@ class Config:
             ]
         },
         "transport": {
-            "serial_port": "/dev/ttyUSB0",
-            "baud_rate": 9600,
+            "cli": {"socket": "/tmp/mesh-citadel.sock"}
         },
         "database": {
             "db_path": "citadel.db",
@@ -152,11 +150,9 @@ class Config:
         return merged
 
     def _validate(self, cfg):
-        assert cfg["bbs"]["system_name"], "bbs.system_name is required"
+        assert cfg["system"]["name"], "system.name is required"
         assert isinstance(cfg["bbs"]["max_messages_per_room"],
                           int), "bbs.max_messages_per_room must be int"
         assert isinstance(cfg["auth"]["session_timeout"],
                           int), "auth.session_timeout must be int"
-        assert cfg["transport"]["baud_rate"], "transport.baud_rate is required"
-        assert cfg["transport"]["serial_port"], "transport.serial_port is required"
         assert cfg["database"]["db_path"], "database.db_path is required"
