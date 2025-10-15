@@ -8,24 +8,23 @@ def initialize_logging(config):
     logger = logging.getLogger()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    # for some reason, importing the meshcore transport engine is
-    # causing a logger.handler to get set.  this is a bandaid to stop
-    # that from being a problem:
+    # the meshcore_py library installs a logging handler for some reason.
+    # clear it before adding our own.
     logger.handlers.clear()
-    if not logger.handlers:
-        formatter = logging.Formatter(
-            "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
-        )
 
-        # File handler
-        file_handler = logging.FileHandler(log_path, encoding="utf-8")
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+    formatter = logging.Formatter(
+        "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
 
-        # Console handler
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
+    # File handler
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
 
-        logger.info("Logging initialized")
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    logger.info("Logging initialized")
