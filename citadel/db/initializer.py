@@ -101,10 +101,7 @@ async def initialize_database(db_manager, config=None):
     CREATE TABLE IF NOT EXISTS mc_adverts (
         node_id TEXT PRIMARY KEY,
         public_key BLOB NOT NULL,
-        node_type TEXT DEFAULT 'user',  -- 'user', 'repeater', 'room_server'
-        last_heard DATETIME DEFAULT CURRENT_TIMESTAMP,
-        signal_strength INTEGER,        -- If available from MeshCore
-        hop_count INTEGER               -- If available from MeshCore
+        last_heard DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """
 
@@ -129,6 +126,7 @@ async def initialize_database(db_manager, config=None):
         workflow_state_table,
         pending_validations_table,
         mc_adverts_table,
+        mc_passwd_cache_table,
     ]
 
     for sql in tables:

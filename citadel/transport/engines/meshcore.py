@@ -46,7 +46,9 @@ class MeshCoreTransportEngine:
         interval = self.config.transport.get("meshcore", {}).get("advert_interval", 6)
         while True:
             if self.meshcore:
-                self.meshcore.commands.send_advert(flood=True)
+                # TODO: change this to flood=True once we're done with
+                # testing so much
+                await self.meshcore.commands.send_advert(flood=False)
             await asyncio.sleep(interval * 60 * 60) # interval is hours
 
     async def start_meshcore(self):
@@ -115,11 +117,11 @@ class MeshCoreTransportEngine:
     async def _register_event_handlers(self):
         try:
             self.subs.append(self.meshcore.subscribe(
-                EventType.CONTACT_MGS_RECV,
+                EventType.CONTACT_MSG_RECV,
                 self._handle_message
             ))
             self.subs.append(self.meshcore.subscribe(
-                EventType.CHANNEL_MSG_RECV,
+                EventType.ADVERTISEMENT,
                 self._handle_advert
             ))
             await self.meshcore.start_auto_message_fetching()
@@ -132,7 +134,7 @@ class MeshCoreTransportEngine:
         log.debug(f"Received message event: {event}")
         data = event.payload
         node_id = data['pubkey_prefix']
-        text = data['text'].decode("utf-8")
+        text = data['text']
         session_id = self.session_mgr.get_session_by_node_id(node_id)
 
         if not session_id:
@@ -150,7 +152,7 @@ class MeshCoreTransportEngine:
                 # that's the end of things.  once the login prompt is
                 # working room-server-style, this will need to be
                 # revisited.
-                return self._start_login_workflow(session_id, node_id) 
+                return await self._start_login_workflow(session_id, node_id) 
 
         # If logged in, route to command processor
         command = self.text_parser.parse_command(payload)
@@ -195,35 +197,26 @@ class MeshCoreTransportEngine:
 
     async def _handle_advert(self, event):
         # TODO: rework this
-        log.debug(f"Received advert packet: {packet}")
+        log.debug(f"Received advert packet: {event}")
         try:
-            node_id = packet.sender_id
-            advert = packet.payload  # Assumes structured dict
+            pubkey = event.payload['public_key']
+            node_id = pubkey[:16]
 
             await self.db.execute(
                 """
-                INSERT INTO mc_adverts (
-                    node_id, public_key, node_type,
-                    last_heard, signal_strength, hop_count
-                )
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO mc_adverts (node_id, public_key, last_heard)
+                VALUES (?, ?, ?)
                 ON CONFLICT(node_id) DO UPDATE SET
                     public_key = excluded.public_key,
-                    node_type = excluded.node_type,
-                    last_heard = excluded.last_heard,
-                    signal_strength = excluded.signal_strength,
-                    hop_count = excluded.hop_count
+                    last_heard = excluded.last_heard
                 """,
                 (
                     node_id,
-                    advert["public_key"],
-                    advert.get("node_type", "user"),
+                    pubkey,
                     datetime.now().isoformat(),
-                    advert.get("signal_strength", 0),
-                    advert.get("hop_count", 0)
                 )
             )
-            log.debug(f"Updated advert for node {node_id}")
+            log.info(f"Updated advert for node {node_id}")
         except KeyError as e:
             log.error(f"Missing required field in advert from {node_id}: {e}")
         except (TypeError, ValueError) as e:
