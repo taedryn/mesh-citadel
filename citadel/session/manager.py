@@ -49,7 +49,8 @@ class SessionManager:
 
     def get_session_by_node_id(self, node_id: str) -> str:
         """ retrieve the session_id baseed on node_id """
-        for session_id, state in self.sessions.items():
+        for session_id, info in self.sessions.items():
+            state = info[0]
             if state.node_id == node_id:
                 return session_id
         return None

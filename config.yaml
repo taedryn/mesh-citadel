@@ -50,7 +50,7 @@ transport:
     coding_rate: 5
     tx_power: 1                       # dBm
     advert_interval: 6                # hours
-    max_retries: 5                    # tune these for your conditions
+    max_retries: 3                    # tune these for your conditions
     ack_timeout: 3
   cli:
     socket: "/tmp/mesh-citadel-cli.sock"

@@ -25,6 +25,7 @@ class MeshCoreTransportEngine:
         self._running = False
         self.tasks = []
         self.subs = []
+        self.listeners = {}
 
     #------------------------------------------------------------
     # process lifecycle controls
@@ -90,7 +91,6 @@ class MeshCoreTransportEngine:
         self.tasks.append(asyncio.create_task(scheduler.interval_advert()))
         self.meshcore = mc
 
-
     async def stop(self):
         if self._running:
             for sched in self.scheds:
@@ -98,6 +98,9 @@ class MeshCoreTransportEngine:
             for task in self.tasks:
                 task.cancel()
                 await task
+            for listener in self.listeners.values():
+                listener.cancel()
+                await listener
             for sub in self.subs:
                 self.meshcore.unsubscribe(sub)
             if self.meshcore:
@@ -114,8 +117,12 @@ class MeshCoreTransportEngine:
     # communication methods
     #------------------------------------------------------------
 
-    async def send_to_node(self, session_id: str, message: str):
+    async def send_to_node(self, session_id: str, message: str | ToUser):
         """Send a message to a mesh node via MeshCore. """
+        # TODO: probably need to handle ToUser packets more intelligently than
+        # this
+        if isinstance(message, ToUser):
+            message = message.text
         # TODO: figure out actual packet size measurement algo
         max_packet_length = 140 # stay safe for now
         node_id = self.session_mgr.get_session_state(session_id).node_id
@@ -123,11 +130,14 @@ class MeshCoreTransportEngine:
         packets = self._chunk_message(message, max_packet_length)
         for packet in packets:
             retries = 0
-            while not self._send_packet(node_id, packet):
+            sent = await self._send_packet(node_id, packet)
+            while not sent:
                 retries += 1
-                if retries > self.mc_config.get("max_retries", 3):
+                asyncio.sleep(retries)
+                if retries >= self.mc_config.get("max_retries", 3):
                     log.info(f">{retries} retries with {node_id}, giving up for now")
                     return
+                sent = await self._send_packet(node_id, packet)
 
     #------------------------------------------------------------
     # communication helpers
@@ -137,9 +147,10 @@ class MeshCoreTransportEngine:
         """Send a single packet to a node. This assumes that the packet
         is a safe size to send. Blocks until the ack has been
         received."""
-        result = await self.meshcore.send_msg(node_id, chunk)
+        log.debug(f'Sending packet to {node_id}: {chunk}')
+        result = await self.meshcore.commands.send_msg(node_id, chunk)
         if result.type == EventType.ERROR:
-            log.error(f"Unable to send '{message}' to '{node_id}'! "
+            log.error(f"Unable to send '{chunk}' to '{node_id}'! "
                       f"{result.payload}")
             return False
         exp_ack = result.payload["expected_ack"].hex()
@@ -152,7 +163,7 @@ class MeshCoreTransportEngine:
             return True
         # this is a normal part of mesh communication, so we don't need
         # to log it absolutely every time it happens in prod conditions
-        log.debug("Didn't receive an ack to '{message}'")
+        log.debug(f"Didn't receive an ack to '{chunk}'")
         return False
 
     def _chunk_message(self, message, max_packet_length):
@@ -180,30 +191,27 @@ class MeshCoreTransportEngine:
     # bbs event handlers
     #------------------------------------------------------------
 
-    # TODO: fix this up, this is copied straight from the CLI engine
-    async def _listen_for_messages(self, writer, session_id):
-        log.info(f'Starting CLI BBS message listener for "{session_id}"')
-        state = self.session_manager.get_session_state(session_id)
-        while True:
-            try:
-                message = await state.msg_queue.get()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                self.send_line(writer, f"ERROR: {e}\n".encode("utf-8"))
-                await writer.drain()
-                continue
+    async def start_bbs_listener(self, session_id):
+        if session_id in self.listeners:
+            return  # Already listening
 
-            formatted = self._format_single_touser(message)
-            self.send_line(writer, f"{formatted}\n".encode("utf-8"))
+        async def listen():
+            state = self.session_mgr.get_session_state(session_id)
+            log.info(f'Starting BBS listener for "{session_id}"')
+            while True:
+                try:
+                    log.debug(f'Waiting for BBS msgs for {session_id}')
+                    message = await state.msg_queue.get()
+                    log.debug(f'Received BBS msg for {session_id}: {message}')
+                    await self.send_to_node(session_id, message)
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    log.error(f"Error in listener for {session_id}: {e}")
+                    await self.send_to_node(session_id, f"ERROR: {e}\n")
 
-            # Send authoritative session state for every message
-            session_state = self._get_session_state_line(session_id)
-            self.send_line(writer, f"{session_state}\n".encode("utf-8"))
-            if message.is_error:
-                self.send_line(
-                    writer, f"ERROR: {message.error_code or 'Unknown error'}\n".encode("utf-8"))
-            await writer.drain()
+        task = asyncio.create_task(listen())
+        self.listeners[session_id] = task
 
     #------------------------------------------------------------
     # meshcore event handlers
@@ -213,11 +221,11 @@ class MeshCoreTransportEngine:
         try:
             self.subs.append(self.meshcore.subscribe(
                 EventType.CONTACT_MSG_RECV,
-                self._handle_message
+                self._handle_mc_message
             ))
             self.subs.append(self.meshcore.subscribe(
                 EventType.ADVERTISEMENT,
-                self._handle_advert
+                self._handle_mc_advert
             ))
             await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
@@ -225,42 +233,41 @@ class MeshCoreTransportEngine:
             log.error(f"Failed to register handlers: {e}")
             raise
 
-    async def _handle_message(self, event):
+    async def _handle_mc_message(self, event):
         log.debug(f"Received message event: {event}")
         data = event.payload
         node_id = data['pubkey_prefix']
         text = data['text']
-        session_id = self.session_mgr.get_session_by_node_id(node_id)
 
+        session_id = self.session_mgr.get_session_by_node_id(node_id)
         if not session_id:
             session_id = self.session_mgr.create_session(node_id)
+            await self.start_bbs_listener(session_id)
+            
+        username = await self._node_has_password_cache(node_id)
+        wf_state = self.session_mgr.get_workflow(session_id)
 
-        if not self.session_mgr.is_logged_in(session_id):
-            username = await self._node_has_password_cache(node_id)
-            if username:
-                self.session_mgr.mark_logged_in(session_id)
-                self.session_mgr.mark_username(session_id, username)
-                self.session_mgr.touch_session(sesson_id)
-                log.info(f"Auto-login for cached node {node_id}: {username}")
-            else:
-                # for now, send the user off to the login workflow, and
-                # that's the end of things.  once the login prompt is
-                # working room-server-style, this will need to be
-                # revisited.
-                return await self._start_login_workflow(session_id, node_id) 
+        if wf_state:
+            packet = FromUser(
+                session_id=session_id,
+                payload_type=FromUserType.WORKFLOW_RESPONSE,
+                payload=text
+            )
+        elif username:
+            command = self.text_parser.parse_command(text)
+            packet = FromUser(
+                session_id=session_id,
+                payload_type=FromUserType.COMMAND,
+                payload=command
+            )
+        else:
+            log.debug(f'No pw cache found for {node_id}, sending to login')
+            return await self._start_login_workflow(session_id, node_id) 
+        touser = await self.command_processor.process(packet)
+        return await self.send_to_node(session_id, touser)
 
-        # If logged in, route to command processor
-        command = self.text_parser.parse_command(payload)
-        packet = FromUser(
-            session_id=session_id,
-            payload_type=FromUserType.COMMAND,
-            payload=command
-        )
-        asyncio.create_task(
-            self._process_command_packet(packet)
-        )
 
-    async def _handle_advert(self, event):
+    async def _handle_mc_advert(self, event):
         # TODO: rework this
         log.debug(f"Received advert packet: {event}")
         try:
@@ -312,7 +319,9 @@ class MeshCoreTransportEngine:
         handler = workflow_registry.get("login")
         if handler:
             session_state = self.session_mgr.get_session_state(session_id)
-            return await handler.start(context)
+            await self.send_to_node(session_id, "Sending you to login")
+            touser_result = await handler.start(context)
+            return await self.send_to_node(session_id, touser_result)
         else:
             return await self.send_to_node(
                 session_id,
