@@ -11,6 +11,7 @@ from citadel.transport.packets import FromUser, ToUser
 from citadel.transport.validator import InputValidator
 from citadel.user.user import User
 from citadel.workflows import registry as workflow_registry
+from citadel.workflows.base import WorkflowContext
 
 # Import to register built-in commands
 import citadel.commands.builtins  # noqa: F401
@@ -35,6 +36,7 @@ class CommandProcessor:
         # 2. Extract session and validate state
         session_id = packet.session_id
         state = self.sessions.get_session_state(session_id)
+        wf_state = self.sessions.get_workflow(session_id)
         if not state:
             return ToUser(
                 session_id=session_id,
@@ -42,7 +44,7 @@ class CommandProcessor:
                 is_error=True,
                 error_code="invalid_session"
             )
-        if not state.logged_in:
+        if not wf_state and not state.logged_in:
             return ToUser(
                 session_id=session_id,
                 text="You must log in to use commands.",
@@ -52,10 +54,7 @@ class CommandProcessor:
 
         self.sessions.touch_session(session_id)
 
-        # 3. Workflow check
-        wf_state = self.sessions.get_workflow(session_id)
-
-        # 4. Handle workflow if active
+        # 3. Handle workflow if active
         if wf_state:
             handler = workflow_registry.get(wf_state.kind)
             if not handler:

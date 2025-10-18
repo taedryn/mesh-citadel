@@ -108,7 +108,7 @@ async def initialize_database(db_manager, config=None):
     mc_passwd_cache_table = """
     CREATE TABLE IF NOT EXISTS mc_passwd_cache (
         node_id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
+        username TEXT,
         last_pw_use DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """

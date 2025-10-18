@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, UTC, timedelta
 from serial import SerialException
 from meshcore import MeshCore, EventType
 
@@ -122,26 +122,28 @@ class MeshCoreTransportEngine:
         # TODO: probably need to handle ToUser packets more intelligently than
         # this
         if isinstance(message, ToUser):
-            message = message.text
+            if message.message:
+                log.debug("Formatting BBS message")
+                message = self.format_message(message.message)
+            else:
+                message = message.text
         # TODO: figure out actual packet size measurement algo
         max_packet_length = 140 # stay safe for now
         node_id = self.session_mgr.get_session_state(session_id).node_id
 
         packets = self._chunk_message(message, max_packet_length)
         for packet in packets:
-            retries = 0
-            sent = await self._send_packet(node_id, packet)
-            while not sent:
-                retries += 1
-                asyncio.sleep(retries)
-                if retries >= self.mc_config.get("max_retries", 3):
-                    log.info(f">{retries} retries with {node_id}, giving up for now")
-                    return
-                sent = await self._send_packet(node_id, packet)
+            await self._send_packet(node_id, packet)
 
     #------------------------------------------------------------
     # communication helpers
     #------------------------------------------------------------
+
+    def format_message(self, message) -> str:
+        timestamp = dateparse(message.timestamp).strftime('%d%b%y %H:%M')
+        header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
+        content = "[Message from blocked sender]" if message.blocked else message.content                                                                   
+        return f"{header}\n{content}"
 
     async def _send_packet(self, node_id, chunk) -> bool:
         """Send a single packet to a node. This assumes that the packet
@@ -254,6 +256,8 @@ class MeshCoreTransportEngine:
                 payload=text
             )
         elif username:
+            await self.touch_password_cache(session_id)
+            await self.set_cache_username(session_id)
             command = self.text_parser.parse_command(text)
             packet = FromUser(
                 session_id=session_id,
@@ -268,7 +272,6 @@ class MeshCoreTransportEngine:
 
 
     async def _handle_mc_advert(self, event):
-        # TODO: rework this
         log.debug(f"Received advert packet: {event}")
         try:
             pubkey = event.payload['public_key']
@@ -285,7 +288,7 @@ class MeshCoreTransportEngine:
                 (
                     node_id,
                     pubkey,
-                    datetime.now().isoformat(),
+                    datetime.now(UTC).isoformat(),
                 )
             )
             log.info(f"Updated advert for node {node_id}")
@@ -337,12 +340,34 @@ class MeshCoreTransportEngine:
         result = await self.db.execute(query, (node_id,))
         if result:
             dt = datetime.strptime(result[0][0], "%Y-%m-%d %H:%M:%S")
-            two_weeks_ago = datetime.utcnow() - timedelta(days=days)
+            two_weeks_ago = datetime.now() - timedelta(days=days)
             if dt < two_weeks_ago:
                 log.debug(f"Password cache for {node_id} is expired")
                 return False # cache is expired
             return result[0][1] # username, cache is valid
+        log.debug(f'No passwd cache DB result: "{result}"')
         return False # has no cache at all
+
+    async def set_cache_username(self, session_id: str):
+        """this must be called after update_password_cache to
+        completely cache a node_id's cache entry"""
+        query = "UPDATE mc_passwd_cache SET username = ? WHERE node_id = ?"
+        state = self.session_mgr.get_session_state(session_id)
+        await self.db.execute(query, (state.username, state.node_id))
+
+    async def touch_password_cache(self, session_id: str):
+        """update this session to have a fresh password cache time.  the
+        cache is not valid until set_cache_username is also called."""
+        query = """INSERT INTO mc_passwd_cache
+            (node_id, last_pw_use) VALUES (?, ?)
+            ON CONFLICT(node_id) DO UPDATE SET
+                last_pw_use = excluded.last_pw_use
+        """
+        state = self.session_mgr.get_session_state(session_id)
+        log.debug(f"Updating MeshCore password cache for {state.username}")
+
+        now = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
+        await self.db.execute(query, (state.node_id, now))
 
 
 

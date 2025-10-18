@@ -131,6 +131,16 @@ class LoginWorkflow(Workflow):
             context.session_mgr.mark_logged_in(context.session_id)
             context.session_mgr.clear_workflow(context.session_id)
             state = context.session_mgr.get_session_state(context.session_id)
+            if state.node_id:
+                log.debug(f"Login workflow updating MeshCore password cache for {username}")
+                from citadel.transport.engines.meshcore import MeshCoreTransportEngine
+                mc = MeshCoreTransportEngine(
+                    context.session_mgr,
+                    context.config,
+                    context.db
+                )
+                await mc.touch_password_cache(context.session_id)
+                await mc.set_cache_username(context.session_id)
             room = Room(context.db, context.config, state.current_room)
             await room.load()
             return ToUser(
