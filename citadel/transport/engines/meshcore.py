@@ -195,7 +195,7 @@ class MeshCoreTransportEngine:
             if isinstance(message, list):
                 log.error(f"Don't know how to split '{message}'")
                 return ["Oops, check the log"]
-            words = message.split()
+            words = message.split(" ")
         else:
             return ""
         chunks = []
