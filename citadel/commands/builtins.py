@@ -389,12 +389,17 @@ class HelpCommand(BaseCommand):
 
         # Build dynamic menu by category
         all_commands = registry.available()
-        menu_text = self._build_category_menu(
-            all_commands, user, room, CommandCategory.COMMON)
+        menus = []
+        for category in CommandCategory:
+            text = self._build_category_menu(
+                all_commands, user, room, category)
+            if 'No available' in text:
+                continue
+            menus.append(text)
 
         return ToUser(
             session_id=context.session_id,
-            text=menu_text
+            text="\n\n".join(menus)
         )
 
     def _build_category_menu(self, all_commands, user, room, category):

@@ -133,14 +133,15 @@ class MeshCoreTransportEngine:
                 text = message.text
         else:
             text = message
+        text = text.replace('\n', '\n\n')
         # TODO: figure out actual packet size measurement algo
         max_packet_length = 140 # stay safe for now
         node_id = self.session_mgr.get_session_state(session_id).node_id
 
         packets = self._chunk_message(text, max_packet_length)
         for packet in packets:
-            await self._send_packet(node_id, packet)
-            await asyncio.sleep(0.2)
+            sent = await self._send_packet(node_id, packet)
+            await asyncio.sleep(0.5)
 
     #------------------------------------------------------------
     # communication helpers
@@ -157,10 +158,22 @@ class MeshCoreTransportEngine:
         is a safe size to send. Blocks until the ack has been
         received."""
         log.debug(f'Sending packet to {node_id}: {chunk}')
-        result = await self.meshcore.commands.send_msg(node_id, chunk)
-        if result.type == EventType.ERROR:
+        try:
+            result = await self.meshcore.commands.send_msg_with_retry(
+                node_id,
+                chunk,
+                max_attempts=3,
+                max_flood_attempts=3,
+                flood_after=2,
+                timeout=0
+            )
+        except AttributeError:
+            result = await self.meshcore.commands.send_msg(node_id, chunk)
+        if result and result.type == EventType.ERROR:
             log.error(f"Unable to send '{chunk}' to '{node_id}'! "
                       f"{result.payload}")
+            return False
+        elif not result:
             return False
         exp_ack = result.payload["expected_ack"].hex()
         ack = await self.meshcore.wait_for_event(
