@@ -1,8 +1,11 @@
 import asyncio
-import logging
 from datetime import datetime, UTC, timedelta
-from serial import SerialException
+from dateutil.parser import parse as dateparse
+import hashlib
+import logging
 from meshcore import MeshCore, EventType
+from serial import SerialException
+import time
 
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.commands.processor import CommandProcessor
@@ -20,6 +23,7 @@ class MeshCoreTransportEngine:
         self.mc_config = config.transport.get("meshcore", {})
         self.db = db
         self.command_processor = CommandProcessor(config, db, session_mgr)
+        self.dedupe = MessageDeduplicator()
         self.text_parser = TextParser()
         self.meshcore = None
         self._running = False
@@ -117,23 +121,26 @@ class MeshCoreTransportEngine:
     # communication methods
     #------------------------------------------------------------
 
-    async def send_to_node(self, session_id: str, message: str | ToUser):
+    async def send_to_node(self, session_id: str, message: str | ToUser | list):
         """Send a message to a mesh node via MeshCore. """
         # TODO: probably need to handle ToUser packets more intelligently than
         # this
         if isinstance(message, ToUser):
             if message.message:
                 log.debug("Formatting BBS message")
-                message = self.format_message(message.message)
+                text = self.format_message(message.message)
             else:
-                message = message.text
+                text = message.text
+        else:
+            text = message
         # TODO: figure out actual packet size measurement algo
         max_packet_length = 140 # stay safe for now
         node_id = self.session_mgr.get_session_state(session_id).node_id
 
-        packets = self._chunk_message(message, max_packet_length)
+        packets = self._chunk_message(text, max_packet_length)
         for packet in packets:
             await self._send_packet(node_id, packet)
+            await asyncio.sleep(0.2)
 
     #------------------------------------------------------------
     # communication helpers
@@ -169,8 +176,15 @@ class MeshCoreTransportEngine:
         return False
 
     def _chunk_message(self, message, max_packet_length):
-        """split the message into appropriately sized chunks"""
-        words = message.split()
+        """split the message into appropriately sized chunks.  returns a list
+        of strings."""
+        if message:
+            if isinstance(message, list):
+                log.error(f"Don't know how to split '{message}'")
+                return ["Oops, check the log"]
+            words = message.split()
+        else:
+            return ""
         chunks = []
         chunk = []
         chunk_size = 0
@@ -204,8 +218,16 @@ class MeshCoreTransportEngine:
                 try:
                     log.debug(f'Waiting for BBS msgs for {session_id}')
                     message = await state.msg_queue.get()
+                    if isinstance(message, list):
+                        log.debug('BBS message is a LIST')
+                    else:
+                        log.debug('BBS message is NOT a list')
                     log.debug(f'Received BBS msg for {session_id}: {message}')
-                    await self.send_to_node(session_id, message)
+                    if isinstance(message, list):
+                        for msg in message:
+                            await self.send_to_node(session_id, msg)
+                    else:
+                        await self.send_to_node(session_id, message)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
@@ -240,6 +262,9 @@ class MeshCoreTransportEngine:
         data = event.payload
         node_id = data['pubkey_prefix']
         text = data['text']
+        if await self.dedupe.is_duplicate(node_id, text):
+            log.debug(f'Oops, {node_id}: {text} is a dupe, skipping')
+            return
 
         session_id = self.session_mgr.get_session_by_node_id(node_id)
         if not session_id:
@@ -268,7 +293,11 @@ class MeshCoreTransportEngine:
             log.debug(f'No pw cache found for {node_id}, sending to login')
             return await self._start_login_workflow(session_id, node_id) 
         touser = await self.command_processor.process(packet)
-        return await self.send_to_node(session_id, touser)
+        if isinstance(touser, list):
+            for msg in touser:
+                await self.send_to_node(session_id, msg)
+        else:
+            await self.send_to_node(session_id, touser)
 
 
     async def _handle_mc_advert(self, event):
@@ -405,3 +434,30 @@ class AdvertScheduler:
     def stop(self):
         self._stop_event.set()
 
+
+
+class MessageDeduplicator:
+    """a simple class to provide message de-duplication services"""
+    def __init__(self, ttl=10):
+        self.seen = {}  # message_hash: timestamp
+        self.ttl = ttl  # seconds
+        self._lock = asyncio.Lock()
+
+    async def is_duplicate(self, node_id: str, message: str) -> bool:
+        text = '::'.join([node_id, message])
+        msg_hash = hashlib.sha256(text.encode()).hexdigest()
+        async with self._lock:
+            now = time.time()
+            if msg_hash in self.seen and now - self.seen[msg_hash] < self.ttl:
+                return True
+            self.seen[msg_hash] = now
+            return False
+
+    async def clear_expired(self):
+        """call this frequently to avoid the message hash table growing 
+        too large"""
+        now = time.time()
+        async with self._lock:
+            for msg_hash, timestamp in self.seen.items():
+                if now - self.seen[msg_hash] > self.ttl:
+                    del self.seen[msg_hash]

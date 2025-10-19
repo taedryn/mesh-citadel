@@ -42,7 +42,8 @@ auth:
 transport:
   meshcore:                           # any change to mc requires restart
     <<: *system                       # import the system name
-    serial_port: "/dev/ttyUSB0"
+    serial_port: "/dev/ttyACM0"
+    #serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
     frequency: 910.525                # MHz
     bandwidth: 62.5                   # kHz
