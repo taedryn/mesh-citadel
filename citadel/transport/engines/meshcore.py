@@ -133,7 +133,6 @@ class MeshCoreTransportEngine:
                 text = message.text
         else:
             text = message
-        text = text.replace('\n', '\n\n')
         # TODO: figure out actual packet size measurement algo
         max_packet_length = 140 # stay safe for now
         node_id = self.session_mgr.get_session_state(session_id).node_id
