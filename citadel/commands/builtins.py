@@ -25,6 +25,52 @@ log = logging.getLogger(__name__)
 # * admin
 
 
+async def read_messages(context, msg_ids):
+    """given a set of message IDs, return a list of ToUser objects,
+    each containing one of the indicated messages"""
+    from citadel.commands.responses import MessageResponse
+
+    state = context.session_mgr.get_session_state(context.session_id)
+    user = User(context.db, state.username)
+    await user.load()
+    room = Room(context.db, context.config, state.current_room)
+    await room.load()
+    if not msg_ids:
+        return ToUser(
+            session_id=context.session_id,
+            text="No unread messages."
+        )
+
+    to_user_list = []
+    for msg_id in msg_ids:
+        msg = await context.msg_mgr.get_message(msg_id, recipient_user=user)
+        # Message not authorized for this user (privacy check failed)
+        if not msg:
+            continue
+        sender = User(context.db, msg["sender"])
+        await sender.load()
+        message_response = MessageResponse(
+            id=msg["id"],
+            sender=msg["sender"],
+            display_name=sender.display_name,
+            timestamp=msg["timestamp"],
+            room=room.name,
+            content=msg["content"],
+            blocked=msg["blocked"]
+        )
+        log.debug(f"Adding message to read list: {msg['id']}")
+        to_user_list.append(ToUser(
+            session_id=context.session_id,
+            text="",  # Message content is in the message field
+            message=message_response
+        ))
+
+    # Mark all displayed messages as read by advancing to latest
+    await room.skip_to_latest(user)
+    log.debug(f"Returning list of {len(to_user_list)} messages")
+    return to_user_list
+
+
 @register_command
 class GoNextUnreadCommand(BaseCommand):
     code = "G"
@@ -109,14 +155,42 @@ class EnterMessageCommand(BaseCommand):
 
 
 @register_command
-class ReadMessagesCommand(BaseCommand):
+class ReverseReadCommand(BaseCommand):
     code = "R"
-    name = "read_messages"
+    name = "reverse_read"
     category = CommandCategory.COMMON
     permission_level = PermissionLevel.USER
-    short_text = "Read messages"
-    help_text = "Read messages in the current room. Provide ID to read a specific message."
+    short_text = "Reverse read messages"
+    help_text = "Read messages in the current room, starting with the most recent and moving backwards."
 
+    async def run(self, context):
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+        room = Room(context.db, context.config, state.current_room)
+        await room.load()
+        msg_ids = await room.get_user_message_ids(user, reverse=True)
+        log.debug(f"Found reverse message ids: {msg_ids}")
+        return await read_messages(context, msg_ids)
+
+@register_command
+class ForwardReadCommand(BaseCommand):
+    code = "F"
+    name = "forward_read"
+    category = CommandCategory.COMMON
+    permission_level = PermissionLevel.USER
+    short_text = "Forward read messages"
+    help_text = "Read messages in the current room, starting with the oldest and moving forward."
+
+    async def run(self, context):
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+        room = Room(context.db, context.config, state.current_room)
+        await room.load()
+        msg_ids = await room.get_user_message_ids(user)
+        log.debug(f"Found forward message ids: {msg_ids}")
+        return await read_messages(context, msg_ids)
 
 @register_command
 class ReadNewMessagesCommand(BaseCommand):
@@ -128,46 +202,12 @@ class ReadNewMessagesCommand(BaseCommand):
     help_text = "Read new messages since last visit. Starts with the oldest mesasage you haven't read yet in this room."
 
     async def run(self, context):
-        from citadel.commands.responses import MessageResponse
-
         state = context.session_mgr.get_session_state(context.session_id)
-        user = User(context.db, state.username)
-        await user.load()
         room = Room(context.db, context.config, state.current_room)
         await room.load()
         msg_ids = await room.get_unread_message_ids(state.username)
-        if not msg_ids:
-            return ToUser(
-                session_id=context.session_id,
-                text="No unread messages."
-            )
-
-        to_user_list = []
-        for msg_id in msg_ids:
-            msg = await context.msg_mgr.get_message(msg_id, recipient_user=user)
-            # Message not authorized for this user (privacy check failed)
-            if not msg:
-                continue
-            sender = User(context.db, msg["sender"])
-            await sender.load()
-            message_response = MessageResponse(
-                id=msg["id"],
-                sender=msg["sender"],
-                display_name=sender.display_name,
-                timestamp=msg["timestamp"],
-                room=room.name,
-                content=msg["content"],
-                blocked=msg["blocked"]
-            )
-            to_user_list.append(ToUser(
-                session_id=context.session_id,
-                text="",  # Message content is in the message field
-                message=message_response
-            ))
-
-        # Mark all displayed messages as read by advancing to latest
-        await room.skip_to_latest(user)
-        return to_user_list
+        log.debug(f"Found new message ids: {msg_ids}")
+        return await read_messages(context, msg_ids)
 
 
 @register_command
@@ -498,6 +538,74 @@ class WhoCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Who's online"
     help_text = "List active users currently online."
+
+    async def run(self, context):
+        from datetime import datetime, UTC
+
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+
+        # Check if user is privileged (aide or sysop)
+        is_privileged = user.permission_level.value >= PermissionLevel.AIDE.value
+
+        # Get all active sessions
+        online_users = []
+        now = datetime.now(UTC)
+
+        with context.session_mgr.lock:
+            for session_id, (session_state, last_active) in context.session_mgr.sessions.items():
+                if not session_state.logged_in or not session_state.username:
+                    continue
+
+                # Load user to check public status
+                online_user = User(context.db, session_state.username)
+                await online_user.load()
+
+                # TODO: Add has_posted_publicly field to users table and User model
+                # For now, show all users (will be restricted once field is added)
+                # For non-privileged users, only show users who have posted publicly
+                # if not is_privileged and not online_user.has_posted_publicly:
+                #     continue
+
+                # Calculate activity status
+                seconds_idle = (now - last_active).total_seconds()
+
+                if is_privileged:
+                    # Show granular timing for privileged users
+                    if seconds_idle < 60:
+                        activity_str = f"active ({int(seconds_idle)}s)"
+                    elif seconds_idle < 3600:  # Less than 1 hour
+                        activity_str = f"idle ({int(seconds_idle // 60)}m)"
+                    else:  # 1+ hours
+                        activity_str = f"idle ({int(seconds_idle // 3600)}h)"
+
+                    # Include public/private status for privileged users
+                    # TODO: Replace with actual has_posted_publicly check
+                    visibility = "public"  # Placeholder until has_posted_publicly is implemented
+                    user_info = f"{session_state.username} ({activity_str}) [{visibility}]"
+                else:
+                    # Simple active/idle for regular users
+                    activity_str = "active" if seconds_idle < 60 else "idle"
+                    user_info = f"{session_state.username} ({activity_str})"
+
+                online_users.append(user_info)
+
+        if not online_users:
+            return ToUser(
+                session_id=context.session_id,
+                text="No users currently online."
+            )
+
+        # Sort alphabetically
+        online_users.sort()
+        user_list = "\n".join(online_users)
+
+        return ToUser(
+            session_id=context.session_id,
+            text=f"Users currently online:\n{user_list}"
+        )
+
 
 
 @register_command

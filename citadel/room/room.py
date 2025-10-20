@@ -230,12 +230,24 @@ class Room:
     # message handling
     # ------------------------------------------------------------
 
-    async def get_message_ids(self) -> list[int]:
+    async def get_message_ids(self, reverse=False) -> list[int]:
+        order = ""
+        if reverse:
+            order = " desc"
         rows = await self.db.execute(
-            "SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id",
+            f"SELECT message_id FROM room_messages WHERE room_id = ? ORDER BY message_id{order}",
             (self.room_id,)
         )
         return [row[0] for row in rows]
+
+    async def get_user_message_ids(self, user: User, reverse=False):
+        """get all the message IDs the specified user is allowed to read
+        in the current room."""
+        if not isinstance(user, User):
+            raise RuntimeError("Don't pass username, pass User object")
+        all_ids = await self.get_message_ids(reverse)
+        readable_ids = await self.filter_user_messages(user, all_ids)
+        return readable_ids
 
     async def get_unread_message_ids(self, username: str) -> list[int]:
         """ return a list of message ids which have not yet been seen
@@ -248,17 +260,23 @@ class Room:
             WHERE room_id = ?
             AND message_id > ?
             """, (self.room_id, last_read))
+        readable_ids = await self.filter_user_messages(
+            user,
+            [row[0] for row in id_list]
+        )
+        return readable_ids
 
+    async def filter_user_messages(self, user: User, msg_ids: list):
         # Filter out messages the user cannot read (privacy check)
         from citadel.message.manager import MessageManager
         msg_mgr = MessageManager(self.config, self.db)
         readable_ids = []
-        for msg_id in [row[0] for row in id_list]:
+        for msg_id in msg_ids:
             msg = await msg_mgr.get_message(msg_id, recipient_user=user)
             if msg:  # Only include messages the user can read
                 readable_ids.append(msg_id)
-
         return readable_ids
+
 
     async def get_oldest_message_id(self) -> int | None:
         result = await self.db.execute(
@@ -305,18 +323,14 @@ class Room:
         return msg_id
 
     async def get_next_unread_message(self, user: User) -> dict | None:
-        pointer = await self.db.execute(
-            "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
-            (user.username, self.room_id)
-        )
-        last_seen = pointer[0][0] if pointer else None
+        last_seen = self.get_last_unread_message_id(user)
 
         message_ids = await self.get_message_ids()
         if not message_ids:
             return None
 
         # First visit - return the first message without marking it as seen yet
-        if last_seen is None:
+        if not last_seen:
             first_id = message_ids[0]
             msg_mgr = MessageManager(self.config, self.db)
             msg = await msg_mgr.get_message(first_id, recipient_user=user)
@@ -339,19 +353,29 @@ class Room:
         msg = await msg_mgr.get_message(next_id, recipient_user=user)
 
         # Advance pointer
-        await self.db.execute(
-            "UPDATE user_room_state SET last_seen_message_id = ? WHERE username = ? AND room_id = ?",
-            (next_id, user.username, self.room_id)
-        )
+        await self.advance_last_read(user, next_id)
+
         return msg
+
+    async def advance_last_read(self, user: User, msg_id: int):
+        """advance the last seen message marker, but only if the submitted
+        msg_id is greater than the most recently seen msg_id.  safe to call
+        with old msg_ids."""
+        query = """SELECT last_seen_message_id FROM user_room_state
+            WHERE username = ? AND room_id = ?"""
+        result = await self.db.execute(query, (user.username, self.room_id))
+        if result:
+            if result[0][0] > msg_id:
+                return
+        query = """INSERT OR REPLACE INTO user_room_state
+            (username, room_id, last_seen_message_id) VALUES
+            (?, ?, ?)"""
+        return await self.db.execute(query, (user.username, self.room_id, msg_id))
 
     async def skip_to_latest(self, user: User):
         latest_id = await self.get_newest_message_id()
         if latest_id:
-            await self.db.execute(
-                "INSERT OR REPLACE INTO user_room_state (username, room_id, last_seen_message_id) VALUES (?, ?, ?)",
-                (user.username, self.room_id, latest_id)
-            )
+            await self.advance_last_read(user, latest_id)
 
     # ------------------------------------------------------------
     # room management
