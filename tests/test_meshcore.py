@@ -3,7 +3,7 @@ import pytest_asyncio
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.session.manager import SessionManager
-from citadel.transport.engines.meshcore.transport import MeshCoreTransport
+from citadel.transport.engines.meshcore import MeshCoreTransportEngine
 
 @pytest_asyncio.fixture
 async def context():
@@ -18,8 +18,8 @@ async def context():
     await data["db"].shutdown()
 
 def test_chunk_message(context):
-    trans = MeshCoreTransport(context['session_mgr'],
-                              context['config'], context['db'])
+    trans = MeshCoreTransportEngine(context['session_mgr'],
+                                    context['config'], context['db'])
     long_msg = "this is a test of a very long message which means i need to keep typing for quite a while to make sure that i'm well over the 140 character limit that we're currently using for meshcore packets."
 
     first_chunk = "this is a test of a very long message which means i need to keep typing for quite a while to make sure that i'm well over the 140"

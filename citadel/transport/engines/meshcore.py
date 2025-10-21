@@ -95,6 +95,54 @@ class MeshCoreTransportEngine:
         self.tasks.append(asyncio.create_task(scheduler.interval_advert()))
         self.meshcore = mc
 
+        # Set up the appropriate send method based on what's available
+        self._setup_send_method()
+
+    def _setup_send_method(self):
+        """Set up the appropriate send method with config applied."""
+        # Get configuration values once at startup
+        max_attempts = self.mc_config.get("max_retries", 3)
+        max_flood_attempts = self.mc_config.get("max_flood_attempts", 3)
+        flood_after = self.mc_config.get("flood_after", 2)
+        send_timeout = self.mc_config.get("send_timeout", 0)
+
+        # Check if send_msg_with_retry is available
+        try:
+            # Test if the method exists by accessing it (don't call it)
+            _ = self.meshcore.commands.send_msg_with_retry
+
+            # Create a wrapper function with config pre-applied
+            async def send_with_retry(node_id, chunk):
+                return await self.meshcore.commands.send_msg_with_retry(
+                    node_id,
+                    chunk,
+                    max_attempts=max_attempts,
+                    max_flood_attempts=max_flood_attempts,
+                    flood_after=flood_after,
+                    timeout=send_timeout
+                )
+            self.send_msg = send_with_retry
+            log.info(f"Using send_msg_with_retry with max_attempts={max_attempts}, ack_timeout={self.mc_config.get('ack_timeout', 8)}s")
+
+        except AttributeError:
+            # Implement manual retry wrapper
+            async def send_with_manual_retry(node_id, chunk):
+                result = None
+                for attempt in range(max_attempts):
+                    try:
+                        result = await self.meshcore.commands.send_msg(node_id, chunk)
+                        if result and result.type != EventType.ERROR:
+                            break
+                        log.debug(f"Send attempt {attempt + 1} failed with error: {result.payload if result else 'No result'}")
+                    except (OSError, SerialException) as e:
+                        log.debug(f"Send attempt {attempt + 1} raised {type(e).__name__}: {e}")
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(1.0)  # Wait 1 second before retry
+                return result
+
+            self.send_msg = send_with_manual_retry
+            log.debug("send_msg_with_retry not available, using manual retry wrapper")
+
     async def stop(self):
         if self._running:
             for sched in self.scheds:
@@ -133,14 +181,15 @@ class MeshCoreTransportEngine:
                 text = message.text
         else:
             text = message
-        # TODO: figure out actual packet size measurement algo
-        max_packet_length = 140 # stay safe for now
+        # Get configured packet size (calculated from MeshCore packet structure)
+        max_packet_length = self.mc_config.get("max_packet_size", 140)
         node_id = self.session_mgr.get_session_state(session_id).node_id
 
         packets = self._chunk_message(text, max_packet_length)
+        inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
         for packet in packets:
             sent = await self._send_packet(node_id, packet)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(inter_packet_delay)
 
     #------------------------------------------------------------
     # communication helpers
@@ -156,35 +205,35 @@ class MeshCoreTransportEngine:
         """Send a single packet to a node. This assumes that the packet
         is a safe size to send. Blocks until the ack has been
         received."""
-        log.debug(f'Sending packet to {node_id}: {chunk}')
-        try:
-            result = await self.meshcore.commands.send_msg_with_retry(
-                node_id,
-                chunk,
-                max_attempts=3,
-                max_flood_attempts=3,
-                flood_after=2,
-                timeout=0
-            )
-        except AttributeError:
-            result = await self.meshcore.commands.send_msg(node_id, chunk)
+        log.debug(f'Sending packet to {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
+
+        # Use the pre-configured send method
+        result = await self.send_msg(node_id, chunk)
+
         if result and result.type == EventType.ERROR:
-            log.error(f"Unable to send '{chunk}' to '{node_id}'! "
-                      f"{result.payload}")
+            log.error(f"Unable to send '{chunk[:50]}...' to '{node_id}'! {result.payload}")
             return False
         elif not result:
+            log.error(f"No result from send command for '{chunk[:50]}...' to '{node_id}'")
             return False
+
+        # Wait for ACK with the configured timeout
         exp_ack = result.payload["expected_ack"].hex()
+        ack_timeout = self.mc_config.get("ack_timeout", 8)  # Increased from 5 to 8 seconds
+        log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
+
         ack = await self.meshcore.wait_for_event(
             EventType.ACK,
             attribute_filters={"code": exp_ack},
-            timeout=self.mc_config.get("ack_timeout", 5)
+            timeout=ack_timeout
         )
+
         if ack:
+            log.debug(f"✅ ACK received for packet to {node_id}")
             return True
-        # this is a normal part of mesh communication, so we don't need
-        # to log it absolutely every time it happens in prod conditions
-        log.debug(f"Didn't receive an ack to '{chunk}'")
+
+        # Log ACK timeout for debugging (this is normal in mesh communication)
+        log.debug(f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {node_id}")
         return False
 
     def _chunk_message(self, message, max_packet_length):

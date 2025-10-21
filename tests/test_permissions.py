@@ -1,5 +1,5 @@
 import pytest
-from citadel.auth.checker import is_allowed, permission_denied, PermissionLevel
+from citadel.auth.permissions import is_allowed, permission_denied, PermissionLevel
 from citadel.commands.responses import ErrorResponse
 from citadel.room.room import SystemRoomIDs
 from citadel.transport.packets import ToUser

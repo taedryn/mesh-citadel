@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 
 from citadel.auth.permissions import PermissionLevel
-from citadel.auth.checker import is_allowed
+from citadel.auth.permissions import is_allowed
 from citadel.config import Config
 from citadel.commands.base import BaseCommand
 from citadel.commands.processor import CommandProcessor
@@ -61,11 +61,11 @@ async def db(config):
     await db_mgr.shutdown()
 
 
-@pytest_asyncio.fixture
-async def session_mgr(config, db):
+@pytest.fixture
+def session_mgr(config, db):
     mgr = SessionManager(config, db)
     # assume you have a sync helper for tests
-    session_id = await mgr.create_session("alice")
+    session_id = mgr.create_session("alice")
     return mgr, session_id
 
 
@@ -118,7 +118,7 @@ async def test_quit_expires_session(processor, session_mgr):
     resp = await processor.process(fromuser)
     assert isinstance(resp, ToUser)
     assert resp.text == "Goodbye!"
-    assert not mgr.validate_session(session_id)
+    assert mgr.get_session_state(session_id) is None
 
 # ------------------------------------------------------------
 # Unknown command
@@ -157,7 +157,7 @@ async def test_workflow_delegation(processor, session_mgr, monkeypatch):
             return ToUser(session_id=session_id, text="Handled by dummy workflow")
 
     mgr, session_id = session_mgr
-    state = mgr.validate_session(session_id)
+    state = mgr.get_session_state(session_id)
     wf = WorkflowState(kind="dummy")
     mgr.set_workflow(session_id, wf)
 
