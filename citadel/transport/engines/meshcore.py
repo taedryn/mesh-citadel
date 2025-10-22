@@ -38,6 +38,7 @@ class MeshCoreTransportEngine:
         try:
             await self.start_meshcore()
             await self._register_event_handlers()
+            self._setup_session_notifications()
             self._running = True
             log.info(f"MeshCore device connected")
         except SerialException as e:
@@ -344,6 +345,7 @@ class MeshCoreTransportEngine:
         elif username:
             await self.touch_password_cache(session_id)
             await self.set_cache_username(session_id)
+            self.session_mgr.mark_logged_in(session_id, True)
             command = self.text_parser.parse_command(text)
             packet = FromUser(
                 session_id=session_id,
@@ -515,10 +517,30 @@ class MessageDeduplicator:
             return False
 
     async def clear_expired(self):
-        """call this frequently to avoid the message hash table growing 
+        """call this frequently to avoid the message hash table growing
         too large"""
         now = time.time()
         async with self._lock:
             for msg_hash, timestamp in self.seen.items():
                 if now - self.seen[msg_hash] > self.ttl:
                     del self.seen[msg_hash]
+
+
+    def _setup_session_notifications(self):
+        """Set up session manager notification callback for logout messages."""
+        def send_logout_notification(session_id: str, message: str):
+            """Send logout notification to a session via meshcore."""
+            try:
+                # Look up session state to get node_id
+                state = self.session_mgr.get_session_state(session_id)
+                if state and state.node_id:
+                    # Use asyncio to schedule the async send_to_node call
+                    asyncio.create_task(self.send_to_node(session_id, message))
+                    log.debug(f"Scheduled logout notification for session {session_id}")
+                else:
+                    log.warning(f"Cannot send logout notification - no node_id for session {session_id}")
+            except (OSError, RuntimeError) as e:
+                log.error(f"Error sending logout notification to session {session_id}: {e}")
+                raise
+
+        self.session_mgr.set_notification_callback(send_logout_notification)
