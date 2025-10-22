@@ -91,12 +91,13 @@ class SessionManager:
             for t in expired:
                 state, _ = self.sessions[t]
                 username = state.username
+                node_id = state.node_id
 
                 # Send logout notification if transport layer is available
-                if self.notification_callback:
+                if self.notification_callback and node_id:
                     try:
                         self.notification_callback(
-                            t, "You have been logged out due to inactivity.")
+                            node_id, username, "You have been logged out due to inactivity.")
                         log.info(
                             f"Logout notification sent to username='{username}'")
                     except (OSError, RuntimeError) as e:
@@ -210,7 +211,7 @@ class SessionManager:
 
     def set_notification_callback(self, callback):
         """Set callback function for sending logout notifications.
-        Callback should accept (session_id: str, message: str) -> None"""
+        Callback should accept (node_id: str, username: str, message: str) -> None"""
         self.notification_callback = callback
 
     # --- helpers for working with the pre-login state ---

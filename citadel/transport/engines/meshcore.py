@@ -199,7 +199,7 @@ class MeshCoreTransportEngine:
     def format_message(self, message) -> str:
         timestamp = dateparse(message.timestamp).strftime('%d%b%y %H:%M')
         header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
-        content = "[Message from blocked sender]" if message.blocked else message.content                                                                   
+        content = "[Message from blocked sender]" if message.blocked else message.content
         return f"{header}\n{content}"
 
     async def _send_packet(self, node_id, chunk) -> bool:
@@ -356,6 +356,9 @@ class MeshCoreTransportEngine:
             log.debug(f'No pw cache found for {node_id}, sending to login')
             return await self._start_login_workflow(session_id, node_id) 
         touser = await self.command_processor.process(packet)
+        # pause the bbs just a moment before sending the command response
+        inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+        await asyncio.sleep(inter_packet_delay)
         if isinstance(touser, list):
             for msg in touser:
                 await self.send_to_node(session_id, msg)
@@ -543,4 +546,3 @@ class MessageDeduplicator:
             for msg_hash, timestamp in self.seen.items():
                 if now - self.seen[msg_hash] > self.ttl:
                     del self.seen[msg_hash]
-
