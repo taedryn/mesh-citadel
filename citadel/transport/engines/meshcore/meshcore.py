@@ -7,11 +7,13 @@ import logging
 from meshcore import MeshCore, EventType
 from serial import SerialException
 import time
+import traceback
 from zoneinfo import ZoneInfo
 
-from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.commands.processor import CommandProcessor
+from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.transport.parser import TextParser
+from citadel.transport.engines.meshcore.contacts import ContactManager
 from citadel.workflows.base import WorkflowState, WorkflowContext
 from citadel.workflows import registry as workflow_registry
 
@@ -27,6 +29,7 @@ class MeshCoreTransportEngine:
         self.command_processor = CommandProcessor(config, db, session_mgr)
         self.dedupe = MessageDeduplicator()
         self.text_parser = TextParser()
+        self.contact_manager = None
         self.meshcore = None
         self._running = False
         self.tasks = []
@@ -39,6 +42,9 @@ class MeshCoreTransportEngine:
     async def start(self):
         try:
             await self.start_meshcore()
+            self.contact_manager = ContactManager(self.meshcore,
+                                                  self.db, self.config)
+            await self.contact_manager.start()
             await self._register_event_handlers()
             self._setup_session_notifications()
             self._running = True
@@ -51,6 +57,7 @@ class MeshCoreTransportEngine:
             raise
         except Exception as e:
             log.error(f"Unexpected startup error: {e}")
+            traceback.print_exc()
             raise
 
     async def start_meshcore(self):
@@ -319,7 +326,8 @@ class MeshCoreTransportEngine:
             ))
             self.subs.append(self.meshcore.subscribe(
                 EventType.ADVERTISEMENT,
-                self._handle_mc_advert
+                #self._handle_mc_advert
+                self.contact_manager.handle_advert
             ))
             await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")

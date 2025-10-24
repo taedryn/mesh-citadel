@@ -20,21 +20,16 @@ class ContactManager:
         self.meshcore = meshcore
         self.db = db
         self.config = config.transport.get("meshcore", {}).get("contact_manager", {})
-        self.enabled = self.config.get("enabled", True)
         # Minimal cache: node_id -> name (all entries are chat nodes by definition)
         self._contacts_cache = {}
 
     async def start(self):
         """Initialize contact manager and load essential contact info."""
-        if not self.enabled:
-            log.info("ContactManager disabled in config")
-            return
-
         await self._load_essential_contacts()
 
         # Disable meshcore auto-contact updates to give us full control
         if self.meshcore:
-            self.meshcore.auto_update_contacts(False)
+            self.meshcore.auto_update_contacts = False
             log.info("Disabled meshcore auto-contact updates")
 
         log.info(f"ContactManager started with {len(self._contacts_cache)} cached contacts")
@@ -80,10 +75,9 @@ class ContactManager:
 
         await self._update_contact_record(node_id, contact_details)
 
-        # Update minimal cache
         self._contacts_cache[node_id] = name
 
-        log.debug(f"Recorded chat node advert: {name} ({node_id})")
+        log.info(f"Recorded advert: {name} ({node_id})")
 
         # Trigger cleanup if we're approaching limits
         await self._cleanup_if_needed()
@@ -103,10 +97,16 @@ class ContactManager:
 
         # Fallback: get all contacts and search
         try:
-            contacts = await self.meshcore.commands.get_contacts()
+            result = await self.meshcore.commands.get_contacts()
         except (OSError, AttributeError) as e:
             log.debug(f"Error getting contacts: {e}")
             return None
+
+        if result.type == EventType.ERROR:
+            log.warning(f"Unable to get all contacts from device: {result.payload}")
+            return None
+
+        contacts = result.payload
 
         for contact_key, contact_data in contacts.items():
             if contact_data.get('public_key', contact_key) == public_key:
@@ -118,7 +118,7 @@ class ContactManager:
         """Update contact record in database."""
         public_key = contact_data.get('public_key', '')
         name = contact_data.get('adv_name', contact_data.get('name', 'Unknown'))
-        node_type = contact_data.get('type', 1)  # Only used for database storage
+        node_type = contact_data.get('type', 1)  # usually 1 for chat node
         latitude = contact_data.get('adv_lat', contact_data.get('lat'))
         longitude = contact_data.get('adv_lon', contact_data.get('lon'))
         now = datetime.now(UTC).isoformat()
@@ -131,7 +131,8 @@ class ContactManager:
 
         await self.db.execute("""
             INSERT INTO mc_chat_contacts
-            (node_id, public_key, name, node_type, latitude, longitude, first_seen, last_seen, raw_advert_data)
+            (node_id, public_key, name, node_type, latitude, longitude,
+                first_seen, last_seen, raw_advert_data)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(node_id) DO UPDATE SET
                 public_key = excluded.public_key,
@@ -152,12 +153,12 @@ class ContactManager:
         # Check if we're at the contact limit and need to make room
         current_contacts = await self._get_device_contact_count()
         max_contacts = self.config.get('max_device_contacts', 240)
-        buffer = self.config.get('contact_limit_buffer', 10)
+        buffer_size = self.config.get('contact_limit_buffer', 10)
 
-        if current_contacts >= (max_contacts - buffer):
+        if current_contacts >= (max_contacts - buffer_size):
             if not await self._expire_oldest_contact():
                 name = self._contacts_cache[node_id]
-                log.error(f"Cannot add {name}: at contact limit and failed to expire oldest")
+                log.warning(f"Cannot add {name}: at contact limit and failed to expire oldest")
                 return False
 
         if not self.meshcore:
@@ -170,7 +171,7 @@ class ContactManager:
             (node_id,)
         )
         if not result:
-            log.error(f"No stored data for node {node_id}")
+            log.error(f"No stored data for node {node_id}, cannot add")
             return False
 
         try:
@@ -193,11 +194,11 @@ class ContactManager:
                 (datetime.now(UTC).isoformat(), node_id)
             )
             name = self._contacts_cache[node_id]
-            log.info(f"Added chat node: {name} ({node_id})")
+            log.info(f"Added contact to MC device: {name} ({node_id})")
             return True
         else:
             name = self._contacts_cache[node_id]
-            log.error(f"Failed to add contact {name}: {result.payload if result else 'No result'}")
+            log.error(f"Failed to add contact {name}: {result.payload if result else 'No data'}")
             return False
 
     async def delete_node(self, node_id: str) -> bool:
@@ -213,7 +214,7 @@ class ContactManager:
             return False
 
         if result and result.type != EventType.ERROR:
-            log.info(f"Removed chat node: {node_id}")
+            log.info(f"Removed contact from MC device: {node_id}")
             return True
         else:
             log.warning(f"Failed to remove contact {node_id}: {result.payload if result else 'No result'}")
@@ -264,20 +265,25 @@ class ContactManager:
             return 0
 
         try:
-            contacts = await self.meshcore.commands.get_contacts()
+            result = await self.meshcore.commands.get_contacts()
         except (OSError, AttributeError) as e:
             log.error(f"Error getting device contact count: {e}")
             return 0
 
+        if result.type == EventType.ERROR:
+            log.warning(f"Unable to get device contact list: {result.payload}")
+            return 0
+
+        contacts = result.payload
         return len(contacts) if contacts else 0
 
     async def _cleanup_if_needed(self):
         """Check if cleanup is needed and perform it."""
         current_count = await self._get_device_contact_count()
         max_contacts = self.config.get('max_device_contacts', 240)
-        buffer = self.config.get('contact_limit_buffer', 10)
+        buffer_size = self.config.get('contact_limit_buffer', 10)
 
-        if current_count >= (max_contacts - buffer):
+        if current_count >= (max_contacts - buffer_size):
             log.info(f"Contact cleanup triggered: {current_count}/{max_contacts} contacts")
             await self._expire_oldest_contact()
 
@@ -287,14 +293,16 @@ class ContactManager:
             return False
 
         try:
-            device_contacts = await self.meshcore.commands.get_contacts()
+            result = await self.meshcore.commands.get_contacts()
         except (OSError, AttributeError) as e:
             log.error(f"Error getting device contacts for expiry: {e}")
             return False
 
-        if not device_contacts:
-            log.warning("No device contacts found to expire")
+        if result.type == EventType.ERROR:
+            log.warning(f"No device contacts found to expire: {result.payload}")
             return False
+
+        device_contacts = result.payload
 
         # Find the oldest contact from our database
         oldest_node_id = None
@@ -327,11 +335,12 @@ class ContactManager:
             if oldest_node_id in self._contacts_cache:
                 contact_name = self._contacts_cache[oldest_node_id]
 
+            days = (datetime.now(UTC) - oldest_time).days
             if await self.delete_node(oldest_node_id):
-                log.info(f"Expired oldest contact to make room: {contact_name} ({oldest_node_id})")
+                log.info(f"Expired oldest contact to make room: {contact_name} ({oldest_node_id}) - {days}d old")
                 return True
             else:
-                log.error(f"Failed to expire oldest contact: {contact_name} ({oldest_node_id})")
+                log.error(f"Failed to expire oldest contact: {contact_name} ({oldest_node_id}) - {days}d old")
                 return False
         else:
             log.warning("Could not identify oldest contact to expire")

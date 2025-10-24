@@ -62,6 +62,9 @@ transport:
     send_timeout: 0                   # 0 = use dynamic timeout from library
     inter_packet_delay: 3             # seconds between packets
     max_packet_size: 150              # calculated: 184 (MAX_PACKET_PAYLOAD) - 9 (headers) - 15 (encryption padding)
+    contact_manager:
+      max_device_contacts: 240
+      contact_limit_buffer: 10
   cli:
     socket: "/tmp/mesh-citadel-cli.sock"
 
