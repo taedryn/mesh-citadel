@@ -5,6 +5,7 @@ from pathlib import Path
 from contextlib import suppress
 from dateutil.parser import parse as dateparse
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
@@ -41,7 +42,10 @@ class CLIFormatter:
 
     def _format_message(self, message):
         """Format a BBS message for CLI display."""
-        timestamp = dateparse(message.timestamp).strftime('%d%b%y %H:%M')
+        utc_timestamp = dateparse(message.timestamp)
+        tz = self.config.bbs.get('timezone', 'UTC')
+        timestamp = utc_timestamp.astimezone(ZoneInfo(tz)).strftime('%d%b%y %H:%M')
+
         header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
         content = "[Message from blocked sender]" if message.blocked else message.content
         return f"{header}\n{content}"

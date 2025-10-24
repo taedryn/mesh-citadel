@@ -6,6 +6,7 @@ import logging
 from meshcore import MeshCore, EventType
 from serial import SerialException
 import time
+from zoneinfo import ZoneInfo
 
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.commands.processor import CommandProcessor
@@ -89,6 +90,10 @@ class MeshCoreTransportEngine:
         result = await mc.commands.set_name(node_name)
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to set node name: {result.payload}")
+        log.info("Ensuring contacts")
+        result = await mc.ensure_contacts()
+        if not result:
+            raise(TransportError(f"Unable to ensure contacts: {result.payload}"))
         self.scheds = []
         # set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
@@ -197,7 +202,9 @@ class MeshCoreTransportEngine:
     #------------------------------------------------------------
 
     def format_message(self, message) -> str:
-        timestamp = dateparse(message.timestamp).strftime('%d%b%y %H:%M')
+        utc_timestamp = dateparse(message.timestamp)
+        tz = self.config.bbs.get('timezone', 'UTC')
+        timestamp = utc_timestamp.astimezone(ZoneInfo(tz)).strftime('%d%b%y %H:%M')
         header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
         content = "[Message from blocked sender]" if message.blocked else message.content
         return f"{header}\n{content}"
@@ -343,9 +350,10 @@ class MeshCoreTransportEngine:
                 payload=text
             )
         elif username:
-            await self.touch_password_cache(session_id)
-            await self.set_cache_username(session_id)
+            await self.touch_password_cache(username, node_id)
+            await self.set_cache_username(username, node_id)
             self.session_mgr.mark_logged_in(session_id, True)
+            self.session_mgr.mark_username(session_id, username)
             command = self.text_parser.parse_command(text)
             packet = FromUser(
                 session_id=session_id,
@@ -443,14 +451,13 @@ class MeshCoreTransportEngine:
         log.debug(f'No passwd cache DB result: "{result}"')
         return False # has no cache at all
 
-    async def set_cache_username(self, session_id: str):
+    async def set_cache_username(self, username: str, node_id: str):
         """this must be called after update_password_cache to
         completely cache a node_id's cache entry"""
         query = "UPDATE mc_passwd_cache SET username = ? WHERE node_id = ?"
-        state = self.session_mgr.get_session_state(session_id)
-        await self.db.execute(query, (state.username, state.node_id))
+        await self.db.execute(query, (username, node_id))
 
-    async def touch_password_cache(self, session_id: str):
+    async def touch_password_cache(self, username: str, node_id: str):
         """update this session to have a fresh password cache time.  the
         cache is not valid until set_cache_username is also called."""
         query = """INSERT INTO mc_passwd_cache
@@ -458,11 +465,10 @@ class MeshCoreTransportEngine:
             ON CONFLICT(node_id) DO UPDATE SET
                 last_pw_use = excluded.last_pw_use
         """
-        state = self.session_mgr.get_session_state(session_id)
-        log.debug(f"Updating MeshCore password cache for {state.username}")
+        log.debug(f"Updating MeshCore password cache for {username}")
 
         now = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
-        await self.db.execute(query, (state.node_id, now))
+        await self.db.execute(query, (node_id, now))
 
     def _setup_session_notifications(self):
         """Set up session manager notification callback for logout messages."""
@@ -502,7 +508,7 @@ class AdvertScheduler:
                 if self.meshcore:
                     # TODO: change this to flood=True when we're done
                     # testing quite so much
-                    flood = False
+                    flood = True
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:
