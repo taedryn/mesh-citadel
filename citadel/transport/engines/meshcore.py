@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, UTC, timedelta
 from dateutil.parser import parse as dateparse
 import hashlib
+import json
 import logging
 from meshcore import MeshCore, EventType
 from serial import SerialException

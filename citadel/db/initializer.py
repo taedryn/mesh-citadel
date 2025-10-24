@@ -113,6 +113,21 @@ async def initialize_database(db_manager, config=None):
     );
     """
 
+    mc_chat_contacts_table = """
+    CREATE TABLE IF NOT EXISTS mc_chat_contacts (
+        node_id TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        name TEXT,
+        node_type INTEGER DEFAULT 1,
+        latitude REAL,
+        longitude REAL,
+        first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        added_manually BOOLEAN DEFAULT FALSE,
+        raw_advert_data TEXT
+    );
+    """
+
 
     # all tables to be initialized
     tables = [
@@ -127,6 +142,7 @@ async def initialize_database(db_manager, config=None):
         pending_validations_table,
         mc_adverts_table,
         mc_passwd_cache_table,
+        mc_chat_contacts_table,
     ]
 
     for sql in tables:
