@@ -465,6 +465,26 @@ class MeshCoreTransportEngine:
         now = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
         await self.db.execute(query, (state.node_id, now))
 
+    def _setup_session_notifications(self):
+        """Set up session manager notification callback for logout messages."""
+        def send_logout_notification(session_id: str, message: str):
+            """Send logout notification to a session via meshcore."""
+            try:
+                # Look up session state to get node_id
+                state = self.session_mgr.get_session_state(session_id)
+                if state and state.node_id:
+                    # Use asyncio to schedule the async send_to_node call
+                    asyncio.create_task(self.send_to_node(session_id, message))
+                    log.debug(f"Scheduled logout notification for session {session_id}")
+                else:
+                    log.warning(f"Cannot send logout notification - no node_id for session {session_id}")
+            except (OSError, RuntimeError) as e:
+                log.error(f"Error sending logout notification to session {session_id}: {e}")
+                raise
+
+        self.session_mgr.set_notification_callback(send_logout_notification)
+
+
 
 
 class AdvertScheduler:
@@ -502,7 +522,6 @@ class AdvertScheduler:
         self._stop_event.set()
 
 
-
 class MessageDeduplicator:
     """a simple class to provide message de-duplication services"""
     def __init__(self, ttl=10):
@@ -528,27 +547,3 @@ class MessageDeduplicator:
             for msg_hash, timestamp in self.seen.items():
                 if now - self.seen[msg_hash] > self.ttl:
                     del self.seen[msg_hash]
-
-
-    def _setup_session_notifications(self):
-        """Set up session manager notification callback for logout messages."""
-        def send_logout_notification(node_id: str, username: str, message: str):
-            """Send logout notification to a node via meshcore."""
-            try:
-                # Since this is called from a background thread, we need to
-                # schedule the async operation safely
-                if self.meshcore and hasattr(self.meshcore.commands, 'send_msg'):
-                    # Send directly via meshcore rather than going through session layer
-                    # since the session is being deleted
-                    asyncio.run_coroutine_threadsafe(
-                        self.meshcore.commands.send_msg(node_id, message),
-                        asyncio.get_event_loop()
-                    )
-                    log.debug(f"Scheduled logout notification for node {node_id} (user: {username})")
-                else:
-                    log.warning(f"Cannot send logout notification - meshcore not available")
-            except (OSError, RuntimeError) as e:
-                log.error(f"Error sending logout notification to node {node_id}: {e}")
-                raise
-
-        self.session_mgr.set_notification_callback(send_logout_notification)
