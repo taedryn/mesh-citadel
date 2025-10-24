@@ -1,5 +1,5 @@
 system: &system
-  name: "Mesh-Citadel"
+  name: "Tae's *very alpha* BBS"
 
 bbs:
   <<: *system
@@ -10,6 +10,7 @@ bbs:
   starting_room: "Lobby"
   system_events_room: "System"
   export_format: "json"             # "csv", "json", or "yaml"
+  timezone: "US/Pacific"
   # System room names (changeable but rooms IDs 1-6 are reserved)
   room_names:
     lobby: "Lobby"                  # Room ID 1
@@ -45,19 +46,22 @@ transport:
     serial_port: "/dev/ttyACM0"
     #serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
+
     frequency: 910.525                # MHz
     bandwidth: 62.5                   # kHz
     spreading_factor: 7
     coding_rate: 5
     tx_power: 1                       # dBm
-    advert_interval: 6                # hours
+
+    advert_interval: 8                # hours
+
     max_retries: 3                    # tune these for your conditions
     max_flood_attempts: 3             # flood mode retries
     flood_after: 2                    # switch to flood after N attempts
     ack_timeout: 8                    # increased from 3 to 8 seconds
     send_timeout: 0                   # 0 = use dynamic timeout from library
-    inter_packet_delay: 0.5           # seconds between packets
-    max_packet_size: 150              # adjust if you see messages cut off
+    inter_packet_delay: 3             # seconds between packets
+    max_packet_size: 150              # calculated: 184 (MAX_PACKET_PAYLOAD) - 9 (headers) - 15 (encryption padding)
   cli:
     socket: "/tmp/mesh-citadel-cli.sock"
 

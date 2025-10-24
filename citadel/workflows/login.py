@@ -139,8 +139,8 @@ class LoginWorkflow(Workflow):
                     context.config,
                     context.db
                 )
-                await mc.touch_password_cache(context.session_id)
-                await mc.set_cache_username(context.session_id)
+                await mc.touch_password_cache(username, state.node_id)
+                await mc.set_cache_username(username, state.node_id)
             room = Room(context.db, context.config, state.current_room)
             await room.load()
             return ToUser(
