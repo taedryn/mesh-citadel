@@ -6,7 +6,7 @@ import asyncio
 
 from meshcore import MeshCore, EventType
 
-log = logging.getLogger('contact_eraser')
+log = logging.getLogger('list_contacts')
 log.setLevel(logging.DEBUG)
 
 async def main():
@@ -20,16 +20,7 @@ async def main():
     for contact in contacts:
         node_id = contact[:16]
         full_info = mc.get_contact_by_key_prefix(node_id)
-        print(f"examining {full_info['adv_name']}")
-        if full_info['type'] != 1:
-            print(f"removing {i}: {full_info}")
-            result = await mc.commands.remove_contact(contact)
-            if result.type == EventType.ERROR:
-                print(f"Unable to remove {node_id}: {result.payload}")
-                i += 1
-                continue
-            print(f"Node {node_id} erased from device")
-        i += 1
+        print(f"found {full_info['adv_name']}")
 
 if __name__ == '__main__':
     asyncio.run(main())

@@ -5,6 +5,7 @@ Manages chat node contacts with automatic cleanup when approaching storage limit
 Memory-optimized for Raspberry Pi Zero.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, UTC
@@ -29,8 +30,11 @@ class ContactManager:
 
         # Disable meshcore auto-contact updates to give us full control
         if self.meshcore:
-            self.meshcore.auto_update_contacts = False
-            log.info("Disabled meshcore auto-contact updates")
+            result = await self.meshcore.commands.set_manual_add_contacts(True)
+            if result.type == EventType.ERROR:
+                log.warning(f"Unable to disable auto-add of contacts: {result.payload}")
+            else:
+                log.info("Disabled meshcore auto-add of contacts")
 
         log.info(f"ContactManager started with {len(self._contacts_cache)} cached contacts")
 
@@ -91,6 +95,7 @@ class ContactManager:
         node_id = public_key[:16]
         try:
             contact = self.meshcore.get_contact_by_key_prefix(node_id)
+            log.debug(f"Found {node_id} in device: {contact}")
             return contact
         except AttributeError:
             pass
@@ -110,8 +115,10 @@ class ContactManager:
 
         for contact_key, contact_data in contacts.items():
             if contact_data.get('public_key', contact_key) == public_key:
+                log.debug(f"Found contact {node_id} by searching: {contact_data}")
                 return contact_data
 
+        log.debug("No method found to get {node_id} from device")
         return None
 
     async def _update_contact_record(self, node_id: str, contact_data: dict):
@@ -207,8 +214,16 @@ class ContactManager:
             log.error("MeshCore not available for deleting contact")
             return False
 
+        query = "SELECT public_key FROM mc_chat_contacts WHERE node_id = ?"
+        result = await self.db.execute(query, (node_id,))
+        if result:
+            pubkey = result[0][0]
+        else:
+            log.warning(f"Unable to remove {node_id}; node not in DB")
+            return False
+
         try:
-            result = await self.meshcore.commands.remove_contact(node_id)
+            result = await self.meshcore.commands.remove_contact(pubkey)
         except (OSError, AttributeError) as e:
             log.error(f"Error removing contact {node_id}: {e}")
             return False
