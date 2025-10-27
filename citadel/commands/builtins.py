@@ -56,7 +56,8 @@ async def read_messages(context, msg_ids):
             timestamp=msg["timestamp"],
             room=room.name,
             content=msg["content"],
-            blocked=msg["blocked"]
+            blocked=msg["blocked"],
+            recipient=msg["recipient"]
         )
         log.debug(f"Adding message to read list: {msg['id']}")
         to_user_list.append(ToUser(

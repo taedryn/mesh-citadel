@@ -73,6 +73,7 @@ class ContactManager:
             return
 
         if not self._is_chat_node(contact_details):
+            log.debug(f"Rejecting non-chat node: {contact_details}")
             return  # Not a chat node, ignore
 
         name = contact_details.get('adv_name', contact_details.get('name', 'Unknown'))
@@ -95,7 +96,10 @@ class ContactManager:
         node_id = public_key[:16]
         try:
             contact = self.meshcore.get_contact_by_key_prefix(node_id)
-            log.debug(f"Found {node_id} in device: {contact}")
+            if contact:
+                log.debug(f"Found {node_id} in device: {contact}")
+            else:
+                log.debug(f"{node_id} contact details not found in device")
             return contact
         except AttributeError:
             pass

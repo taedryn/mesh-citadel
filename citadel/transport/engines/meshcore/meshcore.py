@@ -76,7 +76,17 @@ class MeshCoreTransportEngine:
         node_name = mc_config.get("name", "Mesh-Citadel BBS")
 
         log.info(f"Connecting MeshCore transport at {serial_port}")
-        mc = await MeshCore.create_serial(serial_port, baud_rate)
+        debug = False
+        if log.level <= logging.DEBUG:
+            debug = True
+        mc = await MeshCore.create_serial(serial_port, baud_rate, debug=debug)
+
+        now = int(time.time())
+        log.info(f"Setting MeshCore node time to {now}")
+        result = await mc.commands.set_time(now)
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to sync time: {result.payload}")
+
         log.info(f"Setting MeshCore frequency to {frequency} MHz")
         log.info(f"Setting MeshCore bandwidth to {bandwidth} kHz")
         log.info(f"Setting MeshCore spreading factor to {spreading_factor}")
@@ -102,6 +112,18 @@ class MeshCoreTransportEngine:
         result = await mc.ensure_contacts()
         if not result:
             raise(TransportError(f"Unable to ensure contacts: {result.payload}"))
+        log.info("Gathering device information")
+        result = await mc.commands.send_device_query()
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to get device info: {result.payload}")
+        else:
+            log.info(f"Self-info returned: {mc.self_info}")
+            #info = result.payload
+            #log.info(f"Device is running firmware {info['ver']}, built {info['fw_build']}")
+            #cm = mc_config.get('contact_manager', {})
+            #config_max = cm.get('max_device_contacts', 0)
+            #device_max = info['max_contacts']
+            #log.info(f"Device can hold {device_max} contacts ({config_max} is configured)")
         self.scheds = []
         # set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
@@ -213,7 +235,10 @@ class MeshCoreTransportEngine:
         utc_timestamp = dateparse(message.timestamp)
         tz = self.config.bbs.get('timezone', 'UTC')
         timestamp = utc_timestamp.astimezone(ZoneInfo(tz)).strftime('%d%b%y %H:%M')
-        header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
+        to_str = ""
+        if message.recipient:
+            to_str = f" To: {message.recipient}"
+        header = f"[{message.id}] From: {message.display_name} ({message.sender}){to_str} - {timestamp}"
         content = "[Message from blocked sender]" if message.blocked else message.content
         return f"{header}\n{content}"
 
@@ -326,7 +351,10 @@ class MeshCoreTransportEngine:
             ))
             self.subs.append(self.meshcore.subscribe(
                 EventType.ADVERTISEMENT,
-                #self._handle_mc_advert
+                self.contact_manager.handle_advert
+            ))
+            self.subs.append(self.meshcore.subscribe(
+                EventType.NEW_CONTACT,
                 self.contact_manager.handle_advert
             ))
             await self.meshcore.start_auto_message_fetching()

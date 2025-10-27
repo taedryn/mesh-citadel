@@ -14,6 +14,7 @@ class MessageResponse:
     room: str
     content: str
     blocked: bool = False
+    recipient: str = ""
 
 
 @dataclass
