@@ -74,16 +74,18 @@ class MeshCoreTransportEngine:
         coding_rate = mc_config.get("coding_rate", 5)
         tx_power = mc_config.get("tx_power", 22)
         node_name = mc_config.get("name", "Mesh-Citadel BBS")
+        multi_acks = mc_config.get("multi_acks", True)
 
         log.info(f"Connecting MeshCore transport at {serial_port}")
         debug = False
-        if log.level <= logging.DEBUG:
+        if log.getEffectiveLevel() <= logging.DEBUG:
             debug = True
         mc = await MeshCore.create_serial(serial_port, baud_rate, debug=debug)
 
         now = int(time.time())
         log.info(f"Setting MeshCore node time to {now}")
         result = await mc.commands.set_time(now)
+        from citadel.transport.manager import TransportError
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to sync time: {result.payload}")
 
@@ -97,17 +99,24 @@ class MeshCoreTransportEngine:
             spreading_factor,
             coding_rate
         )
-        from citadel.transport.manager import TransportError
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to set radio parameters: {result.payload}")
+
         log.info(f"Setting MeshCore TX power to {tx_power} dBm")
         result = await mc.commands.set_tx_power(tx_power)
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to set TX power: {result.payload}")
+
         log.info(f"Setting MeshCore node name to '{node_name}'")
         result = await mc.commands.set_name(node_name)
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to set node name: {result.payload}")
+
+        log.info(f"Setting MeshCore multi-acks to '{multi_acks}'")
+        result = await mc.commands.set_multi_acks(multi_acks)
+        if result.type == EventType.ERROR:
+            raise TransportError(f"Unable to set multi-acks: {result.payload}")
+
         log.info("Ensuring contacts")
         result = await mc.ensure_contacts()
         if not result:

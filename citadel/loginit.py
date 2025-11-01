@@ -27,4 +27,5 @@ def initialize_logging(config):
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
+    logger.info(f"Set log level to {logger.level}")
     logger.info("Logging initialized")

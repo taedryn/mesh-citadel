@@ -67,7 +67,10 @@ class ContactManager:
         node_id = public_key[:16]
 
         # Query meshcore device for full contact details
-        contact_details = await self._get_contact_details(public_key)
+        if event.type == EventType.NEW_CONTACT:
+            contact_details = advert_data
+        else:
+            contact_details = await self._get_contact_details(public_key)
         if not contact_details:
             log.debug(f"Could not retrieve contact details for {node_id}")
             return
@@ -82,10 +85,11 @@ class ContactManager:
 
         self._contacts_cache[node_id] = name
 
-        log.info(f"Recorded advert: {name} ({node_id})")
-
         # Trigger cleanup if we're approaching limits
         await self._cleanup_if_needed()
+        await self.add_node(node_id)
+
+        log.info(f"Recorded advert: {name} ({node_id})")
 
     async def _get_contact_details(self, public_key: str):
         """Get full contact details from the meshcore device."""
