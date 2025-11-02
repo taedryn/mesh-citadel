@@ -7,6 +7,7 @@ from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.db.initializer import initialize_database
 from citadel.loginit import initialize_logging
+from citadel.room.room import Room
 from citadel.session.manager import SessionManager
 from citadel.message.manager import MessageManager
 from citadel.transport.manager import TransportManager
@@ -33,6 +34,7 @@ async def initialize_system(log_level=None):
     # Initialize other managers
     session_mgr = SessionManager(config, db_mgr)
     message_mgr = MessageManager(config, db_mgr)
+    await Room.initialize_room_order(db_mgr, config)
 
     log.info('System initialization complete')
 

@@ -80,8 +80,9 @@ class Room:
         self.prev_neighbor = result[0][5]
         self._loaded = True
 
-    async def get_id_by_name(self, name: str) -> int:
-        result = await self.db.execute(
+    @classmethod
+    async def get_id_by_name(cls, db, name: str) -> int:
+        result = await db.execute(
             "SELECT id FROM rooms WHERE name = ? COLLATE NOCASE",
             (name,)
         )
@@ -195,7 +196,7 @@ class Room:
         if isinstance(identifier, str):
             if identifier.isdigit():
                 return int(identifier)
-            room_id = await self.get_id_by_name(identifier)
+            room_id = await Room.get_id_by_name(self.db, identifier)
             if not room_id:
                 raise RoomNotFoundError(f"No room named {identifier} found")
             return room_id
@@ -209,23 +210,24 @@ class Room:
         return room
 
     @classmethod
-    async def get_all_visible_rooms(cls, db, config, user):
-        """Return rooms the user can read and hasn't ignored."""
-        rows = await db.execute("SELECT id FROM rooms ORDER BY id")
-        room_ids = [row[0] for row in rows]
+    async def get_all_visible_rooms(cls, db, config, user, room_id:
+                                    int=SystemRoomIDs.LOBBY_ID, visited=None):
+        if visited is None:
+            visited = []
 
-        visible_rooms = []
-        for room_id in room_ids:
-            room = Room(db, config, room_id)
-            await room.load()
+        room = Room(db, config, room_id)
+        await room.load()
+        readable = room.can_user_read(user)
+        ignored = await room.is_ignored_by(user)
 
-            readable = room.can_user_read(user)
-            ignored = await room.is_ignored_by(user)
+        if readable and not ignored:
+            visited.append(room)
 
-            if readable and not ignored:
-                visible_rooms.append(room)
+        if room.next_neighbor is not None:
+            return await Room.get_all_visible_rooms(db, config, user, room.next_neighbor, visited)
+        else:
+            return visited
 
-        return visible_rooms
 
     # ------------------------------------------------------------
     # message handling
@@ -399,25 +401,49 @@ class Room:
         return max_id + 1
 
     @classmethod
+    async def get_last_room_id(cls, db) -> int:
+        """Find the final room in the chain and return its ID"""
+        result = await db.execute("""
+            SELECT id FROM rooms
+            WHERE next_neighbor is NULL""")
+        return result[0][0]
+
+    @classmethod
     async def create(cls, db, config, name: str, description: str,
                      read_only: bool, permission_level: PermissionLevel,
-                     prev_id: int, next_id: int) -> int:
+                     after_room_id: int) -> int:
+        """Create a new room, which will appear in the room order after the
+        room specified in after_room_id."""
         # Get next available room ID >= 100
         new_id = await cls._get_next_available_room_id(db)
+
+        after_room = Room(db, config, after_room_id)
+        await after_room.load()
+        next_id = after_room.next_neighbor
 
         await db.execute(
             "INSERT INTO rooms (id, name, description, read_only, permission_level, prev_neighbor, next_neighbor) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (new_id, name, description, read_only,
-             permission_level.value, prev_id, next_id)
+             permission_level.value, after_room_id, next_id)
         )
 
         # Update room chain links
-        if prev_id:
-            await db.execute("UPDATE rooms SET next_neighbor = ? WHERE id = ?", (new_id, prev_id))
+        await db.execute("""
+            UPDATE rooms
+            SET next_neighbor = ?
+            WHERE id = ?""",
+            (new_id, after_room_id)
+        )
         if next_id:
-            await db.execute("UPDATE rooms SET prev_neighbor = ? WHERE id = ?", (new_id, next_id))
+            await db.execute("""
+                UPDATE rooms
+                SET prev_neighbor = ?
+                WHERE id = ?""",
+                (new_id, next_id)
+            )
 
-        cls._room_order.clear()
+        await cls.initialize_room_order(db, config)
+        log.info(f"New room {name} created with ID {new_id}")
         return new_id
 
     async def delete_room(self, sys_user: str):
@@ -438,8 +464,9 @@ class Room:
 
         # Delete room and cascade
         await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))
-        Room._room_order.clear()
+        await Room.initialize_room_order(db, config)
         # TODO: remove linked messages from appropriate table
+        # TODO: link previous and next room IDs together
 
     @classmethod
     async def initialize_room_order(cls, db, config):
@@ -473,7 +500,27 @@ class Room:
         all_rooms = set(r[0] for r in rooms_result)
         unreachable = all_rooms - visited
         if unreachable:
-            log.warning(f"Orphaned rooms detected: {sorted(unreachable)}")
+            log.warning('Orphaned rooms detected, attempting to fix')
+            last_id = await cls.get_last_room_id(db)
+            prev_last = False
+            for room_id in unreachable:
+                # first update the last room to point to the new one
+                query = """
+                    UPDATE rooms
+                    SET next_neighbor = ?
+                    WHERE id = ?
+                """
+                await db.execute(query, [room_id, last_id])
+                # then update the new one to point back
+                query = """
+                    UPDATE rooms
+                    SET next_neighbor = NULL,
+                        prev_neighbor = ?
+                    WHERE id = ?
+                """
+                await db.execute(query, [last_id, room_id])
+                last_id = room_id
+                log.warning(f'Orphaned room {room_id} placed after {last_id}')
 
         # Optional: check for broken links
         for room_id in all_rooms:
@@ -489,3 +536,6 @@ class Room:
                 if prev_id and prev_id not in all_rooms:
                     log.warning(
                         f"Room {room_id} has invalid prev_neighbor {prev_id}")
+
+        chain_str = '->'.join([str(link) for link in chain])
+        log.info(f'Room link chain: {chain_str}')

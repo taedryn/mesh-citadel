@@ -136,7 +136,7 @@ class SessionManager:
         state = self.get_session_state(session_id)
         return state.current_room if state else None
 
-    def set_current_room(self, session_id: str, room: str) -> None:
+    def set_current_room(self, session_id: str, room: int) -> None:
         state = self.get_session_state(session_id)
         if state:
             state.current_room = room

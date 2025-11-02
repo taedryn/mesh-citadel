@@ -190,11 +190,33 @@ async def initialize_system_rooms(db_manager, config):
         # NULL for last room
         next_id = system_rooms[i+1][0] if i < len(system_rooms)-1 else None
 
-        # Insert or update room
-        await db_manager.execute("""
-            INSERT OR REPLACE INTO rooms
-            (id, name, description, read_only, permission_level, prev_neighbor, next_neighbor)
-            VALUES (?, ?, ?, FALSE, ?, ?, ?)
-        """, (room_id, name, description, permission_level, prev_id, next_id))
+        result = await db_manager.execute("""
+            SELECT name, description, prev_neighbor, next_neighbor
+            FROM rooms
+            WHERE id = ?""",
+            [room_id]
+        )
+        if result:
+            name, description, prev_neighbor, current_next = result[0]
+            preserved_next = current_next if next_id is None else next_id
+            await db_manager.execute("""
+                UPDATE rooms
+                SET name = ?,
+                    description = ?,
+                    prev_neighbor = ?,
+                    next_neighbor = ?
+                WHERE id = ?""",
+                [name, description, prev_id, preserved_next, room_id]
+            )
+            log.debug(f'Updating {name}, setting next_neighbor to {preserved_next}')
+        else:
+            # Insert room
+            await db_manager.execute("""
+                INSERT INTO rooms
+                (id, name, description, read_only, permission_level,
+                    prev_neighbor, next_neighbor)
+                VALUES (?, ?, ?, FALSE, ?, ?, ?)
+            """, (room_id, name, description, permission_level, prev_id, next_id))
+            log.debug(f'Creating new {name} entry')
 
     log.info("System rooms initialized successfully")

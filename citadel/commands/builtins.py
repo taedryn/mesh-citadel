@@ -1,5 +1,6 @@
 # bbs/commands/builtins.py
 
+from datetime import datetime, UTC
 import logging
 
 from citadel.commands.base import BaseCommand, CommandCategory
@@ -10,7 +11,7 @@ from citadel.transport.packets import ToUser
 from citadel.auth.permissions import is_allowed
 from citadel.room.room import Room, SystemRoomIDs, RoomNotFoundError
 from citadel.user.user import User
-from citadel.workflows.base import WorkflowContext
+from citadel.workflows.base import WorkflowContext, WorkflowState
 
 log = logging.getLogger(__name__)
 
@@ -28,8 +29,6 @@ log = logging.getLogger(__name__)
 async def scan_messages(context, msg_ids):
     """given a set of message IDs, return a list of ToUser objects,
     each containing one of the indicated messages"""
-    from citadel.commands.responses import MessageResponse
-
     state = context.session_mgr.get_session_state(context.session_id)
     user = User(context.db, state.username)
     await user.load()
@@ -63,8 +62,6 @@ async def scan_messages(context, msg_ids):
 async def read_messages(context, msg_ids):
     """given a set of message IDs, return a list of ToUser objects,
     each containing one of the indicated messages"""
-    from citadel.commands.responses import MessageResponse
-
     state = context.session_mgr.get_session_state(context.session_id)
     user = User(context.db, state.username)
     await user.load()
@@ -164,7 +161,6 @@ class EnterMessageCommand(BaseCommand):
 
     async def run(self, context):
         from citadel.workflows.registry import get as get_workflow
-        from citadel.workflows.base import WorkflowState
 
         state = context.session_mgr.get_session_state(context.session_id)
         if not state:
@@ -258,9 +254,6 @@ class KnownRoomsCommand(BaseCommand):
     help_text = "List all rooms known to you."
 
     async def run(self, context):
-        from citadel.room.room import Room
-        from citadel.user.user import User
-
         state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
@@ -423,7 +416,6 @@ class ChangeRoomCommand(BaseCommand):
     args = ""
 
     async def run(self, context):
-
         state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
@@ -610,8 +602,6 @@ class WhoCommand(BaseCommand):
     help_text = "List active users currently online."
 
     async def run(self, context):
-        from datetime import datetime, UTC
-
         state = context.session_mgr.get_session_state(context.session_id)
         user = User(context.db, state.username)
         await user.load()
@@ -750,8 +740,6 @@ class ValidateUsersCommand(BaseCommand):
     help_text = "Enter the user validation workflow to approve new users."
 
     async def run(self, context):
-        from citadel.workflows.base import WorkflowState
-
         # Check if there are any pending validations
         pending_users = await context.db.execute(
             "SELECT username, submitted_at FROM pending_validations ORDER BY submitted_at"
@@ -777,7 +765,6 @@ class ValidateUsersCommand(BaseCommand):
         from citadel.workflows import registry as workflow_registry
         handler = workflow_registry.get("validate_users")
         if handler:
-            from citadel.workflows.base import WorkflowContext
             workflow_context = WorkflowContext(
                 session_id=context.session_id,
                 config=context.config,
@@ -808,6 +795,35 @@ class CreateRoomCommand(BaseCommand):
     short_text = "Create room"
     help_text = "Create a new room. Sends you into an interactive workflow to create the new room."
 
+    async def run(self, context):
+        # Start validation workflow
+        context.session_mgr.set_workflow(
+            context.session_id,
+            WorkflowState(
+                kind="create_room",
+                step=1,
+                data={}
+            )
+        )
+
+        from citadel.workflows import registry as workflow_registry
+        handler = workflow_registry.get("create_room")
+        if handler:
+            workflow_context = WorkflowContext(
+                session_id=context.session_id,
+                config=context.config,
+                db=context.db,
+                session_mgr=context.session_mgr,
+                wf_state=context.session_mgr.get_workflow(context.session_id)
+            )
+            return await handler.start(workflow_context)
+
+        return ToUser(
+            session_id=context.session_id,
+            text="Room creation workflow not available.",
+            is_error=True,
+            error_code="workflow_unavailable"
+        )
 
 @register_command
 class EditRoomCommand(BaseCommand):

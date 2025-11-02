@@ -424,9 +424,13 @@ class MeshCoreTransportEngine:
         inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
         await asyncio.sleep(inter_packet_delay)
         if isinstance(touser, list):
-            for msg in touser:
+            last_msg = len(touser) - 1
+            for i, msg in enumerate(touser):
+                if i == last_msg:
+                    msg = self.insert_prompt(session_id, msg)
                 await self.send_to_node(session_id, msg)
         else:
+            touser = await self.insert_prompt(session_id, touser)
             await self.send_to_node(session_id, touser)
 
 
@@ -545,7 +549,33 @@ class MeshCoreTransportEngine:
 
         self.session_mgr.set_notification_callback(send_logout_notification)
 
+    async def insert_prompt(self, session_id, touser):
+        if self.session_mgr.get_workflow(session_id):
+            return touser
 
+        session_state = self.session_mgr.get_session_state(session_id)
+        if not session_state or not session_state.current_room:
+            prompt = "What now? (H for help)"
+        else:
+            # Get room name
+            from citadel.room.room import Room
+            try:
+                room = Room(self.db, self.config, session_state.current_room)
+                await room.load()
+                room_name = room.name
+            except Exception:
+                room_name = f"Room {session_state.current_room}"
+            prompt = f"In {room_name}. What now? (H for help)"
+
+        if isinstance(touser, ToUser):
+            if touser.message:
+                touser.message += f'\n{prompt}'
+            else:
+                touser.text += f'\n{prompt}'
+        elif isinstance(touser, str):
+            touser += f'\n{prompt}'
+
+        return touser
 
 
 class AdvertScheduler:
