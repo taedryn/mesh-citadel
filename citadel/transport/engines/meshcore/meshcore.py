@@ -11,6 +11,7 @@ import traceback
 from zoneinfo import ZoneInfo
 
 from citadel.commands.processor import CommandProcessor
+from citadel.message.manager import format_timestamp
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.transport.parser import TextParser
 from citadel.transport.engines.meshcore.contacts import ContactManager
@@ -242,8 +243,7 @@ class MeshCoreTransportEngine:
 
     def format_message(self, message) -> str:
         utc_timestamp = dateparse(message.timestamp)
-        tz = self.config.bbs.get('timezone', 'UTC')
-        timestamp = utc_timestamp.astimezone(ZoneInfo(tz)).strftime('%d%b%y %H:%M')
+        timestamp = format_timestamp(self.config, utc_timestamp)
         to_str = ""
         if message.recipient:
             to_str = f" To: {message.recipient}"

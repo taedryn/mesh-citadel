@@ -25,6 +25,41 @@ log = logging.getLogger(__name__)
 # * admin
 
 
+async def scan_messages(context, msg_ids):
+    """given a set of message IDs, return a list of ToUser objects,
+    each containing one of the indicated messages"""
+    from citadel.commands.responses import MessageResponse
+
+    state = context.session_mgr.get_session_state(context.session_id)
+    user = User(context.db, state.username)
+    await user.load()
+    room = Room(context.db, context.config, state.current_room)
+    await room.load()
+    if not msg_ids:
+        return ToUser(
+            session_id=context.session_id,
+            text="No unread messages."
+        )
+
+    msgs = []
+    for msg_id in msg_ids:
+        msg = await context.msg_mgr.get_message_summary(
+            msg_id,
+            recipient_user=user,
+            msg_len=50
+        )
+        # Message not authorized for this user (privacy check failed)
+        if not msg:
+            continue
+        
+        msgs.append(msg)
+
+    return ToUser(
+        session_id=context.session_id,
+        text='\n'.join(msgs)
+    )
+
+
 async def read_messages(context, msg_ids):
     """given a set of message IDs, return a list of ToUser objects,
     each containing one of the indicated messages"""
@@ -174,6 +209,7 @@ class ReverseReadCommand(BaseCommand):
         log.debug(f"Found reverse message ids: {msg_ids}")
         return await read_messages(context, msg_ids)
 
+
 @register_command
 class ForwardReadCommand(BaseCommand):
     code = "F"
@@ -192,6 +228,7 @@ class ForwardReadCommand(BaseCommand):
         msg_ids = await room.get_user_message_ids(user)
         log.debug(f"Found forward message ids: {msg_ids}")
         return await read_messages(context, msg_ids)
+
 
 @register_command
 class ReadNewMessagesCommand(BaseCommand):
@@ -364,6 +401,15 @@ class ScanMessagesCommand(BaseCommand):
     short_text = "Scan messages"
     help_text = "Show message summaries in the current room."
 
+    async def run(self, context):
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+        room = Room(context.db, context.config, state.current_room)
+        await room.load()
+        msg_ids = await room.get_user_message_ids(user)
+        return await scan_messages(context, msg_ids)
+
 
 @register_command
 class ChangeRoomCommand(BaseCommand):
@@ -529,6 +575,29 @@ class MailCommand(BaseCommand):
     permission_level = PermissionLevel.USER
     short_text = "Go to Mail"
     help_text = "Go directly to the Mail room to send/receive private messages."
+
+    async def run(self, context):
+
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+        try:
+            mail_room = Room(context.db, context.config, SystemRoomIDs.MAIL_ID)
+            await mail_room.load()
+            log.debug(f'preparing to go to room {self.args}')
+        except RoomNotFoundError:
+            return ToUser(
+                session_id=context.session_id,
+                text=f"Room {self.args} not found.",
+                is_error=True,
+                error_code="no_next_room"
+            )
+        context.session_mgr.set_current_room(
+            context.session_id, mail_room.room_id)
+        return ToUser(
+            session_id=context.session_id,
+            text=f"You are now in room '{mail_room.name}'."
+        )
 
 
 @register_command

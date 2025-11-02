@@ -44,7 +44,8 @@ class CLIFormatter:
         """Format a BBS message for CLI display."""
         utc_timestamp = dateparse(message.timestamp)
         tz = self.config.bbs.get('timezone', 'UTC')
-        timestamp = utc_timestamp.astimezone(ZoneInfo(tz)).strftime('%d%b%y %H:%M')
+        date_fmt = self.config.bbs.get('date_format', '%d%b%y $H:$M')
+        timestamp = utc_timestamp.astimezone(ZoneInfo(tz)).strftime(date_fmt)
 
         header = f"[{message.id}] From: {message.display_name} ({message.sender}) - {timestamp}"
         content = "[Message from blocked sender]" if message.blocked else message.content
