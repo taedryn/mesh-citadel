@@ -427,7 +427,7 @@ class MeshCoreTransportEngine:
             last_msg = len(touser) - 1
             for i, msg in enumerate(touser):
                 if i == last_msg:
-                    msg = self.insert_prompt(session_id, msg)
+                    msg = await self.insert_prompt(session_id, msg)
                 await self.send_to_node(session_id, msg)
         else:
             touser = await self.insert_prompt(session_id, touser)
@@ -569,7 +569,7 @@ class MeshCoreTransportEngine:
 
         if isinstance(touser, ToUser):
             if touser.message:
-                touser.message += f'\n{prompt}'
+                touser.message.content += f'\n{prompt}'
             else:
                 touser.text += f'\n{prompt}'
         elif isinstance(touser, str):
@@ -594,7 +594,7 @@ class AdvertScheduler:
                 if self.meshcore:
                     # TODO: change this to flood=True when we're done
                     # testing quite so much
-                    flood = False
+                    flood = True
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:
