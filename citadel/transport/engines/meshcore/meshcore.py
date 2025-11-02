@@ -296,6 +296,12 @@ class MeshCoreTransportEngine:
             words = message.split(" ")
         else:
             return ""
+
+        approx_chunks = len(message) / max_packet_length
+        if approx_chunks >= 10:
+            max_packet_length -= len('[xx/xx]')
+        else:
+            max_packet_length -= len('[x/x]')
         chunks = []
         chunk = []
         chunk_size = 0
@@ -312,6 +318,9 @@ class MeshCoreTransportEngine:
         if len(chunk) > 0:
             chunks.append(" ".join(chunk))
 
+        len_chunks = len(chunks)
+        for i in range(len_chunks):
+            chunks[i] += f'[{i+1}/{len_chunks}]'
         return chunks
 
     #------------------------------------------------------------
@@ -554,7 +563,7 @@ class AdvertScheduler:
                 if self.meshcore:
                     # TODO: change this to flood=True when we're done
                     # testing quite so much
-                    flood = True
+                    flood = False
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:
