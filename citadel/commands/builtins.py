@@ -38,7 +38,7 @@ async def scan_messages(context, msg_ids):
     if not msg_ids:
         return ToUser(
             session_id=context.session_id,
-            text="No unread messages."
+            text="No messages"
         )
 
     msgs = []
@@ -685,7 +685,49 @@ class DeleteMessageCommand(BaseCommand):
     category = CommandCategory.COMMON
     permission_level = PermissionLevel.USER
     short_text = "Delete message"
-    help_text = "Delete either the most recently displayed message, or a message ID specified after the command letter. Only Aides and Sysops can delete others' messages."
+    help_text = "Delete a message ID specified after the command letter. Only Aides and Sysops can delete others' messages."
+    args = ""
+
+    async def run(self, context):
+        state = context.session_mgr.get_session_state(context.session_id)
+        user = User(context.db, state.username)
+        await user.load()
+        permission_level = user.permission_level
+        room = Room(context.db, context.config, state.current_room)
+        await room.load()
+
+        if not self.args:
+            return ToUser(
+                session_id=context.session_id,
+                text='Message ID number must be specified. No action taken.',
+                is_error=True
+            )
+        msg = await context.msg_mgr.get_message(self.args, user)
+
+        allowed = False
+        reason = ''
+        if permission_level >= PermissionLevel.AIDE:
+            allowed = True
+            reason = 'is_aide'
+        elif (user.username == msg['sender'] or user.username ==
+              msg['recipient']):
+            allowed = True
+            reason = 'is_author'
+
+        if allowed:
+            await room.delete_message(msg['id'])
+            log.info(f'Message {msg["id"]} deleted from room {room.name} by {user.username} (allowed because {reason})')
+            return ToUser(
+                session_id=context.session_id,
+                text=f"Message {msg['id']} deleted"
+            )
+        else:
+            log.info(f'User {user.username} tried to delete message {msg["id"]} in room {room.name}, but was denied (no permission)')
+            return ToUser(
+                session_id=context.session_id,
+                text=f"You don't have permission to delete message {msg['id']}",
+                is_error=True
+            )
 
 
 @register_command

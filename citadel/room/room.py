@@ -51,6 +51,7 @@ class Room:
     def __init__(self, db, config, identifier: int | str):
         self.db = db
         self.config = config
+        self.msg_mgr = MessageManager(self.config, self.db)
         self.room_id = identifier
         self.name = None
         self.description = None
@@ -268,11 +269,9 @@ class Room:
 
     async def filter_user_messages(self, user: User, msg_ids: list):
         # Filter out messages the user cannot read (privacy check)
-        from citadel.message.manager import MessageManager
-        msg_mgr = MessageManager(self.config, self.db)
         readable_ids = []
         for msg_id in msg_ids:
-            msg = await msg_mgr.get_message(msg_id, recipient_user=user)
+            msg = await self.msg_mgr.get_message(msg_id, recipient_user=user)
             if msg:  # Only include messages the user can read
                 readable_ids.append(msg_id)
         return readable_ids
@@ -299,8 +298,6 @@ class Room:
             raise PermissionDeniedError(
                 f"User {sender} cannot post in room {self.name}")
 
-        msg_mgr = MessageManager(self.config, self.db)
-
         # Prune if needed
         count_result = await self.db.execute(
             "SELECT COUNT(*) FROM room_messages WHERE room_id = ?", (self.room_id,)
@@ -309,18 +306,34 @@ class Room:
         max_messages = self.config.bbs["max_messages_per_room"]
         if current_count >= max_messages:
             oldest_id = await self.get_oldest_message_id()
-            if oldest_id:
-                await msg_mgr.delete_message(oldest_id)
-                await self.db.execute("DELETE FROM room_messages WHERE room_id = ? AND message_id = ?", (self.room_id, oldest_id))
+            self.delete_message(oldest_id)
 
         # Post and link
-        msg_id = await msg_mgr.post_message(sender, content, recipient)
+        msg_id = await self.msg_mgr.post_message(sender, content, recipient)
         timestamp = datetime.now(UTC).isoformat()
         await self.db.execute(
             "INSERT INTO room_messages (room_id, message_id, timestamp) VALUES (?, ?, ?)",
             (self.room_id, msg_id, timestamp)
         )
         return msg_id
+
+    async def delete_message(self, msg_id):
+        """Remove the specified message from the room.  This deletes
+        the message itself from the message database, as well as
+        removing the link to it from the room_messages table.  This
+        function DOES NOT validate that its use is permitted."""
+        try:
+            await self.msg_mgr.delete_message(msg_id)
+            await self.db.execute("""
+                DELETE FROM room_messages
+                WHERE room_id = ? AND message_id = ?""",
+                (self.room_id, msg_id)
+            )
+            log.info(f"Message {msg_id} deleted from room {self.name}")
+            return True
+        except RuntimeError as err:
+            log.error(f"Unable to delete message {msg_id} from {self.name}: {err}")
+        return False
 
     async def get_next_unread_message(self, user: User) -> dict | None:
         last_seen = self.get_last_unread_message_id(user)
@@ -332,8 +345,7 @@ class Room:
         # First visit - return the first message without marking it as seen yet
         if not last_seen:
             first_id = message_ids[0]
-            msg_mgr = MessageManager(self.config, self.db)
-            msg = await msg_mgr.get_message(first_id, recipient_user=user)
+            msg = await self.msg_mgr.get_message(first_id, recipient_user=user)
 
             # Mark this message as seen
             await self.db.execute(
@@ -349,8 +361,7 @@ class Room:
         except (ValueError, IndexError):
             return None
 
-        msg_mgr = MessageManager(self.config, self.db)
-        msg = await msg_mgr.get_message(next_id, recipient_user=user)
+        msg = await self.msg_mgr.get_message(next_id, recipient_user=user)
 
         # Advance pointer
         await self.advance_last_read(user, next_id)
@@ -428,6 +439,7 @@ class Room:
         # Delete room and cascade
         await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))
         Room._room_order.clear()
+        # TODO: remove linked messages from appropriate table
 
     @classmethod
     async def initialize_room_order(cls, db, config):

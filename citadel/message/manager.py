@@ -96,7 +96,7 @@ class MessageManager:
         must be cleaned up externally."""
         try:
             await self.db.execute("DELETE FROM messages WHERE id = ?", (message_id,))
-            log.info(f"Deleted message {message_id}")
+            log.info(f"Message {message_id} deleted from database")
             return True
         except Exception as e:
             log.error(f"Failed to delete message {message_id}: {e}")
@@ -106,7 +106,7 @@ class MessageManager:
         """returns the first msg_len characters of a message (which
         includes the sender and timestamp), as a string."""
         query = """
-            SELECT sender, recipient, content, timestamp
+            SELECT id, sender, recipient, content, timestamp
             FROM messages
             WHERE id = ?
         """
@@ -114,7 +114,7 @@ class MessageManager:
         if not result:
             return ""
 
-        sender, recipient, content, utc_timestamp = result[0]
+        msg_id, sender, recipient, content, utc_timestamp = result[0]
         timestamp = format_timestamp(self.config, utc_timestamp)
         sender_user = User(self.db, sender)
         await sender_user.load()
@@ -123,7 +123,7 @@ class MessageManager:
         except RuntimeError:
             display_name = sender
 
-        header = f'{display_name} {timestamp}: '
+        header = f'{msg_id} {display_name} {timestamp}: '
         is_blocked = await recipient_user.is_blocked(sender)
         if recipient_user and is_blocked:
             content = '[blocked]'

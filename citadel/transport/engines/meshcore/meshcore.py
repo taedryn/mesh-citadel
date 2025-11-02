@@ -318,9 +318,10 @@ class MeshCoreTransportEngine:
         if len(chunk) > 0:
             chunks.append(" ".join(chunk))
 
-        len_chunks = len(chunks)
-        for i in range(len_chunks):
-            chunks[i] += f'[{i+1}/{len_chunks}]'
+        if approx_chunks > 1:
+            len_chunks = len(chunks)
+            for i in range(len_chunks):
+                chunks[i] += f'[{i+1}/{len_chunks}]'
         return chunks
 
     #------------------------------------------------------------
