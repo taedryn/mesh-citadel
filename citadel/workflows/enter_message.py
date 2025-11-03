@@ -63,7 +63,10 @@ class EnterMessageWorkflow(Workflow):
                     error_code="invalid_recipient"
                 )
 
-            data["recipient"] = recipient
+            recip = User(context.db, context.config, recipient)
+            await recip.load()
+
+            data["recipient"] = recip.username
             context.session_mgr.set_workflow(
                 context.session_id,
                 WorkflowState(

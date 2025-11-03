@@ -22,13 +22,13 @@ bbs:
     twit: "Purgatory"               # Room ID 6
   registration:
     terms_required: true
-    terms: "To register with this system, you must agree to the following conditions of membership:\n
-  1. Bigotry or hatred will not be tolerated.\n
-  2. Be kind, and assume best intent.\n
-  3. No illegal content.\n
-  4. This is a welcoming, friendly community, and we expect everyone to respect all other members.\n
-  5. The sysop and aides are in charge, and you agree to abide by their decisions."
-  welcome_message: "Welcome to Tae's BBS, the first Citadel on the mesh. Please log in, or type 'new' to register as a new user"
+    terms: "To register, agree to these conditions:\n
+  1. Bigotry or hatred are not tolerated\n
+  2. Be kind; assume best intent\n
+  3. No illegal content\n
+  4. This is a welcoming, friendly community; respect all other members\n
+  5. Sysop/aide decisions are final\n"
+  welcome_message: "Tae's BBS, 1st Citadel on the mesh. Log in, or type 'new' to register"
 
 
 auth:

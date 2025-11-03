@@ -24,9 +24,7 @@ class RegisterUserWorkflow(Workflow):
 
     async def start(self, context):
         """Start the registration workflow by prompting for username."""
-        text = ("--Registration--\nPlease register for an account. "
-                "Your application will be reviewed by a sysop, but until then "
-                "you'll only have limited access.\n\nChoose a username:")
+        text = "1: Registration\n\nEnter a username:"
         return ToUser(
             session_id=context.session_id,
             text=text,
@@ -38,6 +36,13 @@ class RegisterUserWorkflow(Workflow):
 
         step = context.wf_state.step
         data = context.wf_state.data
+
+        if not 'step_num' in data:
+            step_num = 2
+            data['step_num'] = step_num
+        else:
+            step_num = data['step_num'] + 1
+            data['step_num'] = step_num
 
         # Cancellation is handled by transport layer, no need to check here
 
@@ -61,7 +66,7 @@ class RegisterUserWorkflow(Workflow):
             if await User.username_exists(db, username):
                 return ToUser(
                     session_id=context.session_id,
-                    text=f"'{username}' is already in use. Please try again.",
+                    text=f"'{username}' is already in use. Try again.",
                     is_error=True,
                     error_code="username_taken"
                 )
@@ -91,7 +96,7 @@ class RegisterUserWorkflow(Workflow):
 
             return ToUser(
                 session_id=context.session_id,
-                text="Choose a display name.",
+                text=f"{step_num}: Choose a display name.",
                 hints={"type": "text", "workflow": self.kind, "step": 2}
             )
 
@@ -119,7 +124,7 @@ class RegisterUserWorkflow(Workflow):
             )
             return ToUser(
                 session_id=context.session_id,
-                text="Choose a password.",
+                text=f"{step_num}: Choose a password.",
                 hints={"type": "password", "workflow": self.kind, "step": 3}
             )
 
@@ -151,7 +156,7 @@ class RegisterUserWorkflow(Workflow):
                     )
                     return ToUser(
                         session_id=context.session_id,
-                        text=f"{terms}\nDo you agree to the terms?",
+                        text=f"{step_num}: {terms}\nDo you agree to the terms?",
                         hints={"type": "choice", "options": [
                             "yes", "no"], "workflow": self.kind, "step": 4}
                     )
@@ -165,7 +170,7 @@ class RegisterUserWorkflow(Workflow):
             )
             return ToUser(
                 session_id=context.session_id,
-                text="Tell us a bit about yourself.",
+                text=f"{step_num}: Tell us about yourself.",
                 hints={"type": "text", "workflow": self.kind, "step": 5}
             )
 
@@ -193,7 +198,7 @@ class RegisterUserWorkflow(Workflow):
                     else:
                         return ToUser(
                             session_id=session_id,
-                            text="Registration cancelled due to terms rejection. Please reconnect to try again.",
+                            text="Registration cancelled. Reconnect to try again",
                             is_error=True,
                             error_code="terms_rejected_final"
                         )
@@ -208,7 +213,8 @@ class RegisterUserWorkflow(Workflow):
                 terms = context.config.bbs["registration"]["terms"]
                 return ToUser(
                     session_id=context.session_id,
-                    text=f"You must agree to the terms to continue. {attempts_left} attempt(s) remaining.\n\n{terms}\nDo you agree to the terms?",
+                    text=(f"{step_num}: You must agree to the terms. "
+                          f"{attempts_left} tries left.\n\n{terms}\nAgree?")
                     hints={"type": "choice", "options": [
                         "yes", "no"], "workflow": self.kind, "step": 4}
                 )
@@ -219,7 +225,7 @@ class RegisterUserWorkflow(Workflow):
             )
             return ToUser(
                 session_id=context.session_id,
-                text="Tell us a bit about yourself.",
+                text=f"{step_num}: Tell us a bit about yourself.",
                 hints={"type": "text", "workflow": self.kind, "step": 5}
             )
 
@@ -233,7 +239,7 @@ class RegisterUserWorkflow(Workflow):
             )
             return ToUser(
                 session_id=context.session_id,
-                text="Submit registration?",
+                text=f"{step_num}: Submit registration?",
                 hints={"type": "choice", "options": [
                     "yes", "no"], "workflow": self.kind, "step": 6}
             )
@@ -262,7 +268,7 @@ class RegisterUserWorkflow(Workflow):
                 context.session_mgr.clear_workflow(context.session_id)
                 return ToUser(
                     session_id=context.session_id,
-                    text="Welcome, Sysop! You now have full system access.",
+                    text=f"{step_num}: Welcome, Sysop! You now have full system access.",
                     hints={"prompt_next": True}
                 )
             else:
@@ -286,7 +292,7 @@ class RegisterUserWorkflow(Workflow):
             context.session_mgr.clear_workflow(context.session_id)
             return ToUser(
                 session_id=context.session_id,
-                text="Registration complete! You have limited access until an admin validates your account."
+                text=f"{step_num}: Registration complete! You have limited access until validated"
             )
 
         return ToUser(

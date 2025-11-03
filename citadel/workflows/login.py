@@ -29,7 +29,7 @@ class LoginWorkflow(Workflow):
             )
             return ToUser(
                 session_id=context.session_id,
-                text=f"{welcome}\n\nEnter your username:",
+                text=f"1: {welcome}\n\nEnter your username:",
                 hints={"type": "text", "workflow": self.kind, "step": 2}
             )
 
@@ -86,7 +86,7 @@ class LoginWorkflow(Workflow):
             )
             return ToUser(
                 session_id=context.session_id,
-                text="Enter your password:",
+                text="2: Enter your password:",
                 hints={"type": "password", "workflow": self.kind, "step": 3}
             )
 
@@ -145,8 +145,8 @@ class LoginWorkflow(Workflow):
             await room.load()
             return ToUser(
                 session_id=context.session_id,
-                text=(f"Welcome, {username}! You are now logged in.\n"
-                      f"Current room: {room.name}{mail_msg}")
+                text=(f"3: Welcome, {username}! You are now logged in.\n"
+                      f"{mail_msg}")
             )
 
         return ToUser(
