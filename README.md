@@ -8,6 +8,8 @@ py-meshcore.
 
 # In Progress
 
+Last updated Mon Nov  3 10:38:50 PST 2025
+
 **This is ALPHA software!**  It will fail if you look at it wrong.  Not
 quite [_Badtimes_ by Laika](https://genius.com/Laika-badtimes-lyrics)
 level, but give that a listen anyway.
@@ -22,26 +24,29 @@ things that are working right now:
 * Entering messages
 * Sending Mail (private messages)
 * Permission system
+* MeshCore communication
 
 There are _definitely_ still bugs and missing features, both in the BBS
-logic, and in the MeshCore integration.  The packet-sending system is
-marginal, and I've been testing between nodes that are in the same room.
-I can only imagine going across the mesh will be worse.
+logic, and in the MeshCore integration.  The basic MeshCore
+functionality seems to be about as good as I can get it for the moment,
+though my location is in a marginal area for consistent contact.
 
-If you log in to the test system (which I'll announce on the mesh, when
-it's ready to try out), you may see doubled messages; this is the
-system trying to compensate for MeshCore being kinda mostly ok at DMs,
-not a bug.
+I've got my system up much of the time now, if you're in the PugetMesh
+area, look for adverts from Tae's alpha BBS.  It's still missing a lot
+of features, and certainly still has bugs.
 
 # How to Citadel
 
-If the system is up, send any text to the node as a DM to start things
-off.  It will respond with prompts to log in, but the first time, you'll
-want to type "new" as your username, to register as a new user.
+1. Advert
+2. Send something via DM
+3. Login, or register by typing 'new' as the username
+4. Wait for the sysop to verify you
+5. Log back in
+6. Explore
 
-Once you're registered, a sysop or aide will need to verify you, which
-may take time.  Until it's solid enough to leave up full time, I'm the
-only sysop/aide, so have patience.
+Once you've completed the registration, a sysop or aide will need
+to verify you, which may take time.  Until it's solid enough to
+leave up full time, I'm the only sysop/aide, so have patience.
 
 Once you're verified, you'll be dropped in the Lobby, which is what it
 sounds like.  You might enjoy running the following commands.  Send the
@@ -75,6 +80,13 @@ expanding over time.  You can specify a particular command, to get more
 detailed help on that command (eg. send "H G" to get more help on the Goto
 command).
 
+### (K)nown rooms
+
+Show a list of rooms.  The character before the room is a minus symbol
+(-) if there are no new messages, and an asterisk (\*) if you have
+unread messages there.  Use G to go quickly to the next room with
+unread messages.
+
 ### (C)hange room
 
 This command takes an argument, which is the name of the room you want
@@ -90,6 +102,13 @@ respect user privacy.  Basically, if you've posted a message recently,
 you show up in the Who list when you're connected.  If you haven't
 posted recently (within the last 2 weeks), you _don't_ show up in the
 Who list.  Sysops and Aides can see everyone who's logged in, though.
+
+### (.C)reate room
+
+Note the leading period before the C.  This will allow you to create a
+new room, which will be placed after the system rooms, if you're in
+Lobby or Mail, or after the room you're currently in if you're outside
+the system rooms.
 
 # Contributions
 
@@ -131,10 +150,14 @@ I need to write a lot more on this, but the basic idea is, you find a
 computer (probably a Linux box -- Raspberry Pi Zero is the current
 target system, sorry Windows users), hook up a MeshCore USB Companion
 radio to it, run `pip install -r requirements.txt`, update the config.yaml
-file, and run `python main.py`.
+file, and run `python main.py`.  I like to create a virtual environment
+with `python -m venv .mesh-citadel` and then `source
+.mesh-citadel/bin/activate`, but that's not necessary, particularly if
+you're hosting on a Raspberry Pi that's only ever going to be used for
+the BBS.
 
 It'll spit out a bunch of logs, and you can call it with the `-d` flag
-to get a lot more logs.  It sends an advert on startup, and you can't
+to get a _lot_ more logs.  It sends an advert on startup, and you can't
 DM with it until it sees your advert, so you may have to advert before
 it'll respond.
 
