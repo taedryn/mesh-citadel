@@ -1,4 +1,5 @@
 import asyncio
+import argparse
 import logging
 import sys
 
@@ -14,16 +15,17 @@ from citadel.transport.manager import TransportManager
 
 log = None
 
-async def initialize_system(log_level=None):
+async def initialize_system(log_level=None, config_path=None):
     """Initialize all system components."""
     global log
-    config = Config()
+    config = Config(path=config_path) if config_path else Config()
     if log_level:
         config.logging["log_level"] = log_level
     initialize_logging(config)
 
     log = logging.getLogger('citadel')
     log.info(f'Starting {config.bbs["name"]}')
+    log.info(f'Mesh-Citadel software version {config.version} by taedryn')
 
     # Initialize database
     log.info('Starting database system')
@@ -59,19 +61,27 @@ async def shutdown(db_mgr, session_mgr, transport_mgr=None):
     log.info('Shutdown complete')
 
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Mesh-Citadel BBS Server')
+    parser.add_argument('-d', '--debug', action='store_true',
+                       help='Enable debug logging')
+    parser.add_argument('-c', '--config', type=str, default=None,
+                       help='Path to config file (default: config.yaml)')
+    return parser.parse_args()
+
+
 async def main():
     """Main entry point."""
     global log
     config = db_mgr = session_mgr = message_mgr = None
 
-    log_level = None
-    if len(sys.argv) > 1:
-        if sys.argv[1] == '-d':
-            log_level = "DEBUG"
+    args = parse_arguments()
+    log_level = "DEBUG" if args.debug else None
 
     try:
         # Initialize system components
-        config, db_mgr, session_mgr, message_mgr = await initialize_system(log_level)
+        config, db_mgr, session_mgr, message_mgr = await initialize_system(log_level, args.config)
 
         # Start transport layer
         transport_mgr = TransportManager(config, db_mgr, session_mgr)

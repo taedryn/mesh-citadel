@@ -89,6 +89,13 @@ class Config:
             for key in self._reboot_only_keys
         }
 
+        self.version = 'unknown'
+        try:
+            with open('VERSION', 'r') as fp:
+                self.version = fp.readline().strip()
+        except FileNotFoundError:
+            pass
+
     def reload(self):
         with open(self._path, "r", encoding="utf-8") as f:
             new_raw = yaml.safe_load(f) or {}
