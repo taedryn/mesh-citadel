@@ -594,7 +594,7 @@ class AdvertScheduler:
                 if self.meshcore:
                     # TODO: change this to flood=True when we're done
                     # testing quite so much
-                    flood = True
+                    flood = False
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:

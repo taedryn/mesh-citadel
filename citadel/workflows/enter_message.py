@@ -1,7 +1,8 @@
 # citadel/workflows/enter_message.py
+from citadel.message.errors import InvalidContentError
+from citadel.transport.packets import ToUser
 from citadel.workflows.base import Workflow
 from citadel.workflows.registry import register
-from citadel.transport.packets import ToUser
 from citadel.workflows.base import WorkflowState
 from citadel.room.room import Room, SystemRoomIDs
 from citadel.user.user import User
@@ -63,8 +64,16 @@ class EnterMessageWorkflow(Workflow):
                     error_code="invalid_recipient"
                 )
 
-            recip = User(context.db, context.config, recipient)
-            await recip.load()
+            recip = User(context.db, recipient)
+            try:
+                await recip.load()
+            except RuntimeError:
+                return ToUser(
+                    session_id=context.session_id,
+                    text="Recipient not found. Try again.",
+                    is_error=True,
+                    error_code="invalid_recipient"
+                )
 
             data["recipient"] = recip.username
             context.session_mgr.set_workflow(
@@ -89,12 +98,26 @@ class EnterMessageWorkflow(Workflow):
             if line == ".":
                 content = "\n".join(lines)
                 if room.room_id == SystemRoomIDs.MAIL_ID:
-                    msg_id = await room.post_message(
-                        state.username,
-                        content,
-                        data["recipient"])
+                    try:
+                        msg_id = await room.post_message(
+                            state.username,
+                            content,
+                            data["recipient"])
+                    except InvalidContentError:
+                        context.session_mgr.clear_workflow(context.session_id)
+                        return ToUser(
+                            session_id=context.session_id,
+                            text="Message cancelled"
+                        )
                 else:
-                    msg_id = await room.post_message(state.username, content)
+                    try:
+                        msg_id = await room.post_message(state.username, content)
+                    except InvalidContentError:
+                        context.session_mgr.clear_workflow(context.session_id)
+                        return ToUser(
+                            session_id=context.session_id,
+                            text="Message cancelled"
+                        )
 
                 context.session_mgr.clear_workflow(context.session_id)
                 return ToUser(
