@@ -214,7 +214,7 @@ class RegisterUserWorkflow(Workflow):
                 return ToUser(
                     session_id=context.session_id,
                     text=(f"{step_num}: You must agree to the terms. "
-                          f"{attempts_left} tries left.\n\n{terms}\nAgree?")
+                          f"{attempts_left} tries left.\n\n{terms}\nAgree?"),
                     hints={"type": "choice", "options": [
                         "yes", "no"], "workflow": self.kind, "step": 4}
                 )
