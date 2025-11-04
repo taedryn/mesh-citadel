@@ -27,7 +27,7 @@ def reset_config_singleton():
 def test_basic_load(temp_config_dir):
     reset_config_singleton()
     config_path = os.path.join(temp_config_dir, "config.yaml")
-    write_config(config_path, "bbs:\n  system_name: 'Test Citadel'")
+    write_config(config_path, "system:\n  name: 'Test Citadel'\nbbs:\n  system_name: 'Test Citadel'")
     cfg = Config(config_path)
     assert cfg.bbs["system_name"] == "Test Citadel"
     assert cfg.bbs["max_messages_per_room"] == 300  # from defaults
@@ -37,7 +37,7 @@ def test_env_override(monkeypatch, temp_config_dir):
     reset_config_singleton()
     monkeypatch.setenv("CITADEL_BBS__SYSTEM_NAME", "Env Citadel")
     config_path = os.path.join(temp_config_dir, "config.yaml")
-    write_config(config_path, "bbs:\n  system_name: 'File Citadel'")
+    write_config(config_path, "system:\n  name: 'File Citadel'\nbbs:\n  system_name: 'File Citadel'")
     cfg = Config(config_path)
     assert cfg.bbs["system_name"] == "Env Citadel"
 
@@ -60,7 +60,7 @@ def test_bad_yaml_format(temp_config_dir):
 def test_invalid_value_type(temp_config_dir):
     reset_config_singleton()
     config_path = os.path.join(temp_config_dir, "config.yaml")
-    write_config(config_path, "bbs:\n  max_messages_per_room: 'not a number'")
+    write_config(config_path, "system:\n  name: 'Test'\nbbs:\n  max_messages_per_room: 'not a number'")
     with pytest.raises(AssertionError):
         Config(config_path)
 
@@ -69,7 +69,7 @@ def test_reload_preserves_reboot_only_keys(temp_config_dir):
     reset_config_singleton()
     config_path = os.path.join(temp_config_dir, "config.yaml")
     write_config(
-        config_path, "bbs:\n  system_name: 'Initial'\n  max_messages_per_room: 300")
+        config_path, "system:\n  name: 'Initial'\nbbs:\n  system_name: 'Initial'\n  max_messages_per_room: 300")
     cfg = Config(config_path)
     write_config(
         config_path, "bbs:\n  system_name: 'Updated'\n  max_messages_per_room: 999")
@@ -80,8 +80,8 @@ def test_reload_preserves_reboot_only_keys(temp_config_dir):
 def test_reload_allows_safe_changes(temp_config_dir):
     reset_config_singleton()
     config_path = os.path.join(temp_config_dir, "config.yaml")
-    write_config(config_path, "bbs:\n  system_name: 'Initial'")
+    write_config(config_path, "system:\n  name: 'Initial'\nbbs:\n  system_name: 'Initial'")
     cfg = Config(config_path)
-    write_config(config_path, "bbs:\n  system_name: 'Updated'")
+    write_config(config_path, "system:\n  name: 'Updated'\nbbs:\n  system_name: 'Updated'")
     cfg.reload()
     assert cfg.bbs["system_name"] == "Updated"

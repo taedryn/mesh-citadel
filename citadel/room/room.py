@@ -308,7 +308,7 @@ class Room:
         max_messages = self.config.bbs["max_messages_per_room"]
         if current_count >= max_messages:
             oldest_id = await self.get_oldest_message_id()
-            self.delete_message(oldest_id)
+            await self.delete_message(oldest_id)
 
         # Post and link
         msg_id = await self.msg_mgr.post_message(sender, content, recipient)

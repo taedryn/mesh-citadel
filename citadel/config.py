@@ -13,6 +13,9 @@ class Config:
     _initialized = False
 
     _defaults = {
+        "system": {
+            "name": "Mesh-Citadel"
+        },
         "bbs": {
             "system_name": "Mesh-Citadel",
             "max_messages_per_room": 300,
@@ -33,7 +36,8 @@ class Config:
             ]
         },
         "transport": {
-            "cli": {"socket": "/tmp/mesh-citadel.sock"}
+            "cli": {"socket": "/tmp/mesh-citadel.sock"},
+            "serial_port": "/dev/ttyUSB0"
         },
         "database": {
             "db_path": "citadel.db",
