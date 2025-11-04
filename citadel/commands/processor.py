@@ -99,20 +99,33 @@ class CommandProcessor:
             )
 
         command = packet.payload
+        log.debug(f"FREEZE-DEBUG: Processing command: {command.name} for session {session_id}")
 
         # Permission check
+        log.debug(f"FREEZE-DEBUG: Creating User object for {state.username}")
         user = User(self.db, state.username)
+        log.debug(f"FREEZE-DEBUG: Starting User.load() for {state.username}")
         await user.load()
+        log.debug(f"FREEZE-DEBUG: User.load() completed for {state.username}")
+
         room = None
         if state.current_room:
+            log.debug(f"FREEZE-DEBUG: Creating Room object for room {state.current_room}")
             room = Room(self.db, self.config, state.current_room)
+            log.debug(f"FREEZE-DEBUG: Starting Room.load() for room {state.current_room}")
             await room.load()
+            log.debug(f"FREEZE-DEBUG: Room.load() completed for room {state.current_room}")
 
+        log.debug(f"FREEZE-DEBUG: Checking permissions for command {command.name}")
         if not is_allowed(command.name, user, room):
+            log.debug(f"FREEZE-DEBUG: Permission denied for command {command.name}")
             return permission_denied(session_id, command.name, user, room)
+
+        log.debug(f"FREEZE-DEBUG: Permission check passed for command {command.name}")
 
         # 6. Execute command via its run method
         try:
+            log.debug(f"FREEZE-DEBUG: Creating CommandContext for {command.name}")
             context = CommandContext(
                 db=self.db,
                 config=self.config,
@@ -120,7 +133,10 @@ class CommandProcessor:
                 msg_mgr=self.msg_mgr,
                 session_id=session_id,
             )
-            return await command.run(context)
+            log.debug(f"FREEZE-DEBUG: Starting command.run() for {command.name}")
+            result = await command.run(context)
+            log.debug(f"FREEZE-DEBUG: Command.run() completed for {command.name}")
+            return result
         except RuntimeError as e:
             log.error(f"Command execution failed: {e}")
             return ToUser(

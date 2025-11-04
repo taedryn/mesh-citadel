@@ -2,6 +2,8 @@ from dataclasses import dataclass
 import logging
 
 from citadel.auth.permissions import PermissionLevel
+
+log = logging.getLogger(__name__)
 from citadel.user.user import User
 from citadel.message.manager import MessageManager
 from citadel.message.errors import InvalidContentError
@@ -63,15 +65,21 @@ class Room:
 
     # this must be called on every object after instantiation
     async def load(self, force=False):
+        log.debug(f"FREEZE-DEBUG: Room.load() called for room {self.room_id}, loaded={self._loaded}, force={force}")
         if self._loaded and not force:
+            log.debug(f"FREEZE-DEBUG: Room {self.room_id} already loaded, skipping")
             return
+        log.debug(f"FREEZE-DEBUG: Getting room ID for {self.room_id}")
         self.room_id = await self.get_room_id(self.room_id)
+        log.debug(f"FREEZE-DEBUG: Executing room query for {self.room_id}")
         result = await self.db.execute(
             "SELECT name, description, read_only, permission_level, next_neighbor, prev_neighbor FROM rooms WHERE id = ?",
             (self.room_id,)
         )
+        log.debug(f"FREEZE-DEBUG: Room query completed for {self.room_id}, found: {bool(result)}")
         if not result:
             raise RoomNotFoundError(f"Room {self.room_id} does not exist.")
+        log.debug(f"FREEZE-DEBUG: Setting room fields for {self.room_id}")
         self.name = result[0][0]
         self.description = result[0][1]
         self.read_only = result[0][2]
@@ -79,6 +87,7 @@ class Room:
         self.next_neighbor = result[0][4]
         self.prev_neighbor = result[0][5]
         self._loaded = True
+        log.debug(f"FREEZE-DEBUG: Room.load() completed for {self.room_id}")
 
     @classmethod
     async def get_id_by_name(cls, db, name: str) -> int:

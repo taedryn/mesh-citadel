@@ -6,6 +6,8 @@ from typing import Optional
 from citadel.auth.passwords import verify_password
 from citadel.auth.permissions import PermissionLevel
 
+log = logging.getLogger(__name__)
+
 
 class UserStatus(str, Enum):
     PROVISIONAL = "provisional"
@@ -27,14 +29,20 @@ class User:
 
     # this must be called for every User invocation
     async def load(self, force=False):
+        log.debug(f"FREEZE-DEBUG: User.load() called for {self.username}, loaded={self._loaded}, force={force}")
         if self._loaded and not force:
+            log.debug(f"FREEZE-DEBUG: User {self.username} already loaded, skipping")
             return
+        log.debug(f"FREEZE-DEBUG: Executing user query for {self.username}")
         query = "SELECT * FROM users WHERE username = ?"
         result = await self.db.execute(query, (self.username,))
+        log.debug(f"FREEZE-DEBUG: User query completed for {self.username}, found: {bool(result)}")
         if not result:
             raise RuntimeError(f"User '{self.username}' not found.")
+        log.debug(f"FREEZE-DEBUG: Converting user row to fields for {self.username}")
         self._row_to_fields(result[0])
         self._loaded = True
+        log.debug(f"FREEZE-DEBUG: User.load() completed for {self.username}")
 
     def _row_to_fields(self, row: tuple):
         self.id = row[0]

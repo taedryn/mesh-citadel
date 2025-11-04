@@ -463,41 +463,65 @@ class MeshCoreTransportEngine:
 
         # Authentication and workflow processing
         try:
+            log.debug(f"FREEZE-DEBUG: Starting password cache check for {node_id}")
             username = await self._node_has_password_cache(node_id)
+            log.debug(f"FREEZE-DEBUG: Password cache check completed, username={username}")
+
+            log.debug(f"FREEZE-DEBUG: Getting workflow state for session {session_id}")
             wf_state = self.session_mgr.get_workflow(session_id)
+            log.debug(f"FREEZE-DEBUG: Workflow state retrieved: {wf_state}")
 
             if wf_state:
+                log.debug(f"FREEZE-DEBUG: Processing workflow response")
                 packet = FromUser(
                     session_id=session_id,
                     payload_type=FromUserType.WORKFLOW_RESPONSE,
                     payload=text
                 )
+                log.debug(f"FREEZE-DEBUG: Workflow packet created")
             elif username:
+                log.debug(f"FREEZE-DEBUG: Processing authenticated user {username}")
+
+                log.debug(f"FREEZE-DEBUG: Starting touch_password_cache")
                 await self.touch_password_cache(username, node_id)
+                log.debug(f"FREEZE-DEBUG: touch_password_cache completed")
+
+                log.debug(f"FREEZE-DEBUG: Starting set_cache_username")
                 await self.set_cache_username(username, node_id)
+                log.debug(f"FREEZE-DEBUG: set_cache_username completed")
+
+                log.debug(f"FREEZE-DEBUG: Marking session as logged in")
                 self.session_mgr.mark_logged_in(session_id, True)
                 self.session_mgr.mark_username(session_id, username)
+                log.debug(f"FREEZE-DEBUG: Session marked as logged in")
 
                 # Handle welcome back vs. regular command
                 if is_new_session:
                     # This is a reconnection after timeout - send welcome back message
-                    log.info(f"Sending reconnection msg for {username} from node {node_id}")
+                    log.debug(f"FREEZE-DEBUG: Welcome back reconnection for {username} from node {node_id}")
                     welcome_msg = f"Welcome back, {username}! You've been automatically logged in"
+
+                    log.debug(f"FREEZE-DEBUG: Sending welcome back message")
                     await self.send_to_node(session_id, welcome_msg)
+                    log.debug(f"FREEZE-DEBUG: Welcome back message sent, returning")
 
                     # For welcome back, we'll just send them to the lobby with a prompt
                     # Any text they sent is ignored - this was just to reconnect
                     return
 
                 # Process their command normally (existing session)
+                log.debug(f"FREEZE-DEBUG: Parsing command text: {text}")
                 command = self.text_parser.parse_command(text)
+                log.debug(f"FREEZE-DEBUG: Command parsed: {command}")
+
                 packet = FromUser(
                     session_id=session_id,
                     payload_type=FromUserType.COMMAND,
                     payload=command
                 )
+                log.debug(f"FREEZE-DEBUG: Command packet created")
             else:
-                log.debug(f'No pw cache found for {node_id}, sending to login')
+                log.info(f'FREEZE-DEBUG: No pw cache found for {node_id}, sending to login')
                 return await self._start_login_workflow(session_id, node_id)
         except Exception as e:
             log.exception(f"Authentication/workflow processing failed for {node_id}")
@@ -509,20 +533,38 @@ class MeshCoreTransportEngine:
 
         # Command processing and response
         try:
+            log.debug(f"FREEZE-DEBUG: Starting command processor for session {session_id}")
             touser = await self.command_processor.process(packet)
+            log.debug(f"FREEZE-DEBUG: Command processor completed, result type: {type(touser)}")
+
             # pause the bbs just a moment before sending the command response
+            log.debug(f"FREEZE-DEBUG: Starting inter-packet delay")
             inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
             await asyncio.sleep(inter_packet_delay)
+            log.debug(f"FREEZE-DEBUG: Inter-packet delay completed")
 
             if isinstance(touser, list):
+                log.debug(f"FREEZE-DEBUG: Processing response list with {len(touser)} messages")
                 last_msg = len(touser) - 1
                 for i, msg in enumerate(touser):
+                    log.debug(f"FREEZE-DEBUG: Processing message {i+1}/{len(touser)}")
                     if i == last_msg:
+                        log.debug(f"FREEZE-DEBUG: Inserting prompt for final message")
                         msg = await self.insert_prompt(session_id, msg)
+                        log.debug(f"FREEZE-DEBUG: Prompt insertion completed")
+                    log.debug(f"FREEZE-DEBUG: Sending message {i+1} to node")
                     await self.send_to_node(session_id, msg)
+                    log.debug(f"FREEZE-DEBUG: Message {i+1} sent successfully")
             else:
+                log.debug(f"FREEZE-DEBUG: Processing single response message")
+                log.debug(f"FREEZE-DEBUG: Inserting prompt for single message")
                 touser = await self.insert_prompt(session_id, touser)
+                log.debug(f"FREEZE-DEBUG: Prompt insertion completed")
+                log.debug(f"FREEZE-DEBUG: Sending single message to node")
                 await self.send_to_node(session_id, touser)
+                log.debug(f"FREEZE-DEBUG: Single message sent successfully")
+
+            log.debug(f"FREEZE-DEBUG: Message processing pipeline completed for session {session_id}")
         except Exception as e:
             log.exception(f"Command processing/response failed for {node_id}")
             try:
