@@ -60,7 +60,7 @@ transport:
     max_retries: 3                    # tune these for your conditions
     max_flood_attempts: 3             # flood mode retries
     flood_after: 2                    # switch to flood after N attempts
-    ack_timeout: 8                    # increased from 3 to 8 seconds
+    ack_timeout: 10                   # increased from 3 to 8 seconds
     send_timeout: 0                   # 0 = use dynamic timeout from library
     inter_packet_delay: 6             # seconds between packets
     max_packet_size: 150              # calculated: 184 (MAX_PACKET_PAYLOAD) - 9 (headers) - 15 (encryption padding)
