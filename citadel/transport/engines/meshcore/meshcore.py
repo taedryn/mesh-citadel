@@ -88,7 +88,7 @@ class MeshCoreTransportEngine:
         result = await mc.commands.set_time(now)
         from citadel.transport.manager import TransportError
         if result.type == EventType.ERROR:
-            raise TransportError(f"Unable to sync time: {result.payload}")
+            log.warning(f"Unable to sync time: {result.payload}")
 
         log.info(f"Setting MeshCore frequency to {frequency} MHz")
         log.info(f"Setting MeshCore bandwidth to {bandwidth} kHz")
@@ -287,6 +287,8 @@ class MeshCoreTransportEngine:
         ack_timeout = self.mc_config.get("ack_timeout", 8)  # Increased from 5 to 8 seconds
         log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
 
+        # this can fail if the user's node is too close; the ACK arrives
+        # before this listener is registered. not actually a problem.
         ack = await self.meshcore.wait_for_event(
             EventType.ACK,
             attribute_filters={"code": exp_ack},
@@ -396,21 +398,32 @@ class MeshCoreTransportEngine:
         try:
             self.subs.append(self.meshcore.subscribe(
                 EventType.CONTACT_MSG_RECV,
-                self._handle_mc_message
+                self.safe_handler(self._handle_mc_message)
             ))
             self.subs.append(self.meshcore.subscribe(
                 EventType.ADVERTISEMENT,
-                self.contact_manager.handle_advert
+                self.safe_handler(self.contact_manager.handle_advert)
             ))
             self.subs.append(self.meshcore.subscribe(
                 EventType.NEW_CONTACT,
-                self.contact_manager.handle_advert
+                self.safe_handler(self.contact_manager.handle_advert)
             ))
             await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
         except Exception as e:
             log.error(f"Failed to register handlers: {e}")
             raise
+
+    # with any luck, this will catch whatever is halting the event processing
+    # loop.  Search for this "Handler X crashed" string in the log file if
+    # the bbs goes silent again.
+    def safe_handler(self, handler):
+        async def wrapper(*args, **kwargs):
+            try:
+                await handler(*args, **kwargs)
+            except Exception as e:
+                log.exception(f"Handler {handler.__name__} crashed: {e}")
+        return wrapper
 
     async def _handle_mc_message(self, event):
         """Handle incoming messages with comprehensive exception protection."""
@@ -573,32 +586,6 @@ class MeshCoreTransportEngine:
                 pass
 
 
-    async def _handle_mc_advert(self, event):
-        log.debug(f"Received advert packet: {event}")
-        try:
-            pubkey = event.payload['public_key']
-            node_id = pubkey[:16]
-
-            await self.db.execute(
-                """
-                INSERT INTO mc_adverts (node_id, public_key, last_heard)
-                VALUES (?, ?, ?)
-                ON CONFLICT(node_id) DO UPDATE SET
-                    public_key = excluded.public_key,
-                    last_heard = excluded.last_heard
-                """,
-                (
-                    node_id,
-                    pubkey,
-                    datetime.now(UTC).isoformat(),
-                )
-            )
-            log.info(f"Updated advert for node {node_id}")
-        except KeyError as e:
-            log.error(f"Missing required field in advert from {node_id}: {e}")
-        except (TypeError, ValueError) as e:
-            log.error(f"Invalid advert data format from {node_id}: {e}")
-
     #------------------------------------------------------------
     # other helper methods
     #------------------------------------------------------------
@@ -638,16 +625,20 @@ class MeshCoreTransportEngine:
         least every 2 weeks."""
         days = self.config.auth.get("password_cache_duration", 14)
         query = "SELECT last_pw_use, username FROM mc_passwd_cache WHERE node_id = ?"
-        result = await self.db.execute(query, (node_id,))
-        if result:
-            dt = datetime.strptime(result[0][0], "%Y-%m-%d %H:%M:%S")
-            two_weeks_ago = datetime.now() - timedelta(days=days)
-            if dt < two_weeks_ago:
-                log.debug(f"Password cache for {node_id} is expired")
-                return False # cache is expired
-            return result[0][1] # username, cache is valid
-        log.debug(f'No passwd cache DB result: "{result}"')
-        return False # has no cache at all
+        try:
+            result = await self.db.execute(query, (node_id,))
+            if result:
+                dt = datetime.strptime(result[0][0], "%Y-%m-%d %H:%M:%S")
+                two_weeks_ago = datetime.now() - timedelta(days=days)
+                if dt < two_weeks_ago:
+                    log.debug(f"Password cache for {node_id} is expired")
+                    return False # cache is expired
+                return result[0][1] # username, cache is valid
+            log.debug(f'No passwd cache DB result: "{result}"')
+            return False # has no cache at all
+        except Exception as e:
+            log.exception(f"Uncaught exception checking for password cache for {node_id}: {e}")
+            return False
 
     async def set_cache_username(self, username: str, node_id: str):
         """this must be called after update_password_cache to

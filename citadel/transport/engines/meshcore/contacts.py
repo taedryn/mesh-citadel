@@ -57,39 +57,42 @@ class ContactManager:
 
     async def handle_advert(self, event):
         """Handle incoming advertisement - only store chat nodes."""
-        advert_data = event.payload
+        try:
+            advert_data = event.payload
 
-        public_key = advert_data.get('public_key', '')
-        if not public_key:
-            log.warning("Advertisement missing public key")
-            return
+            public_key = advert_data.get('public_key', '')
+            if not public_key:
+                log.warning("Advert missing public key")
+                return
 
-        node_id = public_key[:16]
+            node_id = public_key[:16]
 
-        # Query meshcore device for full contact details
-        if event.type == EventType.NEW_CONTACT:
-            contact_details = advert_data
-        else:
-            contact_details = await self._get_contact_details(public_key)
-        if not contact_details:
-            log.debug(f"Could not retrieve contact details for {node_id}")
-            return
+            # Query meshcore device for full contact details
+            if event.type == EventType.NEW_CONTACT:
+                contact_details = advert_data
+            else:
+                contact_details = await self._get_contact_details(public_key)
+            if not contact_details:
+                log.debug(f"Could not retrieve contact details for {node_id}")
+                return
 
-        if not self._is_chat_node(contact_details):
-            log.debug(f"Rejecting non-chat node: {contact_details}")
-            return  # Not a chat node, ignore
+            if not self._is_chat_node(contact_details):
+                log.debug(f"Rejecting non-chat node: {contact_details}")
+                return  # Not a chat node, ignore
 
-        name = contact_details.get('adv_name', contact_details.get('name', 'Unknown'))
+            name = contact_details.get('adv_name', contact_details.get('name', 'Unknown'))
 
-        await self._update_contact_record(node_id, contact_details)
+            await self._update_contact_record(node_id, contact_details)
 
-        self._contacts_cache[node_id] = name
+            self._contacts_cache[node_id] = name
 
-        # Trigger cleanup if we're approaching limits
-        await self._cleanup_if_needed()
-        await self.add_node(node_id)
+            # Trigger cleanup if we're approaching limits
+            await self._cleanup_if_needed()
+            await self.add_node(node_id)
 
-        log.info(f"Recorded advert: {name} ({node_id})")
+            log.info(f"Recorded advert: {name} ({node_id})")
+        except Exception as e:
+            log.exception(f"Unhandled exception in handle_advert: {e}")
 
     async def _get_contact_details(self, public_key: str):
         """Get full contact details from the meshcore device."""
