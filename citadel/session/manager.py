@@ -97,7 +97,7 @@ class SessionManager:
                 if self.notification_callback and node_id:
                     try:
                         self.notification_callback(
-                            session_id, "You have been logged out due to inactivity.")
+                            session_id, "You have been logged out due to inactivity. Send any message to reconnect.")
                         log.info(
                             f"Logout notification sent to username='{username}'")
                     except (OSError, RuntimeError) as e:
