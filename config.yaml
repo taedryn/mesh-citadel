@@ -55,6 +55,7 @@ transport:
     tx_power: 1                       # dBm
 
     advert_interval: 8                # hours
+    flood_advert: true                # should BBS adverts flood
 
     max_retries: 3                    # tune these for your conditions
     max_flood_attempts: 3             # flood mode retries
