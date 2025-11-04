@@ -40,7 +40,7 @@ async def setup_user_and_session(config):
     await user.set_permission_level(PermissionLevel.USER)
 
     # Create session
-    session_id = await session_mgr.create_session('testuser')
+    session_id = session_mgr.create_session('testuser')
 
     yield db, session_mgr, session_id, user
 
@@ -118,6 +118,7 @@ async def test_help_menu_generation(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_username(session_id, 'testuser')
     processor.sessions.mark_logged_in(session_id)
 
     # Create help command
@@ -145,6 +146,7 @@ async def test_specific_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_username(session_id, 'testuser')
     processor.sessions.mark_logged_in(session_id)
 
     # Test help for a specific implemented command
@@ -171,6 +173,7 @@ async def test_unimplemented_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_username(session_id, 'testuser')
     processor.sessions.mark_logged_in(session_id)
 
     # Test help for an unimplemented command
@@ -197,6 +200,7 @@ async def test_unknown_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_username(session_id, 'testuser')
     processor.sessions.mark_logged_in(session_id)
 
     # Test help for unknown command
@@ -220,6 +224,7 @@ async def test_menu_command_works_same_as_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
+    processor.sessions.mark_username(session_id, 'testuser')
     processor.sessions.mark_logged_in(session_id)
 
     # Test both commands with same args

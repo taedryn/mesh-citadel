@@ -138,7 +138,7 @@ class MeshCoreTransportEngine:
         # set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
         self.scheds.append(scheduler)
-        self.tasks.append(asyncio.create_task(scheduler.interval_advert()))
+        self.tasks.append(self._create_monitored_task(scheduler.interval_advert(), f"advert_scheduler_{len(self.scheds)}"))
         self.meshcore = mc
 
         # Set up the appropriate send method based on what's available
@@ -188,6 +188,19 @@ class MeshCoreTransportEngine:
 
             self.send_msg = send_with_manual_retry
             log.debug("send_msg_with_retry not available, using manual retry wrapper")
+
+    def _create_monitored_task(self, coro, name: str = "unnamed"):
+        """Create a task with exception monitoring to catch fire-and-forget failures."""
+        task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: self._handle_task_exception(t, name))
+        return task
+
+    def _handle_task_exception(self, task: asyncio.Task, name: str):
+        """Handle exceptions from fire-and-forget tasks."""
+        if task.exception():
+            log.exception(f"Fire-and-forget task '{name}' failed: {task.exception()}")
+        else:
+            log.debug(f"Task '{name}' completed successfully")
 
     async def stop(self):
         if self._running:
@@ -357,7 +370,7 @@ class MeshCoreTransportEngine:
                     log.error(f"Error in listener for {session_id}: {e}")
                     await self.send_to_node(session_id, f"ERROR: {e}\n")
 
-        task = asyncio.create_task(listen())
+        task = self._create_monitored_task(listen(), f"bbs_listener_{session_id}")
         self.listeners[session_id] = task
 
     #------------------------------------------------------------
@@ -385,55 +398,108 @@ class MeshCoreTransportEngine:
             raise
 
     async def _handle_mc_message(self, event):
-        log.debug(f"Received message event: {event}")
-        data = event.payload
-        node_id = data['pubkey_prefix']
-        text = data['text']
-        if await self.dedupe.is_duplicate(node_id, text):
-            log.debug(f'Oops, {node_id}: {text} is a dupe, skipping')
+        """Handle incoming messages with comprehensive exception protection."""
+        try:
+            log.debug(f"Received message event: {event}")
+            await self._process_mc_message_safe(event)
+        except Exception as e:
+            log.exception(f"CRITICAL: Message handler exception - event subscription preserved: {e}")
+            # Don't re-raise - that would break the subscription
+            # Try to send error message if we can extract basic info
+            try:
+                if hasattr(event, 'payload') and isinstance(event.payload, dict) and 'pubkey_prefix' in event.payload:
+                    node_id = event.payload['pubkey_prefix']
+                    session_id = self.session_mgr.get_session_by_node_id(node_id)
+                    if session_id:
+                        await self.send_to_node(session_id, "System temporarily unavailable. Please try again.")
+                        log.info(f"Sent error message to node {node_id}")
+            except Exception as recovery_error:
+                log.exception(f"Failed to send error message to user: {recovery_error}")
+
+    async def _process_mc_message_safe(self, event):
+        """The actual message processing logic, separated for better error handling."""
+        # Extract and validate event data
+        try:
+            data = event.payload
+            node_id = data['pubkey_prefix']
+            text = data['text']
+        except (KeyError, AttributeError, TypeError) as e:
+            log.error(f"Malformed message event - missing required fields: {e}")
             return
 
-        session_id = self.session_mgr.get_session_by_node_id(node_id)
-        if not session_id:
-            session_id = self.session_mgr.create_session(node_id)
-            await self.start_bbs_listener(session_id)
-            
-        username = await self._node_has_password_cache(node_id)
-        wf_state = self.session_mgr.get_workflow(session_id)
+        # Check for duplicates with error handling
+        try:
+            if await self.dedupe.is_duplicate(node_id, text):
+                log.debug(f'Duplicate message from {node_id}, skipping')
+                return
+        except Exception as e:
+            log.warning(f"Deduplication check failed for {node_id}: {e} - continuing with processing")
 
-        if wf_state:
-            packet = FromUser(
-                session_id=session_id,
-                payload_type=FromUserType.WORKFLOW_RESPONSE,
-                payload=text
-            )
-        elif username:
-            await self.touch_password_cache(username, node_id)
-            await self.set_cache_username(username, node_id)
-            self.session_mgr.mark_logged_in(session_id, True)
-            self.session_mgr.mark_username(session_id, username)
-            command = self.text_parser.parse_command(text)
-            packet = FromUser(
-                session_id=session_id,
-                payload_type=FromUserType.COMMAND,
-                payload=command
-            )
-        else:
-            log.debug(f'No pw cache found for {node_id}, sending to login')
-            return await self._start_login_workflow(session_id, node_id) 
-        touser = await self.command_processor.process(packet)
-        # pause the bbs just a moment before sending the command response
-        inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
-        await asyncio.sleep(inter_packet_delay)
-        if isinstance(touser, list):
-            last_msg = len(touser) - 1
-            for i, msg in enumerate(touser):
-                if i == last_msg:
-                    msg = await self.insert_prompt(session_id, msg)
-                await self.send_to_node(session_id, msg)
-        else:
-            touser = await self.insert_prompt(session_id, touser)
-            await self.send_to_node(session_id, touser)
+        # Session management with error handling
+        try:
+            session_id = self.session_mgr.get_session_by_node_id(node_id)
+            if not session_id:
+                session_id = self.session_mgr.create_session(node_id)
+                await self.start_bbs_listener(session_id)
+        except Exception as e:
+            log.exception(f"Session management failed for {node_id}")
+            return  # Can't proceed without session
+
+        # Authentication and workflow processing
+        try:
+            username = await self._node_has_password_cache(node_id)
+            wf_state = self.session_mgr.get_workflow(session_id)
+
+            if wf_state:
+                packet = FromUser(
+                    session_id=session_id,
+                    payload_type=FromUserType.WORKFLOW_RESPONSE,
+                    payload=text
+                )
+            elif username:
+                await self.touch_password_cache(username, node_id)
+                await self.set_cache_username(username, node_id)
+                self.session_mgr.mark_logged_in(session_id, True)
+                self.session_mgr.mark_username(session_id, username)
+                command = self.text_parser.parse_command(text)
+                packet = FromUser(
+                    session_id=session_id,
+                    payload_type=FromUserType.COMMAND,
+                    payload=command
+                )
+            else:
+                log.debug(f'No pw cache found for {node_id}, sending to login')
+                return await self._start_login_workflow(session_id, node_id)
+        except Exception as e:
+            log.exception(f"Authentication/workflow processing failed for {node_id}")
+            try:
+                await self.send_to_node(session_id, "Authentication error. Please try again.")
+            except:
+                pass
+            return
+
+        # Command processing and response
+        try:
+            touser = await self.command_processor.process(packet)
+            # pause the bbs just a moment before sending the command response
+            inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+            await asyncio.sleep(inter_packet_delay)
+
+            if isinstance(touser, list):
+                last_msg = len(touser) - 1
+                for i, msg in enumerate(touser):
+                    if i == last_msg:
+                        msg = await self.insert_prompt(session_id, msg)
+                    await self.send_to_node(session_id, msg)
+            else:
+                touser = await self.insert_prompt(session_id, touser)
+                await self.send_to_node(session_id, touser)
+        except Exception as e:
+            log.exception(f"Command processing/response failed for {node_id}")
+            try:
+                await self.send_to_node(session_id, "Command processing error. Please try again.")
+            except:
+                pass
 
 
     async def _handle_mc_advert(self, event):
@@ -540,8 +606,8 @@ class MeshCoreTransportEngine:
                 # Look up session state to get node_id
                 state = self.session_mgr.get_session_state(session_id)
                 if state and state.node_id:
-                    # Use asyncio to schedule the async send_to_node call
-                    asyncio.create_task(self.send_to_node(session_id, message))
+                    # Use monitored task to schedule the async send_to_node call
+                    self._create_monitored_task(self.send_to_node(session_id, message), f"logout_notification_{session_id}")
                     log.debug(f"Scheduled logout notification for session {session_id}")
                 else:
                     log.warning(f"Cannot send logout notification - no node_id for session {session_id}")
