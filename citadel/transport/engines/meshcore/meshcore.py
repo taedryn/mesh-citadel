@@ -229,12 +229,14 @@ class MeshCoreTransportEngine:
             text = message
         # Get configured packet size (calculated from MeshCore packet structure)
         max_packet_length = self.mc_config.get("max_packet_size", 140)
-        node_id = self.session_mgr.get_session_state(session_id).node_id
+        state = self.session_mgr.get_session_state(session_id)
+        node_id = state.node_id
+        username = state.username
 
         packets = self._chunk_message(text, max_packet_length)
         inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
         for packet in packets:
-            sent = await self._send_packet(node_id, packet)
+            sent = await self._send_packet(username, node_id, packet)
             await asyncio.sleep(inter_packet_delay)
 
     #------------------------------------------------------------
@@ -251,20 +253,20 @@ class MeshCoreTransportEngine:
         content = "[Message from blocked sender]" if message.blocked else message.content
         return f"{header}\n{content}"
 
-    async def _send_packet(self, node_id, chunk) -> bool:
+    async def _send_packet(self, username, node_id, chunk) -> bool:
         """Send a single packet to a node. This assumes that the packet
         is a safe size to send. Blocks until the ack has been
         received."""
-        log.debug(f'Sending packet to {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
+        log.debug(f'Sending packet to {username} at {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
 
         # Use the pre-configured send method
         result = await self.send_msg(node_id, chunk)
 
         if result and result.type == EventType.ERROR:
-            log.error(f"Unable to send '{chunk[:50]}...' to '{node_id}'! {result.payload}")
+            log.error(f"Error sending '{chunk[:50]}...' to {username} at {node_id}! {result.payload}")
             return False
         elif not result:
-            log.error(f"No result from send command for '{chunk[:50]}...' to '{node_id}'")
+            log.error(f"Failed to send '{chunk[:50]}...' to {username} at {node_id}")
             return False
 
         # Wait for ACK with the configured timeout
@@ -283,7 +285,7 @@ class MeshCoreTransportEngine:
             return True
 
         # Log ACK timeout for debugging (this is normal in mesh communication)
-        log.debug(f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {node_id}")
+        log.debug(f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
         return False
 
     def _chunk_message(self, message, max_packet_length):
@@ -594,7 +596,7 @@ class AdvertScheduler:
                 if self.meshcore:
                     # TODO: change this to flood=True when we're done
                     # testing quite so much
-                    flood = False
+                    flood = True
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:

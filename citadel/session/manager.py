@@ -104,7 +104,7 @@ class SessionManager:
                         log.warning(
                             f"Failed to send logout notification to '{username}': {e}")
 
-                del self.sessions[t]
+                del self.sessions[session_id]
                 log.info(f"Session auto-expired for username='{username}'")
 
     def _start_sweeper(self):
