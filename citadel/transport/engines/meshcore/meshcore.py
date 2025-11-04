@@ -348,10 +348,15 @@ class MeshCoreTransportEngine:
             return  # Already listening
 
         async def listen():
-            state = self.session_mgr.get_session_state(session_id)
             log.info(f'Starting BBS listener for "{session_id}"')
             while True:
                 try:
+                    # Check if session still exists (defensive programming)
+                    state = self.session_mgr.get_session_state(session_id)
+                    if not state:
+                        log.info(f'Session {session_id} no longer exists, terminating BBS listener')
+                        break
+
                     log.debug(f'Waiting for BBS msgs for {session_id}')
                     message = await state.msg_queue.get()
                     if isinstance(message, list):
@@ -359,16 +364,26 @@ class MeshCoreTransportEngine:
                     else:
                         log.debug('BBS message is NOT a list')
                     log.debug(f'Received BBS msg for {session_id}: {message}')
+
                     if isinstance(message, list):
                         for msg in message:
                             await self.send_to_node(session_id, msg)
                     else:
                         await self.send_to_node(session_id, message)
+
                 except asyncio.CancelledError:
+                    log.debug(f'BBS listener for {session_id} cancelled gracefully')
                     break
                 except Exception as e:
                     log.error(f"Error in listener for {session_id}: {e}")
-                    await self.send_to_node(session_id, f"ERROR: {e}\n")
+                    # Check if session still exists before trying to send error
+                    if self.session_mgr.get_session_state(session_id):
+                        await self.send_to_node(session_id, f"ERROR: {e}\n")
+                    else:
+                        log.info(f'Session {session_id} expired during error handling, terminating listener')
+                        break
+
+            log.info(f'BBS listener for {session_id} terminated')
 
         task = self._create_monitored_task(listen(), f"bbs_listener_{session_id}")
         self.listeners[session_id] = task
@@ -438,7 +453,8 @@ class MeshCoreTransportEngine:
         # Session management with error handling
         try:
             session_id = self.session_mgr.get_session_by_node_id(node_id)
-            if not session_id:
+            is_new_session = (session_id is None)
+            if is_new_session:
                 session_id = self.session_mgr.create_session(node_id)
                 await self.start_bbs_listener(session_id)
         except Exception as e:
@@ -461,6 +477,19 @@ class MeshCoreTransportEngine:
                 await self.set_cache_username(username, node_id)
                 self.session_mgr.mark_logged_in(session_id, True)
                 self.session_mgr.mark_username(session_id, username)
+
+                # Handle welcome back vs. regular command
+                if is_new_session:
+                    # This is a reconnection after timeout - send welcome back message
+                    log.info(f"Sending reconnection msg for {username} from node {node_id}")
+                    welcome_msg = f"Welcome back, {username}! You've been automatically logged in"
+                    await self.send_to_node(session_id, welcome_msg)
+
+                    # For welcome back, we'll just send them to the lobby with a prompt
+                    # Any text they sent is ignored - this was just to reconnect
+                    return
+
+                # Process their command normally (existing session)
                 command = self.text_parser.parse_command(text)
                 packet = FromUser(
                     session_id=session_id,
@@ -553,7 +582,6 @@ class MeshCoreTransportEngine:
         handler = workflow_registry.get("login")
         if handler:
             session_state = self.session_mgr.get_session_state(session_id)
-            await self.send_to_node(session_id, "Sending you to login")
             touser_result = await handler.start(context)
             return await self.send_to_node(session_id, touser_result)
         else:
@@ -599,23 +627,47 @@ class MeshCoreTransportEngine:
         await self.db.execute(query, (node_id, now))
 
     def _setup_session_notifications(self):
-        """Set up session manager notification callback for logout messages."""
-        def send_logout_notification(session_id: str, message: str):
-            """Send logout notification to a session via meshcore."""
+        """Set up session manager notification callback for logout messages and listener cleanup."""
+        def handle_session_expiration(session_id: str, message: str):
+            """Handle session expiration: send logout notification and cleanup listeners."""
             try:
-                # Look up session state to get node_id
+                # Look up session state to get node_id (before it gets deleted)
                 state = self.session_mgr.get_session_state(session_id)
                 if state and state.node_id:
-                    # Use monitored task to schedule the async send_to_node call
+                    # Send logout notification
                     self._create_monitored_task(self.send_to_node(session_id, message), f"logout_notification_{session_id}")
-                    log.debug(f"Scheduled logout notification for session {session_id}")
+                    log.info(f"Scheduled logout notification for session {session_id}")
                 else:
                     log.warning(f"Cannot send logout notification - no node_id for session {session_id}")
-            except (OSError, RuntimeError) as e:
-                log.error(f"Error sending logout notification to session {session_id}: {e}")
-                raise
 
-        self.session_mgr.set_notification_callback(send_logout_notification)
+                # Clean up BBS listener (critical for preventing hangs!)
+                self._cleanup_bbs_listener(session_id)
+
+            except (OSError, RuntimeError) as e:
+                log.error(f"Error handling session expiration for {session_id}: {e}")
+                # Still try to cleanup listener even if notification fails
+                try:
+                    self._cleanup_bbs_listener(session_id)
+                except Exception as cleanup_error:
+                    log.error(f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
+
+        self.session_mgr.set_notification_callback(handle_session_expiration)
+
+    def _cleanup_bbs_listener(self, session_id: str):
+        """Cancel and remove BBS listener for a session."""
+        if session_id in self.listeners:
+            listener_task = self.listeners[session_id]
+            log.info(f"Cancelling BBS listener for expired session {session_id}")
+
+            # Cancel the task
+            listener_task.cancel()
+
+            # Remove from listeners dict
+            del self.listeners[session_id]
+
+            log.info(f"BBS listener cleanup completed for session {session_id}")
+        else:
+            log.debug(f"No BBS listener found for session {session_id} during cleanup")
 
     async def insert_prompt(self, session_id, touser):
         if self.session_mgr.get_workflow(session_id):
