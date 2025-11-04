@@ -37,7 +37,7 @@ class Config:
         },
         "transport": {
             "cli": {"socket": "/tmp/mesh-citadel.sock"},
-            "serial_port": "/dev/ttyUSB0"
+            "meshcore": {"serial_port": "/dev/ttyUSB0"}
         },
         "database": {
             "db_path": "citadel.db",
