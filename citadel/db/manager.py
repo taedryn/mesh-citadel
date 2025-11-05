@@ -5,6 +5,8 @@ import sqlite3
 import threading
 from typing import Optional, Callable
 
+from citadel.logging_lock import AsyncLoggingLock, LoggingLock
+
 log = logging.getLogger(__name__)
 
 
@@ -23,7 +25,7 @@ class DatabaseManager:
 
         self.db_path = config.database['db_path']
         self.conn = None
-        self.lock = threading.Lock()
+        self.lock = LoggingLock('DatabaseManager')
 
         self._initialized = True
         log.info("DatabaseManager initialized with blocking mode")

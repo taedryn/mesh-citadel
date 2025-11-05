@@ -1,5 +1,6 @@
 """
 Utility classes for MeshCore transport engine.
+
 """
 
 import asyncio
@@ -8,6 +9,8 @@ import logging
 import time
 from datetime import datetime, UTC
 from meshcore import EventType
+
+from citadel.logging_lock import AsyncLoggingLock
 
 log = logging.getLogger(__name__)
 
@@ -27,9 +30,7 @@ class AdvertScheduler:
         try:
             while not self._stop_event.is_set():
                 if self.meshcore:
-                    # TODO: change this to flood=True when we're done
-                    # testing quite so much
-                    flood = False
+                    flood = self.config.transport.get('meshcore', {}).get('flood_advert', True)
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:
@@ -55,7 +56,7 @@ class MessageDeduplicator:
     def __init__(self, ttl=10):
         self.seen = {}  # message_hash: timestamp
         self.ttl = ttl  # seconds
-        self._lock = asyncio.Lock()
+        self._lock = AsyncLoggingLock('MessageDeduplicator')
 
     async def is_duplicate(self, node_id: str, message: str) -> bool:
         text = '::'.join([node_id, message])

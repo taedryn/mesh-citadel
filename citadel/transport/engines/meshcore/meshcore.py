@@ -11,7 +11,9 @@ import traceback
 from zoneinfo import ZoneInfo
 
 from citadel.commands.processor import CommandProcessor
+from citadel.logging_lock import AsyncLoggingLock
 from citadel.message.manager import format_timestamp
+from citadel.transport.engines.meshcore.util import MessageDeduplicator, AdvertScheduler
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.transport.parser import TextParser
 from citadel.transport.engines.meshcore.contacts import ContactManager
@@ -189,14 +191,32 @@ class MeshCoreTransportEngine:
             self.send_msg = send_with_manual_retry
             log.debug("send_msg_with_retry not available, using manual retry wrapper")
 
-    def _create_monitored_task(self, coro, name: str = "unnamed"):
-        """Create a task with exception monitoring to catch fire-and-forget failures."""
-        task = asyncio.create_task(coro)
-        task.add_done_callback(lambda t: self._handle_task_exception(t, name))
-        return task
+    def _create_monitored_task(self, coro, name="unnamed"):
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(coro)
+            task.add_done_callback(lambda t: self._handle_task_exception(t, name))
+            log.debug(f"Created async task for {name}")
+            return task
+        except RuntimeError:
+            # We're in a thread — get the main loop and run it thread-safe
+            log.debug(f"Attempting to run {name} threadsafe")
+            loop = asyncio.get_event_loop()  # or store a reference to your main loop
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            # Optionally attach a callback to the future
+            def on_done(fut):
+                try:
+                    fut.result()
+                except Exception as e:
+                    self._handle_task_exception(fut, name)
+            future.add_done_callback(on_done)
+            log.debug(f"Ran {name} threadsafe")
+            return future
 
     def _handle_task_exception(self, task: asyncio.Task, name: str):
         """Handle exceptions from fire-and-forget tasks."""
+        if task.cancelled():
+            log.debug(f"Fire-and-forget task '{name}' cancelled")
         if task.exception():
             log.exception(f"Fire-and-forget task '{name}' failed: {task.exception()}")
         else:
@@ -513,8 +533,12 @@ class MeshCoreTransportEngine:
                     # This is a reconnection after timeout - send welcome back message
                     log.debug(f"FREEZE-DEBUG: Welcome back reconnection for {username} from node {node_id}")
                     welcome_msg = f"Welcome back, {username}! You've been automatically logged in"
+                    welcome_msg = await self.insert_prompt(session_id, welcome_msg)
 
                     log.debug(f"FREEZE-DEBUG: Sending welcome back message")
+                    inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+                    log.debug(f"FREEZE-DEBUG: But waiting {inter_packet_delay}s first")
+                    await asyncio.sleep(inter_packet_delay)
                     await self.send_to_node(session_id, welcome_msg)
                     log.debug(f"FREEZE-DEBUG: Welcome back message sent, returning")
 
@@ -664,10 +688,14 @@ class MeshCoreTransportEngine:
         def handle_session_expiration(session_id: str, message: str):
             """Handle session expiration: send logout notification and cleanup listeners."""
             try:
-                # Look up session state to get node_id (before it gets deleted)
                 state = self.session_mgr.get_session_state(session_id)
                 if state and state.node_id:
                     # Send logout notification
+                    # TODO: this cannot run, since in this
+                    # thread there is no event loop.  need to
+                    # figure out how to get this send_to_node
+                    # call out to an event loop. that's why the
+                    # notification never goes out.
                     self._create_monitored_task(self.send_to_node(session_id, message), f"logout_notification_{session_id}")
                     log.info(f"Scheduled logout notification for session {session_id}")
                 else:
@@ -729,65 +757,3 @@ class MeshCoreTransportEngine:
             touser += f'\n{prompt}'
 
         return touser
-
-
-class AdvertScheduler:
-    """schedule an advert in a cancelable way.  modify the
-    'advert_interval' setting in config.yaml with the number of hours
-    between adverts.  defaults to 6 if no setting found."""
-    def __init__(self, config, meshcore):
-        self.config = config
-        self.meshcore = meshcore
-        self._stop_event = asyncio.Event()
-
-    async def interval_advert(self):
-        interval = self.config.transport.get("meshcore", {}).get("advert_interval", 6)
-        try:
-            while not self._stop_event.is_set():
-                if self.meshcore:
-                    # TODO: change this to flood=True when we're done
-                    # testing quite so much
-                    flood = self.config.transport.get('meshcore', {}).get('flood_advert', True)
-                    log.info(f"Sending advert (flood={flood})")
-                    result = await self.meshcore.commands.send_advert(flood=flood)
-                    if result.type == EventType.ERROR:
-                        raise TransportError(f"Unable to send advert: {result.payload}")
-                try:
-                    # Wait with cancellation support
-                    await asyncio.wait_for(self._stop_event.wait(), timeout=interval * 3600)
-                except asyncio.TimeoutError:
-                    pass  # Timeout means it's time to run again
-        except asyncio.CancelledError:
-            log.info("interval_advert was cancelled")
-        finally:
-            log.info("interval_advert shutdown complete")
-
-    def stop(self):
-        self._stop_event.set()
-
-
-class MessageDeduplicator:
-    """a simple class to provide message de-duplication services"""
-    def __init__(self, ttl=10):
-        self.seen = {}  # message_hash: timestamp
-        self.ttl = ttl  # seconds
-        self._lock = asyncio.Lock()
-
-    async def is_duplicate(self, node_id: str, message: str) -> bool:
-        text = '::'.join([node_id, message])
-        msg_hash = hashlib.sha256(text.encode()).hexdigest()
-        async with self._lock:
-            now = time.time()
-            if msg_hash in self.seen and now - self.seen[msg_hash] < self.ttl:
-                return True
-            self.seen[msg_hash] = now
-            return False
-
-    async def clear_expired(self):
-        """call this frequently to avoid the message hash table growing
-        too large"""
-        now = time.time()
-        async with self._lock:
-            for msg_hash, timestamp in self.seen.items():
-                if now - self.seen[msg_hash] > self.ttl:
-                    del self.seen[msg_hash]

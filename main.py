@@ -2,6 +2,7 @@ import asyncio
 import argparse
 import logging
 import sys
+import tracemalloc
 
 from citadel.commands.base import CommandContext
 from citadel.config import Config
@@ -18,6 +19,7 @@ log = None
 async def initialize_system(log_level=None, config_path=None):
     """Initialize all system components."""
     global log
+    tracemalloc.start(20)
     config = Config(path=config_path) if config_path else Config()
     if log_level:
         config.logging["log_level"] = log_level

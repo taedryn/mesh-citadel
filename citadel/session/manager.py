@@ -6,6 +6,7 @@ import threading
 
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
+from citadel.logging_lock import AsyncLoggingLock, LoggingLock
 from citadel.room.room import SystemRoomIDs
 from citadel.session.state import SessionState
 from citadel.workflows.base import WorkflowState
@@ -20,7 +21,7 @@ class SessionManager:
         self.db = db
         # session_id -> (SessionState, last_active: datetime)
         self.sessions = {}
-        self.lock = threading.Lock()
+        self.lock = LoggingLock('SessionManager')
         self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
 
@@ -85,27 +86,30 @@ class SessionManager:
 
     def sweep_expired_sessions(self):
         now = datetime.now(UTC)
+        expired_sessions = []
         with self.lock:
             expired = [t for t, (_, ts) in self.sessions.items()
                        if now - ts > self.timeout]
-            for session_id in expired:
-                state, _ = self.sessions[session_id]
-                username = state.username
-                node_id = state.node_id
+        for session_id in expired:
+            state, _ = self.sessions[session_id]
+            username = state.username
+            node_id = state.node_id
+            expired_sessions.append((session_id, username, node_id))
 
-                # Send logout notification if transport layer is available
-                if self.notification_callback and node_id:
-                    try:
-                        self.notification_callback(
-                            session_id, "You have been logged out due to inactivity. Send any message to reconnect.")
-                        log.info(
-                            f"Logout notification sent to username='{username}'")
-                    except (OSError, RuntimeError) as e:
-                        log.warning(
-                            f"Failed to send logout notification to '{username}': {e}")
 
+        msg = "You have been logged out due to inactivity. Send any message to reconnect."
+        for session_id, username, node_id in expired_sessions:
+            # Send logout notification if transport layer is available
+            if self.notification_callback:
+                try:
+                    self.notification_callback(session_id, msg)
+                    log.info( f"Logout notification sent to {username}")
+                except Exception as e:
+                    log.exception(f"Failed sending logout msg to {username}: {e}")
+            with self.lock:
                 del self.sessions[session_id]
-                log.info(f"Session auto-expired for username='{username}'")
+
+            log.info(f"Session auto-expired for username='{username}'")
 
     def _start_sweeper(self):
         def sweep():
