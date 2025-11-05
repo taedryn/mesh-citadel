@@ -119,10 +119,11 @@ class MeshCoreTransportEngine:
         if result.type == EventType.ERROR:
             raise TransportError(f"Unable to set node name: {result.payload}")
 
-        log.info(f"Setting MeshCore multi-acks to '{multi_acks}'")
-        result = await mc.commands.set_multi_acks(multi_acks)
-        if result.type == EventType.ERROR:
-            raise TransportError(f"Unable to set multi-acks: {result.payload}")
+        if multi_acks:
+            log.info(f"Setting MeshCore multi-acks to '{multi_acks}'")
+            result = await mc.commands.set_multi_acks(multi_acks)
+            if result.type == EventType.ERROR:
+                raise TransportError(f"Unable to set multi-acks: {result.payload}")
 
         log.info("Ensuring contacts")
         result = await mc.ensure_contacts()
