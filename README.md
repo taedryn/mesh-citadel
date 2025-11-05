@@ -164,6 +164,11 @@ it'll respond.
 If you have it running locally, you can run the `cli_client.py` script
 to get a local console that's a little bit like a MeshCore connection.
 
+The first user to log in is automatically granted sysop powers, so
+be sure you log in (probably with the CLI client) _before_ you put it
+on the air.  If anything goes sideways, you can always delete the
+citadel.db file to start over.
+
 Always keep in mind, this is _super duper ALPHA quality software._
 That means it's riddled with bugs and problems and missing features,
 and it'll probably crash and eat your whole message database.  So,
