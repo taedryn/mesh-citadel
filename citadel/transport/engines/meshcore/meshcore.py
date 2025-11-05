@@ -38,12 +38,16 @@ class MeshCoreTransportEngine:
         self.tasks = []
         self.subs = []
         self.listeners = {}
+        self._event_loop = None
 
     #------------------------------------------------------------
     # process lifecycle controls
     #------------------------------------------------------------
     async def start(self):
         try:
+            # Store the event loop for later use in threadsafe operations
+            self._event_loop = asyncio.get_running_loop()
+
             await self.start_meshcore()
             self.contact_manager = ContactManager(self.meshcore,
                                                   self.db, self.config)
@@ -199,28 +203,41 @@ class MeshCoreTransportEngine:
             log.debug(f"Created async task for {name}")
             return task
         except RuntimeError:
-            # We're in a thread — get the main loop and run it thread-safe
-            log.debug(f"Attempting to run {name} threadsafe")
-            loop = asyncio.get_event_loop()  # or store a reference to your main loop
-            future = asyncio.run_coroutine_threadsafe(coro, loop)
-            # Optionally attach a callback to the future
+            # We're in a thread — use the stored event loop for thread-safe execution
+            if self._event_loop is None:
+                log.error(f"Cannot run {name} threadsafe: no stored event loop")
+                return None
+
+            log.debug(f"Running {name} threadsafe using stored event loop")
+            future = asyncio.run_coroutine_threadsafe(coro, self._event_loop)
+
+            # Attach a callback to handle exceptions
             def on_done(fut):
                 try:
                     fut.result()
                 except Exception as e:
                     self._handle_task_exception(fut, name)
             future.add_done_callback(on_done)
-            log.debug(f"Ran {name} threadsafe")
+            log.debug(f"Successfully scheduled {name} for threadsafe execution")
             return future
 
-    def _handle_task_exception(self, task: asyncio.Task, name: str):
-        """Handle exceptions from fire-and-forget tasks."""
-        if task.cancelled():
-            log.debug(f"Fire-and-forget task '{name}' cancelled")
-        if task.exception():
-            log.exception(f"Fire-and-forget task '{name}' failed: {task.exception()}")
-        else:
-            log.debug(f"Task '{name}' completed successfully")
+    def _handle_task_exception(self, task, name: str):
+        """Handle exceptions from fire-and-forget tasks (asyncio.Task or concurrent.futures.Future)."""
+        try:
+            if hasattr(task, 'cancelled') and task.cancelled():
+                log.debug(f"Fire-and-forget task '{name}' cancelled")
+                return
+
+            if hasattr(task, 'exception'):
+                exc = task.exception()
+                if exc:
+                    log.exception(f"Fire-and-forget task '{name}' failed: {exc}")
+                else:
+                    log.debug(f"Task '{name}' completed successfully")
+            else:
+                log.debug(f"Task '{name}' completed")
+        except Exception as e:
+            log.error(f"Error handling task exception for '{name}': {e}")
 
     async def stop(self):
         if self._running:
@@ -687,30 +704,35 @@ class MeshCoreTransportEngine:
         """Set up session manager notification callback for logout messages and listener cleanup."""
         def handle_session_expiration(session_id: str, message: str):
             """Handle session expiration: send logout notification and cleanup listeners."""
+            log.debug(f"Handling session expiration for {session_id}: {message}")
+
             try:
                 state = self.session_mgr.get_session_state(session_id)
                 if state and state.node_id:
-                    # Send logout notification
-                    # TODO: this cannot run, since in this
-                    # thread there is no event loop.  need to
-                    # figure out how to get this send_to_node
-                    # call out to an event loop. that's why the
-                    # notification never goes out.
-                    self._create_monitored_task(self.send_to_node(session_id, message), f"logout_notification_{session_id}")
-                    log.info(f"Scheduled logout notification for session {session_id}")
+                    # Send logout notification using threadsafe task creation
+                    log.info(f"Sending logout notification to session {session_id}: {message}")
+                    task_result = self._create_monitored_task(
+                        self.send_to_node(session_id, message),
+                        f"logout_notification_{session_id}"
+                    )
+
+                    if task_result:
+                        log.info(f"Successfully scheduled logout notification for session {session_id}")
+                    else:
+                        log.error(f"Failed to schedule logout notification for session {session_id}")
                 else:
-                    log.warning(f"Cannot send logout notification - no node_id for session {session_id}")
+                    log.warning(f"Cannot send logout notification - no state or node_id for session {session_id}")
 
                 # Clean up BBS listener (critical for preventing hangs!)
                 self._cleanup_bbs_listener(session_id)
 
-            except (OSError, RuntimeError) as e:
-                log.error(f"Error handling session expiration for {session_id}: {e}")
+            except Exception as e:
+                log.exception(f"Error handling session expiration for {session_id}: {e}")
                 # Still try to cleanup listener even if notification fails
                 try:
                     self._cleanup_bbs_listener(session_id)
                 except Exception as cleanup_error:
-                    log.error(f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
+                    log.exception(f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
 
         self.session_mgr.set_notification_callback(handle_session_expiration)
 
