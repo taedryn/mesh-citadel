@@ -106,9 +106,13 @@ class DatabaseManager:
         return query.strip().upper().startswith(write_keywords)
 
     async def shutdown(self):
+        log.info("Shutting down DatabaseManager")
         self._shutdown_event.set()
+        log.info("db 1")
         if self._persist_task:
             await self._persist_task
+            log.info("db 2")
         await self.persist_to_disk()
+        log.info("db 3")
         await self.conn.close()
         log.info("DatabaseManager shut down cleanly.")
