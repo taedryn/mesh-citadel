@@ -266,7 +266,7 @@ class MeshCoreTransportEngine:
     # communication methods
     #------------------------------------------------------------
 
-    async def send_to_node(self, session_id: str, message: str | ToUser | list):
+    async def send_to_node(self, node_id: str, username: str, message: str | ToUser | list):
         """Send a message to a mesh node via MeshCore. """
         # TODO: probably need to handle ToUser packets more intelligently than
         # this
@@ -280,9 +280,6 @@ class MeshCoreTransportEngine:
             text = message
         # Get configured packet size (calculated from MeshCore packet structure)
         max_packet_length = self.mc_config.get("max_packet_size", 140)
-        state = self.session_mgr.get_session_state(session_id)
-        node_id = state.node_id
-        username = state.username
 
         packets = self._chunk_message(text, max_packet_length)
         inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
@@ -407,9 +404,11 @@ class MeshCoreTransportEngine:
 
                     if isinstance(message, list):
                         for msg in message:
-                            await self.send_to_node(session_id, msg)
+                            await self.send_to_node(state.node_id,
+                                                    state.username, msg)
                     else:
-                        await self.send_to_node(session_id, message)
+                        await self.send_to_node(state.node_id,
+                                                state.username, message)
 
                 except asyncio.CancelledError:
                     log.debug(f'BBS listener for {session_id} cancelled gracefully')
@@ -418,7 +417,8 @@ class MeshCoreTransportEngine:
                     log.error(f"Error in listener for {session_id}: {e}")
                     # Check if session still exists before trying to send error
                     if self.session_mgr.get_session_state(session_id):
-                        await self.send_to_node(session_id, f"ERROR: {e}\n")
+                        await self.send_to_node(state.node_id,
+                                                state.username, f"ERROR: {e}\n")
                     else:
                         log.info(f'Session {session_id} expired during error handling, terminating listener')
                         break
@@ -477,7 +477,12 @@ class MeshCoreTransportEngine:
                     node_id = event.payload['pubkey_prefix']
                     session_id = self.session_mgr.get_session_by_node_id(node_id)
                     if session_id:
-                        await self.send_to_node(session_id, "System temporarily unavailable. Please try again.")
+                        state = self.session_mgr.get_session_state(session_id)
+                        await self.send_to_node(
+                            node_id,
+                            state.username,
+                            "System temporarily unavailable. Please try again."
+                        )
                         log.info(f"Sent error message to node {node_id}")
             except Exception as recovery_error:
                 log.exception(f"Failed to send error message to user: {recovery_error}")
@@ -541,7 +546,7 @@ class MeshCoreTransportEngine:
 
                     inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
                     await asyncio.sleep(inter_packet_delay)
-                    await self.send_to_node(session_id, welcome_msg)
+                    await self.send_to_node(node_id, username, welcome_msg)
 
                     # For welcome back, we'll just send them to the lobby with a prompt
                     # Any text they sent is ignored - this was just to reconnect
@@ -561,7 +566,7 @@ class MeshCoreTransportEngine:
         except Exception as e:
             log.exception(f"Authentication/workflow processing failed for {node_id}")
             try:
-                await self.send_to_node(session_id, "Authentication error. Please try again.")
+                await self.send_to_node(node_id, username, "Authentication error. Please try again.")
             except:
                 pass
             return
@@ -579,15 +584,15 @@ class MeshCoreTransportEngine:
                 for i, msg in enumerate(touser):
                     if i == last_msg:
                         msg = await self.insert_prompt(session_id, msg)
-                    await self.send_to_node(session_id, msg)
+                    await self.send_to_node(node_id, username, msg)
             else:
                 touser = await self.insert_prompt(session_id, touser)
-                await self.send_to_node(session_id, touser)
+                await self.send_to_node(node_id, username, touser)
 
         except Exception as e:
             log.exception(f"Command processing/response failed for {node_id}")
             try:
-                await self.send_to_node(session_id, "Command processing error. Please try again.")
+                await self.send_to_node(node_id, username, "Command processing error. Please try again.")
             except:
                 pass
 
@@ -618,10 +623,13 @@ class MeshCoreTransportEngine:
         if handler:
             session_state = self.session_mgr.get_session_state(session_id)
             touser_result = await handler.start(context)
-            return await self.send_to_node(session_id, touser_result)
+            return await self.send_to_node(session_state.node_id,
+                                           session_state.username,
+                                           touser_result)
         else:
             return await self.send_to_node(
-                session_id,
+                node_id,
+                "unknown",
                 "Error: Login workflow not found"
             )
 
@@ -677,7 +685,7 @@ class MeshCoreTransportEngine:
                     # Send logout notification using threadsafe task creation
                     log.info(f"Sending logout notification to session {session_id}: {message}")
                     task_result = self._create_monitored_task(
-                        self.send_to_node(session_id, message),
+                        self.send_to_node(state.node_id, state.username, message),
                         f"logout_notification_{session_id}"
                     )
 
