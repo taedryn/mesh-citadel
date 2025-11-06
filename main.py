@@ -1,10 +1,8 @@
 import asyncio
 import argparse
-import cProfile
 import logging
-import pstats
 import sys
-import tracemalloc
+#import tracemalloc
 
 from citadel.commands.base import CommandContext
 from citadel.config import Config
@@ -17,12 +15,11 @@ from citadel.message.manager import MessageManager
 from citadel.transport.manager import TransportManager
 
 log = None
-profiler = None
 
 async def initialize_system(log_level=None, config_path=None):
     """Initialize all system components."""
     global log
-    tracemalloc.start(20)
+    #tracemalloc.start(20)
     config = Config(path=config_path) if config_path else Config()
     if log_level:
         config.logging["log_level"] = log_level
@@ -51,7 +48,6 @@ async def initialize_system(log_level=None, config_path=None):
 async def shutdown(db_mgr, session_mgr, transport_mgr=None):
     """Gracefully shutdown system components."""
     global log
-    global profiler
     log.info('Shutting down system...')
 
     # Stop transport layer first
@@ -60,23 +56,11 @@ async def shutdown(db_mgr, session_mgr, transport_mgr=None):
 
     # Session cleanup handled automatically by SessionManager
 
-    profiler.disable()
-    stats = pstats.Stats(profiler).sort_stats('cumtime')
-    stats.print_stats(50)  # top 50 functions by cumulative time
-
     # Close database connections
     if db_mgr:
         await db_mgr.shutdown()
 
     log.info('Shutdown complete')
-
-
-def profile_main():
-    global profiler
-    profiler = cProfile.Profile()
-    profiler.enable()
-
-    asyncio.run(main())
 
 
 def parse_arguments():
@@ -126,7 +110,7 @@ async def main():
 
 if __name__ == '__main__':
     try:
-        asyncio.run(profile_main())
+        asyncio.run(main())
     except KeyboardInterrupt:
         # Clean exit - shutdown already handled in main()
         pass
