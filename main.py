@@ -3,7 +3,6 @@ import argparse
 import logging
 import sys
 import tracemalloc
-import uvloop
 
 from citadel.commands.base import CommandContext
 from citadel.config import Config
@@ -110,7 +109,6 @@ async def main():
 
 if __name__ == '__main__':
     try:
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         asyncio.run(main())
     except KeyboardInterrupt:
         # Clean exit - shutdown already handled in main()
