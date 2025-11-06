@@ -23,15 +23,40 @@ class DatabaseManager:
         if self._initialized:
             return
 
+        self.config = config
         self.db_path = config.database['db_path']
         self.conn = None
-        self.lock = LoggingLock('DatabaseManager')
+        #self.lock = LoggingLock('DatabaseManager')
+        self.lock = threading.Lock()
+        self._shutdown_event = asyncio.Event()
 
         self._initialized = True
         log.info("DatabaseManager initialized with blocking mode")
 
     async def start(self):
-        self.conn = await aiosqlite.connect(self.db_path)
+        disk_conn = await aiosqlite.connect(self.db_path)
+        self.conn = await aiosqlite.connect(":memory:")
+        await disk_conn.backup(self.conn)
+        await disk_conn.close()
+        self._persist_task = asyncio.create_task(self._persist_loop())
+        seconds = self.config.bbs.get("database_save_interval", 300)
+        log.info(f"Database loaded into memory; will save to disk every {seconds}s")
+
+    async def _persist_loop(self):
+        while not self._shutdown_event.is_set():
+            seconds = self.config.bbs.get("database_save_interval", 300)
+            try:
+                await asyncio.sleep(seconds)
+                await self.persist_to_disk()
+            except Exception as e:
+                log.error(f"Error during periodic DB persist: {e}")
+
+    async def persist_to_disk(self):
+        log.debug("Persisting database to disk")
+        disk_conn = await aiosqlite.connect(self.db_path)
+        await self.conn.backup(disk_conn)
+        await disk_conn.close()
+
 
     @classmethod
     def reset(cls):
@@ -81,5 +106,9 @@ class DatabaseManager:
         return query.strip().upper().startswith(write_keywords)
 
     async def shutdown(self):
+        self._shutdown_event.set()
+        if self._persist_task:
+            await self._persist_task
+        await self.persist_to_disk()
         await self.conn.close()
         log.info("DatabaseManager shut down cleanly.")

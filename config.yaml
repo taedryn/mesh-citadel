@@ -12,6 +12,7 @@ bbs:
   export_format: "json"             # "csv", "json", or "yaml"
   timezone: "US/Pacific"
   date_format: "%d%b%y %H:%M"       # see https://strftime.org/
+  database_save_interval: 300       # seconds
   # System room names (changeable but rooms IDs 1-6 are reserved)
   room_names:
     lobby: "Lobby"                  # Room ID 1
