@@ -56,7 +56,8 @@ class MessageDeduplicator:
     def __init__(self, ttl=10):
         self.seen = {}  # message_hash: timestamp
         self.ttl = ttl  # seconds
-        self._lock = AsyncLoggingLock('MessageDeduplicator')
+        #self._lock = AsyncLoggingLock('MessageDeduplicator')
+        self._lock = asyncio.Lock()
 
     async def is_duplicate(self, node_id: str, message: str) -> bool:
         text = '::'.join([node_id, message])

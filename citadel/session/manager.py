@@ -21,7 +21,8 @@ class SessionManager:
         self.db = db
         # session_id -> (SessionState, last_active: datetime)
         self.sessions = {}
-        self.lock = LoggingLock('SessionManager')
+        #self.lock = LoggingLock('SessionManager')
+        self.lock = threading.Lock()
         self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
 
