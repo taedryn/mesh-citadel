@@ -128,7 +128,7 @@ class LoginWorkflow(Workflow):
             if has_mail:
                 mail_msg = "\n* You have unread mail"
             context.session_mgr.mark_username(context.session_id, username)
-            context.session_mgr.mark_logged_in(context.session_id)
+            await context.session_mgr.mark_logged_in(context.session_id)
             context.session_mgr.clear_workflow(context.session_id)
             state = context.session_mgr.get_session_state(context.session_id)
             if state.node_id:

@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 class SessionManager:
     def __init__(self, config: "Config", db: DatabaseManager):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
+        self.config = config
         self.db = db
         # session_id -> (SessionState, last_active: datetime)
         self.sessions = {}
@@ -29,12 +30,17 @@ class SessionManager:
     def create_session(self, node_id: str=None) -> str:
         """Create a session not yet tied to a user."""
         session_id = secrets.token_urlsafe(24)
+        if node_id:
+            transport = "meshcore"
+        else:
+            transport = "cli"
         state = SessionState(
             username=None,
             current_room=SystemRoomIDs.LOBBY_ID,
             logged_in=False,
             msg_queue=asyncio.Queue(),
-            node_id=node_id
+            node_id=node_id,
+            transport=transport
         )
         with self.lock:
             self.sessions[session_id] = (state, datetime.now(UTC))
@@ -98,19 +104,19 @@ class SessionManager:
             expired_sessions.append((session_id, username, node_id))
 
 
-        msg = "You have been logged out due to inactivity. Send any message to reconnect."
+        msg = "Session closed due to inactivity. Send any message to reconnect."
         for session_id, username, node_id in expired_sessions:
             # Send logout notification if transport layer is available
             if self.notification_callback:
                 try:
                     self.notification_callback(session_id, msg)
-                    log.info( f"Logout notification sent to {username}")
+                    log.info(f"Session timeout notification sent to {username}")
                 except Exception as e:
                     log.exception(f"Failed sending logout msg to {username}: {e}")
             with self.lock:
                 del self.sessions[session_id]
 
-            log.info(f"Session auto-expired for username='{username}'")
+            log.info(f"Session timed out for username='{username}'")
 
     def _start_sweeper(self):
         def sweep():
@@ -181,7 +187,7 @@ class SessionManager:
         # Use existing session or create new one
         if session_id:
             # Reset existing session to anonymous state
-            self.mark_logged_in(session_id, False)
+            await self.mark_logged_in(session_id, False)
             self.mark_username(session_id, None)
             self.clear_workflow(session_id)
             target_session_id = session_id
@@ -228,13 +234,17 @@ class SessionManager:
             state.username = username
             log.info(f"Username '{username}' bound to session '{session_id}'")
 
-    def mark_logged_in(self, session_id: str, logged_in: bool = True):
+    async def mark_logged_in(self, session_id: str, logged_in: bool = True):
         """Mark a session as authenticated or unauthenticated."""
         state = self.get_session_state(session_id)
         if state:
             state.logged_in = logged_in
             status = "logged in" if logged_in else "logged out"
             log.info(f"Session '{session_id}' marked as {status}")
+            if not logged_in and state.node_id:
+                from citadel.transport.engines.meshcore.meshcore import MeshCoreTransportEngine
+                mc = MeshCoreTransportEngine(self, self.config, self.db)
+                await mc.remove_cache_node_id(state.node_id)
 
     def is_logged_in(self, session_id: str):
         """Return True if the session is logged in"""

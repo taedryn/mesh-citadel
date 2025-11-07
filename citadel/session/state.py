@@ -15,3 +15,4 @@ class SessionState:
     logged_in: bool = False
     msg_queue: asyncio.Queue = None
     node_id: Optional[str] = None
+    transport: Optional[str] = None

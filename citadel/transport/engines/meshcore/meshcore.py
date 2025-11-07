@@ -10,9 +10,11 @@ import time
 import traceback
 from zoneinfo import ZoneInfo
 
+from citadel.auth.permissions import PermissionLevel
 from citadel.commands.processor import CommandProcessor
 from citadel.logging_lock import AsyncLoggingLock
 from citadel.message.manager import format_timestamp
+from citadel.room.room import SystemRoomIDs
 from citadel.transport.engines.meshcore.util import MessageDeduplicator, AdvertScheduler
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.transport.parser import TextParser
@@ -535,7 +537,7 @@ class MeshCoreTransportEngine:
 
                 await self.set_cache_username(username, node_id)
 
-                self.session_mgr.mark_logged_in(session_id, True)
+                await self.session_mgr.mark_logged_in(session_id, True)
                 self.session_mgr.mark_username(session_id, username)
 
                 # Handle welcome back vs. regular command
@@ -673,6 +675,14 @@ class MeshCoreTransportEngine:
         now = datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')
         await self.db.execute(query, (node_id, now))
 
+    async def remove_cache_node_id(self, node_id: str):
+        """remove a node_id from the password cache.  to be used when the
+        user proactively logs out, not when their session expires due
+        to inactivity."""
+        query = "DELETE FROM mc_passwd_cache WHERE node_id = ?"
+        await self.db.execute(query, (node_id,))
+        log.info(f"Removed {node_id} from MC password cache")
+
     def _setup_session_notifications(self):
         """Set up session manager notification callback for logout messages and listener cleanup."""
         def handle_session_expiration(session_id: str, message: str):
@@ -730,25 +740,50 @@ class MeshCoreTransportEngine:
             return touser
 
         session_state = self.session_mgr.get_session_state(session_id)
+        prompt = []
         if not session_state or not session_state.current_room:
-            prompt = "What now? (H for help)"
+            prompt = ["What now? (H for help)"]
         else:
-            # Get room name
+            # sort out notifications. first, pending validations
+            from citadel.user.user import User
+            user = User(self.db, session_state.username)
+            await user.load()
+            query = "SELECT COUNT(*) FROM pending_validations"
+            result = await self.db.execute(query, [])
+            count = result[0][0]
+            if count and user.permission_level >= PermissionLevel.AIDE:
+                if count == 1:
+                    vword = "validation"
+                    isword = "is"
+                else:
+                    vword = "validations"
+                    isword = "are"
+                prompt.append(f"* There {isword} {count} {vword} to review")
+
+            # next, notify of new mail
             from citadel.room.room import Room
+            mail = Room(self.db, self.config, SystemRoomIDs.MAIL_ID)
+            await mail.load()
+            has_mail = await mail.has_unread_messages(session_state.username)
+            if has_mail:                                                
+                prompt.append("* You have unread mail")
+
+            # Get room name
             try:
                 room = Room(self.db, self.config, session_state.current_room)
                 await room.load()
                 room_name = room.name
             except Exception:
                 room_name = f"Room {session_state.current_room}"
-            prompt = f"In {room_name}. What now? (H for help)"
+            prompt.append(f"In {room_name}. What now? (H for help)")
+        prompt_str = "\n".join(prompt)
 
         if isinstance(touser, ToUser):
             if touser.message:
-                touser.message.content += f'\n{prompt}'
+                touser.message.content += f'\n{prompt_str}'
             else:
-                touser.text += f'\n{prompt}'
+                touser.text += f'\n{prompt_str}'
         elif isinstance(touser, str):
-            touser += f'\n{prompt}'
+            touser += f'\n{prompt_str}'
 
         return touser

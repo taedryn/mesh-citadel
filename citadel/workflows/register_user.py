@@ -264,7 +264,7 @@ class RegisterUserWorkflow(Workflow):
                 # First user becomes sysop automatically (no validation needed)
                 await user.set_status(UserStatus.ACTIVE)
                 await user.set_permission_level(PermissionLevel.SYSOP)
-                context.session_mgr.mark_logged_in(context.session_id)
+                await context.session_mgr.mark_logged_in(context.session_id)
                 context.session_mgr.clear_workflow(context.session_id)
                 return ToUser(
                     session_id=context.session_id,
@@ -287,7 +287,7 @@ class RegisterUserWorkflow(Workflow):
                     )
                 )
                 # Keep user logged in with UNVERIFIED access
-                context.session_mgr.mark_logged_in(context.session_id)
+                await context.session_mgr.mark_logged_in(context.session_id)
 
             context.session_mgr.clear_workflow(context.session_id)
             return ToUser(
