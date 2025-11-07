@@ -317,6 +317,8 @@ class QuitCommand(BaseCommand):
 
         log.info(f"User '{old_username}' logged out via quit command")
 
+
+        # TODO: need to null out existing session state here
         # Start login workflow on existing session (resets to anonymous state)
         session_id, login_prompt = await context.session_mgr.start_login_workflow(
             context.config, context.db, context.session_id
