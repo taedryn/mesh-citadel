@@ -296,7 +296,7 @@ class ContactManager:
             log.error(f"Error getting device contact count: {e}")
             return 0
 
-        if result.type == EventType.ERROR:
+        if not result or result.type == EventType.ERROR:
             log.warning(f"Unable to get device contact list: {result.payload}")
             return 0
 
