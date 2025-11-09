@@ -11,9 +11,9 @@ from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 
-SERIAL_PORT = "/dev/ttyUSB0"
+SERIAL_PORT = "/dev/ttyACM0"
 BAUDRATE = 115200
-RECIPIENT_ADDRESS = "d2ad8a40275e"
+RECIPIENT_ADDRESS = "0895dec9caa112d1"
 
 class MeshChatUI:
     def __init__(self, meshcore):
@@ -90,12 +90,20 @@ class MeshChatUI:
             if isinstance(packet.payload, dict):
                 sender = packet.payload.get("pubkey_prefix", "unknown")
                 body = packet.payload.get("text", "")
-                self._add_message(f"📥 {sender}: {body}")
+                SNR = packet.payload.get("SNR", "no SNR")
+                self._add_message(f"📥 {sender} ({SNR} dB): {body}")
             else:
                 self._add_message(f"📥 {packet.payload}")
 
+    async def handle_ack(self, event):
+        try:
+            self._add_message(f"ACK received: {event.payload['code']}")
+        except Exception as e:
+            self._add_message(f"ACK received with no code: {event.payload}, which produced the error {e}")
+
     async def run(self):
         self.mc.subscribe(EventType.MESSAGES_WAITING, self.handle_incoming)
+        self.mc.subscribe(EventType.ACK, self.handle_ack)
         await self.app.run_async()
 
 async def main():

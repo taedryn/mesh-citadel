@@ -171,7 +171,13 @@ class Room:
             current = candidate.prev_neighbor
         return None
 
-    async def get_last_unread_message_id(self, user: User) -> int:
+    async def get_last_unread_message_id(self, user: [User|str]) -> int:
+        if isinstance(user, User):
+            username = user.username
+        elif isinstance(user, str):
+            username = user
+        else:
+            raise ValueError(f"user argument must be either User or str")
         last_read = await self.db.execute(
             "SELECT last_seen_message_id FROM user_room_state WHERE username = ? AND room_id = ?",
             (user.username, self.room_id)
@@ -386,6 +392,40 @@ class Room:
             (username, room_id, last_seen_message_id) VALUES
             (?, ?, ?)"""
         return await self.db.execute(query, (user.username, self.room_id, msg_id))
+
+    # TODO: this isn't right yet -- it should only revert the last
+    # message pointer *if* the user was in fact reading their latest
+    # message in the room.  if they were reading older messages, it
+    # shouldn't move the pointer.
+    async def revert_last_read(self, user: [User|str], msg_id: int):
+        """Revert the user's last-seen message pointer to the one
+        *before* msg_id.  Used when a user loses their connection and
+        we don't know if msg_id actually reached them or not."""
+        if isinstance(user, User):
+            username = user.username
+        elif isinstance(user, str):
+            username = user
+        else:
+            raise ValueError(f"user argument must be either User or str")
+        query = """
+            SELECT message_id
+            FROM room_messages
+            WHERE room_id = ? AND message_id < ?
+            ORDER BY message_id DESC
+            LIMIT 1;
+        """
+        result = await self.db.execute(query, (self.room_id, msg_id))
+        prev_msg_id = result[0][0]
+
+        query = """
+            UPDATE user_room_state
+            SET last_seen_message_id = ?
+            WHERE room_id = ? AND username = ?
+        """
+        await self.db.execute(
+            query,
+            (prev_msg_id, self.room_id, username)
+        )
 
     async def skip_to_latest(self, user: User):
         latest_id = await self.get_newest_message_id()
