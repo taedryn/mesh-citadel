@@ -15,7 +15,7 @@ from citadel.commands.processor import CommandProcessor
 from citadel.logging_lock import AsyncLoggingLock
 from citadel.message.manager import format_timestamp
 from citadel.room.room import SystemRoomIDs
-from citadel.transport.engines.meshcore.util import MessageDeduplicator, AdvertScheduler
+from citadel.transport.engines.meshcore.util import MessageDeduplicator, AdvertScheduler, WatchdogFeeder
 from citadel.transport.packets import FromUser, FromUserType, ToUser
 from citadel.transport.parser import TextParser
 from citadel.transport.engines.meshcore.contacts import ContactManager
@@ -26,11 +26,12 @@ log = logging.getLogger(__name__)
 
 
 class MeshCoreTransportEngine:
-    def __init__(self, session_mgr, config, db):
+    def __init__(self, session_mgr, config, db, feed_watchdog=None):
         self.session_mgr = session_mgr
         self.config = config
         self.mc_config = config.transport.get("meshcore", {})
         self.db = db
+        self.feeder = WatchdogFeeder(config, feed_watchdog)
         self.command_processor = CommandProcessor(config, db, session_mgr)
         self.dedupe = MessageDeduplicator()
         self.text_parser = TextParser()
@@ -51,6 +52,7 @@ class MeshCoreTransportEngine:
             # Store the event loop for later use in threadsafe operations
             self._event_loop = asyncio.get_running_loop()
 
+            await self.start_watchdog()
             await self.start_meshcore()
             self.contact_manager = ContactManager(self.meshcore,
                                                   self.db, self.config)
@@ -69,6 +71,15 @@ class MeshCoreTransportEngine:
             log.error(f"Unexpected startup error: {e}")
             traceback.print_exc()
             raise
+
+    # left off here.  i'm not sure how to actually trigger the WatchdogFeeder's
+    # start_feeder() function properly.  a thing for the future.
+    async def start_watchdog(self):
+        await self.feeder.start_feeder()
+        scheduler = AdvertScheduler(self.config, mc)
+        self.scheds.append(scheduler)
+        log.info("Started watchdog feeder system")
+
 
     async def start_meshcore(self):
         mc_config = self.mc_config

@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, UTC
 import logging
 import secrets
 import threading
+from typing import TYPE_CHECKING
 
 from citadel.config import Config
-from citadel.db.manager import DatabaseManager
 from citadel.logging_lock import AsyncLoggingLock, LoggingLock
 from citadel.room.room import SystemRoomIDs
 from citadel.session.state import SessionState
@@ -14,9 +14,11 @@ from citadel.transport.packets import ToUser
 
 log = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from citadel.db.manager import DatabaseManager
 
 class SessionManager:
-    def __init__(self, config: "Config", db: DatabaseManager):
+    def __init__(self, config: "Config", db: "DatabaseManager"):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
         self.config = config
         self.db = db

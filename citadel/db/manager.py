@@ -26,7 +26,6 @@ class DatabaseManager:
         self.config = config
         self.db_path = config.database['db_path']
         self.conn = None
-        #self.lock = LoggingLock('DatabaseManager')
         self.lock = threading.Lock()
         self._shutdown_event = asyncio.Event()
 

@@ -50,6 +50,34 @@ class AdvertScheduler:
         self._stop_event.set()
 
 
+class WatchdogFeeder:
+    """Schedule the watchdog reset in a cancelable way."""
+
+    def __init__(self, config, feeder_func):
+        self.config = config
+        self.feeder_func = feeder_func
+        self._stop_event = asyncio.Event()
+
+    async def start_feeder(self):
+        timeout = self.config.transport.get("meshcore", {}).get("watchdog_reset", 30)
+        try:
+            while not self._stop_event.is_set():
+                await feeder_func()
+                try:
+                    # Wait with cancellation support
+                    await asyncio.wait_for(self._stop_event.wait(),
+                                           timeout=timeout)
+                except asyncio.TimeoutError:
+                    pass  # Timeout means it's time to run again
+        except asyncio.CancelledError:
+            log.info("Watchdog feeder was cancelled")
+        finally:
+            log.info("Watchdog feeder shutdown complete")
+
+    def stop(self):
+        self._stop_event.set()
+
+
 class MessageDeduplicator:
     """A simple class to provide message de-duplication services"""
 

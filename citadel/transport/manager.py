@@ -4,10 +4,9 @@ Transport Manager for coordinating multiple transport engines.
 import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 
 from citadel.config import Config
-from citadel.transport.engines.cli import CLITransportEngine
 from citadel.transport.engines.meshcore import MeshCoreTransportEngine
 
 
@@ -29,6 +28,7 @@ class TransportManager:
         self.db_manager = db_manager
         self.session_manager = session_manager
         self.engines: Dict[str, Any] = {}
+        self.mc_watchdog = None
         self._running = False
 
     async def start(self) -> None:
@@ -38,6 +38,13 @@ class TransportManager:
 
         log.info("Starting transport manager")
 
+        timeout = self.config.transport.get('meshcore', {}).get('watchdog_timeout', 60)
+        self.mc_watchdog = WatchdogController(
+            "MeshCore",
+            timeout,
+            self.restart_meshcore
+        )
+
         # Get transport configuration
         transport_config = self.config.transport
         for engine_type in transport_config:
@@ -45,18 +52,13 @@ class TransportManager:
                 await self._start_cli_engine(transport_config)
             elif engine_type == 'meshcore':
                 await self._start_meshcore_engine()
+                await self.mc_watchdog.start()
             else:
                 raise ValueError(f"Unknown transport engine: {engine_type}")
 
         self._running = True
         num_engines = len(self.engines)
         e_word = "engine" if num_engines == 1 else "engines"
-        if "meshcore" in self.engines:
-            self.mc_watchdog = WatchdogController(
-                "MeshCore",
-                60,
-                reset_meshcore
-            )
         log.info(f"Transport manager started with {num_engines} {e_word} running")
 
     async def stop(self) -> None:
@@ -88,6 +90,7 @@ class TransportManager:
         if socket_path.exists():
             socket_path.unlink()
 
+        from citadel.transport.engines.cli import CLITransportEngine
         engine = CLITransportEngine(
             socket_path=socket_path,
             config=self.config,
@@ -106,6 +109,7 @@ class TransportManager:
             session_mgr=self.session_manager,
             config=self.config,
             db=self.db_manager,
+            feed_watchdog=self.mc_watchdog.feed_watchdog
         )
         try:
             await engine.start()
@@ -115,14 +119,12 @@ class TransportManager:
         self.engines['meshcore'] = engine
         log.info("MeshCore engine started")
 
-    def restart_meshcore(self):
+    async def restart_meshcore(self):
         """stop and start the meshcore engine to reset the connection"""
-        # TODO: implement this
         if "meshcore" in self.engines:
             engine = self.engines["meshcore"]
             log.info(f"Stopping transport engine: {name}")
-            if hasattr(engine, 'stop'):
-                await engine.stop()
+            await engine.stop()
             await _start_meshcore_engine()
             log.info("MeshCore engine restarted")
 
@@ -147,10 +149,13 @@ class WatchdogController:
 
     async def start(self):
         self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+        log.info(f"Starting watchdog timer for {self.name} engine")
+        log.info(f"Set watchdog timeout to {self._timeout}s")
 
     def get_reset_callback(self):
         async def reset():
             self._reset_event.set()
+            log.debug("Watchdog reset with reset()")
         return reset
 
     async def _watchdog_loop(self):
@@ -162,7 +167,7 @@ class WatchdogController:
             except asyncio.TimeoutError:
                 log.error(f"{name} watchdog timed out. Resetting {name}")
                 if self.reset_callback:
-                    reset_callback()
+                    await reset_callback()
 
     async def shutdown(self):
         self._shutdown = True
@@ -173,3 +178,6 @@ class WatchdogController:
             except asyncio.CancelledError:
                 pass
 
+    def feed_watchdog(self):
+        self._reset_event.set()
+        log.debug("Watchdog reset with feed_watchdog()")

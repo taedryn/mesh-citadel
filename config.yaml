@@ -45,7 +45,6 @@ transport:
   meshcore:                           # any change to mc requires restart
     <<: *system                       # import the system name
     serial_port: "/dev/ttyACM0"
-    #serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
 
     frequency: 910.525                # MHz
@@ -53,6 +52,10 @@ transport:
     spreading_factor: 7
     coding_rate: 5
     tx_power: 1                       # dBm
+
+    watchdog_timeout: 60              # seconds
+    watchdog_reset: 30                # this should always be smaller than 
+                                      # the timeout
 
     advert_interval: 8                # hours
     flood_advert: true                # should BBS adverts flood
