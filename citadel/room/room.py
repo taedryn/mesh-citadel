@@ -393,6 +393,10 @@ class Room:
             (?, ?, ?)"""
         return await self.db.execute(query, (user.username, self.room_id, msg_id))
 
+    # TODO: this isn't right yet -- it should only revert the last
+    # message pointer *if* the user was in fact reading their latest
+    # message in the room.  if they were reading older messages, it
+    # shouldn't move the pointer.
     async def revert_last_read(self, user: [User|str], msg_id: int):
         """Revert the user's last-seen message pointer to the one
         *before* msg_id.  Used when a user loses their connection and

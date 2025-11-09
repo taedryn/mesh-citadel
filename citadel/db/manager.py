@@ -34,13 +34,13 @@ class DatabaseManager:
         log.info("DatabaseManager initialized with blocking mode")
 
     async def start(self):
-        if self.config.db.get("use_memory", False):
+        if self.config.database.get("use_memory", False):
             disk_conn = await aiosqlite.connect(self.db_path)
             self.conn = await aiosqlite.connect(":memory:")
             await disk_conn.backup(self.conn)
             await disk_conn.close()
             self._persist_task = asyncio.create_task(self._persist_loop())
-            seconds = self.config.db.get("persist_timer", 300)
+            seconds = self.config.database.get("persist_timer", 300)
             log.info(f"Database loaded into memory; will save to disk every {seconds}s")
         else:
             self.conn = await aiosqlite.connect(self.db_path)
@@ -56,7 +56,7 @@ class DatabaseManager:
                 log.error(f"Error during periodic DB persist: {e}")
 
     async def persist_to_disk(self):
-        if self.config.db.get("use_memory", False):
+        if self.config.database.get("use_memory", False):
             log.debug("Persisting database to disk")
             disk_conn = await aiosqlite.connect(self.db_path)
             await self.conn.backup(disk_conn)
@@ -113,7 +113,7 @@ class DatabaseManager:
     async def shutdown(self):
         log.info("Shutting down DatabaseManager")
         self._shutdown_event.set()
-        if self._persist_task:
+        if hasattr(self, "_persist_task") and self._persist_task:
             self._persist_task.cancel()
             try:
                 await self._persist_task

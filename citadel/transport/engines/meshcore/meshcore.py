@@ -423,9 +423,13 @@ class MeshCoreTransportEngine:
                                 msg
                             )
                             if not success:
-                                reading_msg = bool(msg.message)
-                                return self.disconnect(session_id,
-                                                       reading_msg=reading_msg)
+                                reading_msg = False
+                                if msg.message:
+                                    reading_msg = msg.message.id
+                                return await self.disconnect(
+                                    session_id,
+                                    reading_msg=reading_msg
+                                )
                     else:
                         success = await self.send_to_node(
                             state.node_id,
@@ -433,9 +437,13 @@ class MeshCoreTransportEngine:
                             message
                         )
                         if not success:
-                            reading_msg = bool(message.message)
-                            return self.disconnect(session_id,
-                                                   reading_msg=reading_msg)
+                            reading_msg = False
+                            if message.message:
+                                reading_msg = message.message.id
+                            return await self.disconnect(
+                                session_id,
+                                reading_msg=reading_msg
+                            )
 
                 except asyncio.CancelledError:
                     log.debug(f'BBS listener for {session_id} cancelled')
@@ -524,12 +532,15 @@ class MeshCoreTransportEngine:
                     session_id = self.session_mgr.get_session_by_node_id(node_id)
                     if session_id:
                         state = self.session_mgr.get_session_state(session_id)
-                        await self.send_to_node(
+                        success = await self.send_to_node(
                             node_id,
                             state.username,
-                            "System temporarily unavailable. Please try again."
+                            "System temporarily unavailable. Please try later."
                         )
-                        log.info(f"Sent error message to node {node_id}")
+                        if success:
+                            log.info(f"Sent error message to node {node_id}")
+                        else:
+                            log.warning(f"Unable to send system down msg to {node_id} (failed to get ACK)")
             except Exception as recovery_error:
                 log.exception(f"Failed to send error message to user: {recovery_error}")
 
@@ -587,14 +598,21 @@ class MeshCoreTransportEngine:
                 # Handle welcome back vs. regular command
                 if is_new_session:
                     # This is a reconnection after timeout - send welcome back message
-                    welcome_msg = f"Welcome back, {username}! You've been automatically logged in"
+                    welcome_msg = f"Welcome back, {username}! You've been automatically logged in."
                     welcome_msg = await self.insert_prompt(session_id, welcome_msg)
 
                     inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
                     await asyncio.sleep(inter_packet_delay)
-                    await self.send_to_node(node_id, username, welcome_msg)
+                    success = await self.send_to_node(
+                        node_id,
+                        username,
+                        welcome_msg
+                    )
+                    if not success:
+                        log.warning("No ACK when sending welcome back msg")
+                        self.disconnect(session_id)
 
-                    # For welcome back, we'll just send them to the lobby with a prompt
+                    # For welcome back, we send them to the lobby with a prompt
                     # Any text they sent is ignored - this was just to reconnect
                     return
 
@@ -612,7 +630,14 @@ class MeshCoreTransportEngine:
         except Exception as e:
             log.exception(f"Authentication/workflow processing failed for {node_id}")
             try:
-                await self.send_to_node(node_id, username, "Authentication error. Please try again.")
+                success = await self.send_to_node(
+                    node_id,
+                    username,
+                    "Authentication error. Please try again."
+                )
+                if not success:
+                    log.warning(f"No ACK sending auth error msg to {username}")
+                    self.disconnect(session_id)
             except:
                 pass
             return
@@ -630,15 +655,22 @@ class MeshCoreTransportEngine:
                 for i, msg in enumerate(touser):
                     if i == last_msg:
                         msg = await self.insert_prompt(session_id, msg)
-                    await self.send_to_node(node_id, username, msg)
+                    success = await self.send_to_node(node_id, username, msg)
+                    if not success:
+                        self.disconnect(session_id)
             else:
                 touser = await self.insert_prompt(session_id, touser)
-                await self.send_to_node(node_id, username, touser)
+                success = await self.send_to_node(node_id, username, touser)
+                if not success:
+                    self.disconnect(session_id)
 
         except Exception as e:
             log.exception(f"Command processing/response failed for {node_id}")
             try:
-                await self.send_to_node(node_id, username, "Command processing error. Please try again.")
+                msg = "Command processing error. Please try again."
+                success = await self.send_to_node(node_id, username, msg)
+                if not success:
+                    self.disconnect(session_id)
             except:
                 pass
 
@@ -669,15 +701,20 @@ class MeshCoreTransportEngine:
         if handler:
             session_state = self.session_mgr.get_session_state(session_id)
             touser_result = await handler.start(context)
-            return await self.send_to_node(session_state.node_id,
-                                           session_state.username,
-                                           touser_result)
+            success = await self.send_to_node(session_state.node_id,
+                                              session_state.username,
+                                              touser_result)
+            if not success:
+                self.disconnect(session_id)
+            return success
         else:
-            return await self.send_to_node(
+            success = await self.send_to_node(
                 node_id,
                 "unknown",
                 "Error: Login workflow not found"
             )
+            if not success:
+                self.disconnect(session_id)
 
     async def _node_has_password_cache(self, node_id: str) -> bool:
         """Check if node has valid password cache. This function forces
@@ -727,7 +764,7 @@ class MeshCoreTransportEngine:
         await self.db.execute(query, (node_id,))
         log.info(f"Removed {node_id} from MC password cache")
 
-    def disconnect(self, session_id: str, reading_msg: bool=False):
+    async def disconnect(self, session_id: str, reading_msg: int=None):
         """Disconnect the named session. To be used when messages can't be
         sent, as a way to preserve the user's experience at least a little
         bit."""
@@ -737,7 +774,17 @@ class MeshCoreTransportEngine:
         # cancel in-progress workflows
         workflow_state = self.session_mgr.get_workflow(session_id)
         if workflow_state:
-            workflow.cleanup() # TODO: this is pseudocode
+            from citadel.workflows import registry as workflow_registry
+                                          
+            # Call cleanup on the workflow if it has one           
+            handler = workflow_registry.get(workflow_state.kind)
+            if handler and hasattr(handler, 'cleanup'):
+                try:      
+                    await handler.cleanup(context)
+                except Exception as e:    
+                    log.warning(
+                        f"Error during workflow cleanup for {workflow_state.kind}: {e}")                 
+
 
         if reading_msg:
             # reset last-read message pointer for this room
@@ -749,6 +796,9 @@ class MeshCoreTransportEngine:
 
         # clean up BBS listener
         self._cleanup_bbs_listener(session_id)
+
+        msg = "Signal lost. Disconnecting your session. Send any text to reconnect."
+        self.send_to_node(state.node_id, state.username, msg)
 
         # cancel session
         self.session_mgr.expire_session(session_id)
