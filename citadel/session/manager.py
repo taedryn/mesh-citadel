@@ -30,17 +30,12 @@ class SessionManager:
     def create_session(self, node_id: str=None) -> str:
         """Create a session not yet tied to a user."""
         session_id = secrets.token_urlsafe(24)
-        if node_id:
-            transport = "meshcore"
-        else:
-            transport = "cli"
         state = SessionState(
             username=None,
             current_room=SystemRoomIDs.LOBBY_ID,
             logged_in=False,
             msg_queue=asyncio.Queue(),
-            node_id=node_id,
-            transport=transport
+            node_id=node_id
         )
         with self.lock:
             self.sessions[session_id] = (state, datetime.now(UTC))

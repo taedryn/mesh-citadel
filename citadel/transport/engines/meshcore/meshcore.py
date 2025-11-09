@@ -41,6 +41,7 @@ class MeshCoreTransportEngine:
         self.subs = []
         self.listeners = {}
         self._event_loop = None
+        self._acks = {}
 
     #------------------------------------------------------------
     # process lifecycle controls
@@ -206,7 +207,7 @@ class MeshCoreTransportEngine:
             log.debug(f"Created async task for {name}")
             return task
         except RuntimeError:
-            # We're in a thread — use the stored event loop for thread-safe execution
+            # in a thread — use stored event loop for thread-safe execution
             if self._event_loop is None:
                 log.error(f"Cannot run {name} threadsafe: no stored event loop")
                 return None
@@ -225,7 +226,8 @@ class MeshCoreTransportEngine:
             return future
 
     def _handle_task_exception(self, task, name: str):
-        """Handle exceptions from fire-and-forget tasks (asyncio.Task or concurrent.futures.Future)."""
+        """Handle exceptions from fire-and-forget tasks (asyncio.Task
+        or concurrent.futures.Future)."""
         try:
             if hasattr(task, 'cancelled') and task.cancelled():
                 log.debug(f"Fire-and-forget task '{name}' cancelled")
@@ -269,7 +271,8 @@ class MeshCoreTransportEngine:
     #------------------------------------------------------------
 
     async def send_to_node(self, node_id: str, username: str, message: str | ToUser | list):
-        """Send a message to a mesh node via MeshCore. """
+        """Send a message to a mesh node via MeshCore. Returns False if
+        the message couldn't be sent."""
         # TODO: probably need to handle ToUser packets more intelligently than
         # this
         if isinstance(message, ToUser):
@@ -283,11 +286,12 @@ class MeshCoreTransportEngine:
         # Get configured packet size (calculated from MeshCore packet structure)
         max_packet_length = self.mc_config.get("max_packet_size", 140)
 
-        packets = self._chunk_message(text, max_packet_length)
+        chunks = self._chunk_message(text, max_packet_length)
         inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
-        for packet in packets:
-            sent = await self._send_packet(username, node_id, packet)
+        for chunk in chunks:
+            sent = await self._send_packet(username, node_id, chunk)
             await asyncio.sleep(inter_packet_delay)
+        return sent
 
     #------------------------------------------------------------
     # communication helpers
@@ -324,13 +328,7 @@ class MeshCoreTransportEngine:
         ack_timeout = self.mc_config.get("ack_timeout", 8)  # Increased from 5 to 8 seconds
         log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
 
-        # this can fail if the user's node is too close; the ACK arrives
-        # before this listener is registered. not actually a problem.
-        ack = await self.meshcore.wait_for_event(
-            EventType.ACK,
-            attribute_filters={"code": exp_ack},
-            timeout=ack_timeout
-        )
+        ack = await self.get_ack(exp_ack, ack_timeout)
 
         if ack:
             log.debug(f"✅ ACK received for packet to {node_id}")
@@ -378,6 +376,19 @@ class MeshCoreTransportEngine:
                 chunks[i] += f'[{i+1}/{len_chunks}]'
         return chunks
 
+    async def get_ack(self, code: str, timeout: int=10) -> bool:
+        """Await this function to see if a named ack has been received.
+        Returns True or False."""
+        i = 0
+        while True:
+            if i > timeout:
+                return False
+            if code in self._acks:
+                del self._acks[code]
+                return True
+            await asyncio.sleep(1)
+            i += 1
+
     #------------------------------------------------------------
     # bbs event handlers
     #------------------------------------------------------------
@@ -406,14 +417,28 @@ class MeshCoreTransportEngine:
 
                     if isinstance(message, list):
                         for msg in message:
-                            await self.send_to_node(state.node_id,
-                                                    state.username, msg)
+                            success = await self.send_to_node(
+                                state.node_id,
+                                state.username,
+                                msg
+                            )
+                            if not success:
+                                reading_msg = bool(msg.message)
+                                return self.disconnect(session_id,
+                                                       reading_msg=reading_msg)
                     else:
-                        await self.send_to_node(state.node_id,
-                                                state.username, message)
+                        success = await self.send_to_node(
+                            state.node_id,
+                            state.username,
+                            message
+                        )
+                        if not success:
+                            reading_msg = bool(message.message)
+                            return self.disconnect(session_id,
+                                                   reading_msg=reading_msg)
 
                 except asyncio.CancelledError:
-                    log.debug(f'BBS listener for {session_id} cancelled gracefully')
+                    log.debug(f'BBS listener for {session_id} cancelled')
                     break
                 except Exception as e:
                     log.error(f"Error in listener for {session_id}: {e}")
@@ -448,6 +473,10 @@ class MeshCoreTransportEngine:
                 EventType.NEW_CONTACT,
                 self.safe_handler(self.contact_manager.handle_advert)
             ))
+            self.subs.append(self.meshcore.subscribe(
+                EventType.ACK,
+                self.safe_handler(self._handle_acks)
+            ))
             await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
         except Exception as e:
@@ -464,6 +493,21 @@ class MeshCoreTransportEngine:
             except Exception as e:
                 log.exception(f"Handler {handler.__name__} crashed: {e}")
         return wrapper
+
+    async def _handle_acks(self, event):
+        """Cache received acks in self._acks.  Check for received acks with
+        await self.get_ack()."""
+        if hasattr(event, 'payload') and 'code' in event.payload:
+            code = event.payload['code']
+            log.debug(f'Received an ACK with code {code}')
+            now = datetime.now(UTC)
+            if code in self._acks:
+                if (now - self._acks[code]).seconds > 20:
+                    self._acks[code] = datetime.now(UTC)
+            else:
+                self._acks[code] = datetime.now(UTC)
+        else:
+            log.warning(f'Received an ACK without a code: {result.payload}')
 
     async def _handle_mc_message(self, event):
         """Handle incoming messages with comprehensive exception protection."""
@@ -678,13 +722,40 @@ class MeshCoreTransportEngine:
     async def remove_cache_node_id(self, node_id: str):
         """remove a node_id from the password cache.  to be used when the
         user proactively logs out, not when their session expires due
-        to inactivity."""
+        to inactivity or connectivity errors."""
         query = "DELETE FROM mc_passwd_cache WHERE node_id = ?"
         await self.db.execute(query, (node_id,))
         log.info(f"Removed {node_id} from MC password cache")
 
+    def disconnect(self, session_id: str, reading_msg: bool=False):
+        """Disconnect the named session. To be used when messages can't be
+        sent, as a way to preserve the user's experience at least a little
+        bit."""
+        state = self.session_mgr.get_session_state(session_id)
+        node_id = state.node_id
+
+        # cancel in-progress workflows
+        workflow_state = self.session_mgr.get_workflow(session_id)
+        if workflow_state:
+            workflow.cleanup() # TODO: this is pseudocode
+
+        if reading_msg:
+            # reset last-read message pointer for this room
+            room_id = state.current_room
+            room = Room(self.db, self.config, room_id)
+            await room.load()
+            msg_id = await room.get_last_unread_message_id(state.username)
+            await room.revert_last_read(username, msg_id)
+
+        # clean up BBS listener
+        self._cleanup_bbs_listener(session_id)
+
+        # cancel session
+        self.session_mgr.expire_session(session_id)
+
     def _setup_session_notifications(self):
-        """Set up session manager notification callback for logout messages and listener cleanup."""
+        """Set up session manager notification callback for logout
+        messages and listener cleanup."""
         def handle_session_expiration(session_id: str, message: str):
             """Handle session expiration: send logout notification and cleanup listeners."""
             log.debug(f"Handling session expiration for {session_id}: {message}")

@@ -35,7 +35,7 @@ I've got my system up much of the time now, if you're in the PugetMesh
 area, look for adverts from Tae's alpha BBS.  It's still missing a lot
 of features, and certainly still has bugs.
 
-# How to Citadel
+# How to Citadel (As a User)
 
 1. Advert
 2. Send something via DM
@@ -173,3 +173,40 @@ Always keep in mind, this is _super duper ALPHA quality software._
 That means it's riddled with bugs and problems and missing features,
 and it'll probably crash and eat your whole message database.  So,
 play, have fun, but don't expect this to be a useful system yet.
+
+# A Note on In-Memory Database Use
+
+I recently implemented a feature to hold the database in-memory rather
+than accessing it on disk.  This is _much_ faster on a low-power
+Raspberry Pi with an SD card, but it comes with important caveats.
+
+1. The BBS process will save the database to disk every so often.
+   It will _never_ read from disk except at startup.  If you need to
+   manually touch the database, stop the BBS process first.
+2. If the BBS crashes, recent changes made (messages written,
+   configurations changed, user statuses -- like read message
+   pointers, etc) will be lost.
+3. If you need to kill the BBS process, use ^C like normal, but wait
+   for it to completely terminate.  The DB shutdown (which saves what's
+   in memory out to disk) is the last thing to run in the shutdown
+   process.
+
+If you're running the BBS on a system with a fast disk, I _highly_
+recommend not using the in-memory DB.  Likewise, if you have a big
+message DB, I recommend getting a fast disk, like an SSD, and using
+that, unless you're certain your DB will fit in RAM.
+
+### Quick DB Size Calculation
+
+At the current config defaults (50 rooms, 300 messages per room), and
+guessing an average of 150 characters per message with 50 characters of
+overhead per message, a full message DB will only hit about 3 MB in
+size, and the other stuff in the database is at most a few kB.  So in
+theory even a RPi Zero with 512 MB of memory should be fine.  If your
+users are wordy, and we have 500 characters per message on average, the
+DB could be 7.5 MB.
+
+Note that each room's messages are in a circular buffer, where the newest
+message overwrites the oldest one, so you can count on your maximum
+values really being the maximum, and not causing problems in active
+rooms (though you'll lose older messages over time).

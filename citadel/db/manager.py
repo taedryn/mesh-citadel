@@ -34,13 +34,17 @@ class DatabaseManager:
         log.info("DatabaseManager initialized with blocking mode")
 
     async def start(self):
-        disk_conn = await aiosqlite.connect(self.db_path)
-        self.conn = await aiosqlite.connect(":memory:")
-        await disk_conn.backup(self.conn)
-        await disk_conn.close()
-        self._persist_task = asyncio.create_task(self._persist_loop())
-        seconds = self.config.bbs.get("database_save_interval", 300)
-        log.info(f"Database loaded into memory; will save to disk every {seconds}s")
+        if self.config.db.get("use_memory", False):
+            disk_conn = await aiosqlite.connect(self.db_path)
+            self.conn = await aiosqlite.connect(":memory:")
+            await disk_conn.backup(self.conn)
+            await disk_conn.close()
+            self._persist_task = asyncio.create_task(self._persist_loop())
+            seconds = self.config.db.get("persist_timer", 300)
+            log.info(f"Database loaded into memory; will save to disk every {seconds}s")
+        else:
+            self.conn = await aiosqlite.connect(self.db_path)
+            log.info(f"Database connected (using disk DB file)")
 
     async def _persist_loop(self):
         while not self._shutdown_event.is_set():
@@ -52,14 +56,15 @@ class DatabaseManager:
                 log.error(f"Error during periodic DB persist: {e}")
 
     async def persist_to_disk(self):
-        log.debug("Persisting database to disk")
-        disk_conn = await aiosqlite.connect(self.db_path)
-        await self.conn.backup(disk_conn)
-        await disk_conn.close()
-
+        if self.config.db.get("use_memory", False):
+            log.debug("Persisting database to disk")
+            disk_conn = await aiosqlite.connect(self.db_path)
+            await self.conn.backup(disk_conn)
+            await disk_conn.close()
 
     @classmethod
     def reset(cls):
+        """ONLY use this in testing"""
         cls._instance = None
 
     async def execute(self, query: str, params: tuple = (), callback: Optional[Callable] = None):
