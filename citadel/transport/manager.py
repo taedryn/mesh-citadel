@@ -51,6 +51,12 @@ class TransportManager:
         self._running = True
         num_engines = len(self.engines)
         e_word = "engine" if num_engines == 1 else "engines"
+        if "meshcore" in self.engines:
+            self.mc_watchdog = WatchdogController(
+                "MeshCore",
+                60,
+                reset_meshcore
+            )
         log.info(f"Transport manager started with {num_engines} {e_word} running")
 
     async def stop(self) -> None:
@@ -109,6 +115,17 @@ class TransportManager:
         self.engines['meshcore'] = engine
         log.info("MeshCore engine started")
 
+    def restart_meshcore(self):
+        """stop and start the meshcore engine to reset the connection"""
+        # TODO: implement this
+        if "meshcore" in self.engines:
+            engine = self.engines["meshcore"]
+            log.info(f"Stopping transport engine: {name}")
+            if hasattr(engine, 'stop'):
+                await engine.stop()
+            await _start_meshcore_engine()
+            log.info("MeshCore engine restarted")
+
     @property
     def is_running(self) -> bool:
         """Check if the transport manager is running."""
@@ -117,3 +134,42 @@ class TransportManager:
     def get_engine(self, name: str) -> Optional[Any]:
         """Get a transport engine by name."""
         return self.engines.get(name)
+
+
+class WatchdogController:
+    def __init__(self, name: str, timeout: int=60, reset_callback: Callable=None):
+        self.name = name
+        self.reset_callback = reset_callback
+        self._reset_event = asyncio.Event()
+        self._timeout = timeout
+        self._watchdog_task = None
+        self._shutdown = False
+
+    async def start(self):
+        self._watchdog_task = asyncio.create_task(self._watchdog_loop())
+
+    def get_reset_callback(self):
+        async def reset():
+            self._reset_event.set()
+        return reset
+
+    async def _watchdog_loop(self):
+        while not self._shutdown:
+            self._reset_event.clear()
+            try:
+                await asyncio.wait_for(self._reset_event.wait(), timeout=self._timeout)
+                # Reset received — continue loop
+            except asyncio.TimeoutError:
+                log.error(f"{name} watchdog timed out. Resetting {name}")
+                if self.reset_callback:
+                    reset_callback()
+
+    async def shutdown(self):
+        self._shutdown = True
+        if self._watchdog_task:
+            self._watchdog_task.cancel()
+            try:
+                await self._watchdog_task
+            except asyncio.CancelledError:
+                pass
+

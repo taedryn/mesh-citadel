@@ -448,15 +448,16 @@ class MeshCoreTransportEngine:
                 EventType.NEW_CONTACT,
                 self.safe_handler(self.contact_manager.handle_advert)
             ))
+            self.subs.append(self.meshcore.subscribe(
+                EventType.ACK,
+                self.safe_handler(self._handle_acks)
+            ))
             await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
         except Exception as e:
             log.error(f"Failed to register handlers: {e}")
             raise
 
-    # with any luck, this will catch whatever is halting the event processing
-    # loop.  Search for this "Handler X crashed" string in the log file if
-    # the bbs goes silent again.
     def safe_handler(self, handler):
         async def wrapper(*args, **kwargs):
             try:
@@ -464,6 +465,11 @@ class MeshCoreTransportEngine:
             except Exception as e:
                 log.exception(f"Handler {handler.__name__} crashed: {e}")
         return wrapper
+
+    async def _handle_acks(self, event):
+        """Handle incoming ACKs, putting them into self._acks.  Use
+        self.get_ack() to see if an ack has arrived."""
+        import pdb; pdb.set_trace()
 
     async def _handle_mc_message(self, event):
         """Handle incoming messages with comprehensive exception protection."""
