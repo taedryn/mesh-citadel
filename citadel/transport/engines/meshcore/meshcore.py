@@ -31,7 +31,7 @@ class MeshCoreTransportEngine:
         self.config = config
         self.mc_config = config.transport.get("meshcore", {})
         self.db = db
-        self.feeder = WatchdogFeeder(config, feed_watchdog)
+        self.feed_watchdog = feed_watchdog
         self.command_processor = CommandProcessor(config, db, session_mgr)
         self.dedupe = MessageDeduplicator()
         self.text_parser = TextParser()
@@ -41,6 +41,7 @@ class MeshCoreTransportEngine:
         self.tasks = []
         self.subs = []
         self.listeners = {}
+        self.scheds = []
         self._event_loop = None
         self._acks = {}
 
@@ -75,9 +76,14 @@ class MeshCoreTransportEngine:
     # left off here.  i'm not sure how to actually trigger the WatchdogFeeder's
     # start_feeder() function properly.  a thing for the future.
     async def start_watchdog(self):
-        await self.feeder.start_feeder()
-        scheduler = AdvertScheduler(self.config, mc)
+        scheduler = WatchdogFeeder(self.config, self.feed_watchdog)
         self.scheds.append(scheduler)
+        self.tasks.append(
+            self._create_monitored_task(
+                scheduler.start_feeder(),
+                f"watchdog_feeder_{len(self.scheds)}"
+            )
+        )
         log.info("Started watchdog feeder system")
 
 
@@ -155,7 +161,6 @@ class MeshCoreTransportEngine:
             #config_max = cm.get('max_device_contacts', 0)
             #device_max = info['max_contacts']
             #log.info(f"Device can hold {device_max} contacts ({config_max} is configured)")
-        self.scheds = []
         # set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
         self.scheds.append(scheduler)

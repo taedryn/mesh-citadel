@@ -57,12 +57,14 @@ class WatchdogFeeder:
         self.config = config
         self.feeder_func = feeder_func
         self._stop_event = asyncio.Event()
+        if not feeder_func:
+            raise RuntimeError("Feeder function must be callable function")
 
     async def start_feeder(self):
         timeout = self.config.transport.get("meshcore", {}).get("watchdog_reset", 30)
         try:
             while not self._stop_event.is_set():
-                await feeder_func()
+                self.feeder_func()
                 try:
                     # Wait with cancellation support
                     await asyncio.wait_for(self._stop_event.wait(),

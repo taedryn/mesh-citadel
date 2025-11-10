@@ -139,10 +139,10 @@ class TransportManager:
 
 
 class WatchdogController:
-    def __init__(self, name: str, timeout: int=60, reset_callback: Callable=None):
+    def __init__(self, name: str, timeout: int=60, timeout_action: Callable=None):
         self.name = name
-        self.reset_callback = reset_callback
-        self._reset_event = asyncio.Event()
+        self.timeout_action = timeout_action
+        self._feed_event = asyncio.Event()
         self._timeout = timeout
         self._watchdog_task = None
         self._shutdown = False
@@ -152,22 +152,24 @@ class WatchdogController:
         log.info(f"Starting watchdog timer for {self.name} engine")
         log.info(f"Set watchdog timeout to {self._timeout}s")
 
-    def get_reset_callback(self):
-        async def reset():
-            self._reset_event.set()
-            log.debug("Watchdog reset with reset()")
-        return reset
+    def get_feed_callback(self):
+        async def feed():
+            self._feed_event.set()
+            log.debug("Watchdog fed with feed()")
+        return feed
 
     async def _watchdog_loop(self):
         while not self._shutdown:
-            self._reset_event.clear()
+            self._feed_event.clear()
             try:
-                await asyncio.wait_for(self._reset_event.wait(), timeout=self._timeout)
+                log.info("Waiting for watchdog to expire")
+                await asyncio.wait_for(self._feed_event.wait(), timeout=self._timeout)
                 # Reset received — continue loop
+                log.info("Watchdog was fed, starting from 0")
             except asyncio.TimeoutError:
-                log.error(f"{name} watchdog timed out. Resetting {name}")
-                if self.reset_callback:
-                    await reset_callback()
+                log.error(f"{name} watchdog timed out. Restarting {name}")
+                if self.timeout_action:
+                    await timeout_action()
 
     async def shutdown(self):
         self._shutdown = True
@@ -179,5 +181,5 @@ class WatchdogController:
                 pass
 
     def feed_watchdog(self):
-        self._reset_event.set()
-        log.debug("Watchdog reset with feed_watchdog()")
+        self._feed_event.set()
+        log.debug("Watchdog fed with feed_watchdog()")
