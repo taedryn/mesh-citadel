@@ -123,10 +123,8 @@ class TransportManager:
         """stop and start the meshcore engine to reset the connection"""
         if "meshcore" in self.engines:
             engine = self.engines["meshcore"]
-            log.info(f"Stopping transport engine: {name}")
             await engine.stop()
-            await _start_meshcore_engine()
-            log.info("MeshCore engine restarted")
+            await self._start_meshcore_engine()
 
     @property
     def is_running(self) -> bool:
@@ -162,14 +160,12 @@ class WatchdogController:
         while not self._shutdown:
             self._feed_event.clear()
             try:
-                log.info("Waiting for watchdog to expire")
                 await asyncio.wait_for(self._feed_event.wait(), timeout=self._timeout)
                 # Reset received — continue loop
-                log.info("Watchdog was fed, starting from 0")
             except asyncio.TimeoutError:
-                log.error(f"{name} watchdog timed out. Restarting {name}")
+                log.warning(f"{self.name} watchdog timed out. Restarting {self.name}")
                 if self.timeout_action:
-                    await timeout_action()
+                    await self.timeout_action()
 
     async def shutdown(self):
         self._shutdown = True

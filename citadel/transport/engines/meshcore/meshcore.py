@@ -149,18 +149,6 @@ class MeshCoreTransportEngine:
         result = await mc.ensure_contacts()
         if not result:
             raise(TransportError(f"Unable to ensure contacts: {result.payload}"))
-        log.info("Gathering device information")
-        result = await mc.commands.send_device_query()
-        if result.type == EventType.ERROR:
-            raise TransportError(f"Unable to get device info: {result.payload}")
-        else:
-            log.info(f"Self-info returned: {mc.self_info}")
-            #info = result.payload
-            #log.info(f"Device is running firmware {info['ver']}, built {info['fw_build']}")
-            #cm = mc_config.get('contact_manager', {})
-            #config_max = cm.get('max_device_contacts', 0)
-            #device_max = info['max_contacts']
-            #log.info(f"Device can hold {device_max} contacts ({config_max} is configured)")
         # set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
         self.scheds.append(scheduler)
