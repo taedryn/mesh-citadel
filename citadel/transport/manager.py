@@ -106,9 +106,9 @@ class TransportManager:
     async def _start_meshcore_engine(self) -> None:
         """Start the MeshCore transport engine"""
         engine = MeshCoreTransportEngine(
-            session_mgr=self.session_manager,
             config=self.config,
             db=self.db_manager,
+            session_mgr=self.session_manager,
             feed_watchdog=self.mc_watchdog.feed_watchdog
         )
         try:
