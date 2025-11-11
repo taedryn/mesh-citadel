@@ -158,7 +158,7 @@ class ProtocolHandler:
             await asyncio.sleep(1)
             i += 1
 
-    def handle_ack(self, event):
+    async def handle_ack(self, event):
         """Handle incoming ACKs from MeshCore events."""
         if hasattr(event, 'payload') and 'code' in event.payload:
             code = event.payload['code']

@@ -256,10 +256,6 @@ class MeshCoreTransportEngine:
             if self.meshcore:
                 self.meshcore.unsubscribe(sub)
 
-        # Stop contact manager
-        if self.contact_manager:
-            await self.contact_manager.stop()
-
         # Close MeshCore connection
         if self.meshcore:
             # TODO: figure out exceptions for this
