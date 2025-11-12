@@ -179,10 +179,34 @@ class MessageRouter:
 
             if isinstance(touser, list):
                 last_msg = len(touser) - 1
+                wf_state = WorkflowState(
+                    kind="mesh_msg_reader",
+                    step=1,
+                    data={}
+                )
+
+                context = WorkflowContext(
+                    session_id=session_id,
+                    db=self.db,
+                    config=self.config,
+                    session_mgr=self.session_mgr,
+                    wf_state=wf_state
+                )
+
+                # Get workflow handler from registry
+                handler = workflow_registry.get("mesh_msg_reader")
+
                 for i, msg in enumerate(touser):
-                    if i == last_msg:
+                    if i == 0:
+                        msg = self.insert_msg_header(msg, len(touser))
+                    elif i == last_msg:
+                        # just send the message
                         msg = await self.insert_prompt(session_id, msg)
-                    success = await self._send_to_node_func(node_id, username, msg)
+                    success = await self._send_to_node_func(
+                        node_id,
+                        username,
+                        msg
+                    )
                     if not success:
                         await self._disconnect_func(session_id)
             else:
@@ -200,6 +224,20 @@ class MessageRouter:
                     await self._disconnect_func(session_id)
             except:
                 pass
+
+    def insert_msg_header(msg, num_msgs):
+        """Inserts a header before the first message, describing
+        how many messages are being sent, and with instructions how to
+        stop the flow."""
+        prompt_str = f"Displaying {num_msgs} messages. Send 'stop' to stop.\n\n"
+        if isinstance(msg, ToUser):
+            if msg.message:
+                msg.message.content = f'{prompt_str}' + msg.message.content
+            else:
+                msg.text = f'{prompt_str}' + msg.text
+        elif isinstance(touser, str):
+            msg = f'{prompt_str}' + msg
+        return msg
 
     async def insert_prompt(self, session_id: str, touser) -> str:
         """Insert UI prompts and notifications into responses."""
