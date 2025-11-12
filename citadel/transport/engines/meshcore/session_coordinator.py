@@ -15,9 +15,12 @@ log = logging.getLogger(__name__)
 class SessionCoordinator:
     """Manages BBS listeners and session lifecycle coordination."""
 
-    def __init__(self, session_mgr, create_monitored_task_func):
+    def __init__(self, config, session_mgr, create_monitored_task_func):
+        self.config = config
         self.session_mgr = session_mgr
         self._create_monitored_task = create_monitored_task_func
+        # Derive mc_config from main config
+        self.mc_config = config.transport.get("meshcore", {})
         self.listeners: Dict[str, asyncio.Task] = {}
         self._send_to_node_func = None  # Will be set by parent
         self._disconnect_func = None    # Will be set by parent
@@ -49,6 +52,10 @@ class SessionCoordinator:
                     else:
                         log.debug('BBS message is NOT a list')
                     log.debug(f'Received BBS msg for {session_id}: {message}')
+
+                    # Add inter_packet_delay before sending messages
+                    inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+                    await asyncio.sleep(inter_packet_delay)
 
                     if isinstance(message, list):
                         for msg in message:
@@ -83,15 +90,40 @@ class SessionCoordinator:
                 except asyncio.CancelledError:
                     log.debug(f'BBS listener for {session_id} cancelled')
                     break
+                except (ConnectionError, TimeoutError, OSError) as e:
+                    # Network/connection errors - recoverable, continue after brief pause
+                    log.warning(f"Network error in BBS listener for {session_id}: {e}, retrying in 2s")
+                    await asyncio.sleep(2)
+                    continue
+                except (AttributeError, TypeError, ValueError) as e:
+                    # Data/serialization errors - log and skip this message
+                    log.error(f"Data error in BBS listener for {session_id}: {e}, skipping message")
+                    continue
+                except MemoryError as e:
+                    # Resource exhaustion - critical, terminate and signal restart needed
+                    log.critical(f"Memory error in BBS listener for {session_id}: {e}, terminating")
+                    # TODO: Signal system restart needed
+                    break
                 except Exception as e:
-                    log.error(f"Error in listener for {session_id}: {e}")
+                    # Unexpected error - log details and attempt graceful recovery
+                    log.exception(f"Unexpected error in BBS listener for {session_id}: {e}")
+
                     # Check if session still exists before trying to send error
-                    if self.session_mgr.get_session_state(session_id):
-                        await self._send_to_node_func(state.node_id,
-                                                      state.username, f"ERROR: {e}\n")
-                    else:
-                        log.info(f'Session {session_id} expired during error handling, terminating listener')
+                    try:
+                        current_state = self.session_mgr.get_session_state(session_id)
+                        if current_state:
+                            await self._send_to_node_func(current_state.node_id,
+                                                          current_state.username, f"System error occurred. Please try again.\n")
+                        else:
+                            log.info(f'Session {session_id} expired during error handling, terminating listener')
+                            break
+                    except Exception as recovery_error:
+                        log.exception(f"Failed to send error message for {session_id}: {recovery_error}")
+                        # If we can't even send an error message, terminate listener
                         break
+
+                    # Brief pause before continuing to prevent tight error loops
+                    await asyncio.sleep(1)
 
             log.info(f'BBS listener for {session_id} terminated')
 

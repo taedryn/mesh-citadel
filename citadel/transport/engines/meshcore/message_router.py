@@ -58,16 +58,13 @@ class MessageRouter:
                     node_id = event.payload['pubkey_prefix']
                     session_id = self.session_mgr.get_session_by_node_id(node_id)
                     if session_id:
-                        state = self.session_mgr.get_session_state(session_id)
-                        success = await self._send_to_node_func(
-                            node_id,
-                            state.username,
-                            "System temporarily unavailable. Please try later."
+                        from citadel.transport.packets import ToUser
+                        error_msg = ToUser(
+                            session_id=session_id,
+                            text="System temporarily unavailable. Please try later."
                         )
-                        if success:
-                            log.info(f"Sent error message to node {node_id}")
-                        else:
-                            log.warning(f"Unable to send system down msg to {node_id} (failed to get ACK)")
+                        await self.session_mgr.send_msg(session_id, error_msg)
+                        log.info(f"Queued error message for session {session_id}")
             except Exception as recovery_error:
                 log.exception(f"Failed to send error message to user: {recovery_error}")
 
@@ -127,17 +124,7 @@ class MessageRouter:
                     # This is a reconnection after timeout - send welcome back message
                     welcome_msg = f"Welcome back, {username}! You've been automatically logged in."
                     welcome_msg = await self.insert_prompt(session_id, welcome_msg)
-
-                    inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
-                    await asyncio.sleep(inter_packet_delay)
-                    success = await self._send_to_node_func(
-                        node_id,
-                        username,
-                        welcome_msg
-                    )
-                    if not success:
-                        log.warning("No ACK when sending welcome back msg")
-                        await self._disconnect_func(session_id)
+                    await self.session_mgr.send_msg(session_id, welcome_msg)
 
                     # For welcome back, we send them to the lobby with a prompt
                     # Any text they sent is ignored - this was just to reconnect
@@ -157,14 +144,12 @@ class MessageRouter:
         except Exception as e:
             log.exception(f"Authentication/workflow processing failed for {node_id}")
             try:
-                success = await self._send_to_node_func(
-                    node_id,
-                    username if 'username' in locals() else "user",
-                    "Authentication error. Please try again."
+                from citadel.transport.packets import ToUser
+                error_msg = ToUser(
+                    session_id=session_id,
+                    text="Authentication error. Please try again."
                 )
-                if not success:
-                    log.warning(f"No ACK sending auth error msg")
-                    await self._disconnect_func(session_id)
+                await self.session_mgr.send_msg(session_id, error_msg)
             except:
                 pass
             return
@@ -173,28 +158,8 @@ class MessageRouter:
         try:
             touser = await self.command_processor.process(packet)
 
-            # pause the bbs just a moment before sending the command response
-            inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
-            await asyncio.sleep(inter_packet_delay)
-
             if isinstance(touser, list):
                 last_msg = len(touser) - 1
-                wf_state = WorkflowState(
-                    kind="mesh_msg_reader",
-                    step=1,
-                    data={}
-                )
-
-                context = WorkflowContext(
-                    session_id=session_id,
-                    db=self.db,
-                    config=self.config,
-                    session_mgr=self.session_mgr,
-                    wf_state=wf_state
-                )
-
-                # Get workflow handler from registry
-                handler = workflow_registry.get("mesh_msg_reader")
 
                 for i, msg in enumerate(touser):
                     if i == 0:
@@ -202,26 +167,20 @@ class MessageRouter:
                     elif i == last_msg:
                         # just send the message
                         msg = await self.insert_prompt(session_id, msg)
-                    success = await self._send_to_node_func(
-                        node_id,
-                        username,
-                        msg
-                    )
-                    if not success:
-                        await self._disconnect_func(session_id)
+                    await self.session_mgr.send_msg(session_id, msg)
             else:
                 touser = await self.insert_prompt(session_id, touser)
-                success = await self._send_to_node_func(node_id, username, touser)
-                if not success:
-                    await self._disconnect_func(session_id)
+                await self.session_mgr.send_msg(session_id, touser)
 
         except Exception as e:
             log.exception(f"Command processing/response failed for {node_id}")
             try:
-                msg = "Command processing error. Please try again."
-                success = await self._send_to_node_func(node_id, username, msg)
-                if not success:
-                    await self._disconnect_func(session_id)
+                from citadel.transport.packets import ToUser
+                error_msg = ToUser(
+                    session_id=session_id,
+                    text="Command processing error. Please try again."
+                )
+                await self.session_mgr.send_msg(session_id, error_msg)
             except:
                 pass
 
@@ -235,7 +194,7 @@ class MessageRouter:
                 msg.message.content = f'{prompt_str}' + msg.message.content
             else:
                 msg.text = f'{prompt_str}' + msg.text
-        elif isinstance(touser, str):
+        elif isinstance(msg, str):
             msg = f'{prompt_str}' + msg
         return msg
 
