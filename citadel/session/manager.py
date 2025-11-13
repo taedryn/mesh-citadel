@@ -130,7 +130,7 @@ class SessionManager:
         if not isinstance(message, ToUser):
             raise ValueError("Sent messages must be ToUser type")
         state = self.get_session_state(session_id)
-        log.info(f'adding message to queue: {message}')
+        log.debug(f'adding message to queue: {message}')
         await state.msg_queue.put(message)
         return state.msg_queue.qsize()
 
