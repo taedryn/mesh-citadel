@@ -134,6 +134,20 @@ class SessionManager:
         await state.msg_queue.put(message)
         return state.msg_queue.qsize()
 
+    async def clear_msg_queue(self, session_id: str) -> int:
+        """remove all pending messages from the message queue.  unsent
+        messages are discarded."""
+        state = self.get_session_state(session_id)
+        if state.msg_queue.empty():
+            return 0
+        i = 0
+        while True:
+            try:
+                state.msg_queue.get_nowait()
+                i += 1
+            except asyncio.QueueEmpty:
+                return i
+
     # --- New helpers for richer state ---
 
     def get_username(self, session_id: str) -> str | None:

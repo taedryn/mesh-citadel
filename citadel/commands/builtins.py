@@ -329,14 +329,35 @@ class QuitCommand(BaseCommand):
         else:
             # Fallback if login workflow unavailable
             return ToUser(
-                session_id=session_id,
+                session_id=state.session_id,
                 text="Goodbye! Please reconnect to log in again."
             )
 
 
 @register_command
+class StopCommand(BaseCommand):
+    code = "STOP"  # Use full word since this is a special case
+    name = "stop"
+    category = CommandCategory.COMMON
+    permission_level = PermissionLevel.USER
+    short_text = "Stop messages"
+    help_text = "Stop sending messages as soon as possible"
+
+    async def run(self, context):
+        num = await context.session_mgr.clear_msg_queue(context.session_id)
+        if num == 1:
+            mword = "message"
+        else:
+            mword = "messages"
+        return ToUser(
+            session_id=context.session_id,
+            text=f"Stopped {num} pending {mword}"
+        )
+
+
+@register_command
 class CancelCommand(BaseCommand):
-    code = "cancel"  # Use full word since this is a special case
+    code = "CANCEL"  # Use full word since this is a special case
     name = "cancel"
     category = CommandCategory.COMMON
     permission_level = PermissionLevel.USER

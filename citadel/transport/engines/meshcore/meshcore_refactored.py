@@ -89,7 +89,7 @@ class MeshCoreTransportEngine:
 
             # Initialize session coordinator
             self.session_coordinator = SessionCoordinator(
-                config, self.session_mgr, self._create_monitored_task
+                self.config, self.session_mgr, self._create_monitored_task
             )
 
             # Wire up the callbacks between components

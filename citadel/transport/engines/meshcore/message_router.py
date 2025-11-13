@@ -58,7 +58,6 @@ class MessageRouter:
                     node_id = event.payload['pubkey_prefix']
                     session_id = self.session_mgr.get_session_by_node_id(node_id)
                     if session_id:
-                        from citadel.transport.packets import ToUser
                         error_msg = ToUser(
                             session_id=session_id,
                             text="System temporarily unavailable. Please try later."
@@ -124,7 +123,8 @@ class MessageRouter:
                     # This is a reconnection after timeout - send welcome back message
                     welcome_msg = f"Welcome back, {username}! You've been automatically logged in."
                     welcome_msg = await self.insert_prompt(session_id, welcome_msg)
-                    await self.session_mgr.send_msg(session_id, welcome_msg)
+                    touser = ToUser(session_id=session_id, text=welcome_msg)
+                    await self.session_mgr.send_msg(session_id, touser)
 
                     # For welcome back, we send them to the lobby with a prompt
                     # Any text they sent is ignored - this was just to reconnect
@@ -144,7 +144,6 @@ class MessageRouter:
         except Exception as e:
             log.exception(f"Authentication/workflow processing failed for {node_id}")
             try:
-                from citadel.transport.packets import ToUser
                 error_msg = ToUser(
                     session_id=session_id,
                     text="Authentication error. Please try again."
@@ -163,7 +162,7 @@ class MessageRouter:
 
                 for i, msg in enumerate(touser):
                     if i == 0:
-                        msg = self.insert_msg_header(msg, len(touser))
+                        await self.send_msg_header(session_id, len(touser))
                     elif i == last_msg:
                         # just send the message
                         msg = await self.insert_prompt(session_id, msg)
@@ -175,7 +174,6 @@ class MessageRouter:
         except Exception as e:
             log.exception(f"Command processing/response failed for {node_id}")
             try:
-                from citadel.transport.packets import ToUser
                 error_msg = ToUser(
                     session_id=session_id,
                     text="Command processing error. Please try again."
@@ -184,19 +182,13 @@ class MessageRouter:
             except:
                 pass
 
-    def insert_msg_header(msg, num_msgs):
+    async def send_msg_header(self, session_id, num_msgs):
         """Inserts a header before the first message, describing
         how many messages are being sent, and with instructions how to
         stop the flow."""
-        prompt_str = f"Displaying {num_msgs} messages. Send 'stop' to stop.\n\n"
-        if isinstance(msg, ToUser):
-            if msg.message:
-                msg.message.content = f'{prompt_str}' + msg.message.content
-            else:
-                msg.text = f'{prompt_str}' + msg.text
-        elif isinstance(msg, str):
-            msg = f'{prompt_str}' + msg
-        return msg
+        prompt_str = f"Displaying {num_msgs} messages. Send 'stop' to stop."
+        touser = ToUser(session_id=session_id, text=prompt_str)
+        await self.session_mgr.send_msg(session_id, touser)
 
     async def insert_prompt(self, session_id: str, touser) -> str:
         """Insert UI prompts and notifications into responses."""
