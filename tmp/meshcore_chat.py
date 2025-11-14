@@ -3,6 +3,7 @@ back and forth across meshcore DMs.  use it as a model for trading
 messages back and forth between the BBS and remote nodes. """
 
 import asyncio
+from datetime import datetime
 from meshcore import MeshCore, EventType
 from prompt_toolkit.application import Application
 from prompt_toolkit.layout import Layout, HSplit, Window
@@ -88,10 +89,12 @@ class MeshChatUI:
                 self._add_message(f"❌ Error: {packet.payload}")
                 break
             if isinstance(packet.payload, dict):
+                timestamp = packet.payload.get("sender_timestamp", 0)
+                time_str = datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
                 sender = packet.payload.get("pubkey_prefix", "unknown")
                 body = packet.payload.get("text", "")
                 SNR = packet.payload.get("SNR", "no SNR")
-                self._add_message(f"📥 {sender} ({SNR} dB): {body}")
+                self._add_message(f"📥 {time_str} {sender} ({SNR} dB): {body}")
             else:
                 self._add_message(f"📥 {packet.payload}")
 

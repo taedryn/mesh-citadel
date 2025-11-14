@@ -1,3 +1,10 @@
+## 0.7.1 (2025-11-13)
+
+### Fix
+
+- **message-de-duplication**: modified the de-duplication code to take account of the sent message's timestamp.  changed the dedupe window from 10s to 30s.  added the missing background task to clear out expired dedupe entries every 60s
+- **logging**: moved log message containing entire outbound message to the DEBUG queue for user privacy during normal operation
+
 ## 0.7.0 (2025-11-12)
 
 ### Feat
