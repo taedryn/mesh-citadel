@@ -83,14 +83,13 @@ class WatchdogFeeder:
 class MessageDeduplicator:
     """A simple class to provide message de-duplication services"""
 
-    def __init__(self, ttl=10):
+    def __init__(self, ttl=30):
         self.seen = {}  # message_hash: timestamp
         self.ttl = ttl  # seconds
-        #self._lock = AsyncLoggingLock('MessageDeduplicator')
         self._lock = asyncio.Lock()
 
-    async def is_duplicate(self, node_id: str, message: str) -> bool:
-        text = '::'.join([node_id, message])
+    async def is_duplicate(self, node_id: str, timestamp: int, message: str) -> bool:
+        text = '::'.join([node_id, str(timestamp), message])
         msg_hash = hashlib.sha256(text.encode()).hexdigest()
         async with self._lock:
             now = time.time()
@@ -102,8 +101,13 @@ class MessageDeduplicator:
     async def clear_expired(self):
         """Call this frequently to avoid the message hash table growing
         too large"""
-        now = time.time()
-        async with self._lock:
-            for msg_hash, timestamp in self.seen.items():
-                if now - self.seen[msg_hash] > self.ttl:
-                    del self.seen[msg_hash]
+        while True:
+            i = 0
+            now = time.time()
+            async with self._lock:
+                for msg_hash in list(self.seen.keys()):
+                    if now - self.seen[msg_hash] > self.ttl:
+                        del self.seen[msg_hash]
+                        i += 1
+            log.debug(f"Dedupe ran and removed {i} messages from the pool")
+            await asyncio.sleep(60)

@@ -74,13 +74,14 @@ class MessageRouter:
             data = event.payload
             node_id = data['pubkey_prefix']
             text = data['text']
+            msg_timestamp = data['sender_timestamp']
         except (KeyError, AttributeError, TypeError) as e:
             log.error(f"Malformed message event - missing required fields: {e}")
             return
 
         # Check for duplicates with error handling
         try:
-            if await self.dedupe.is_duplicate(node_id, text):
+            if await self.dedupe.is_duplicate(node_id, msg_timestamp, text):
                 log.debug(f'Duplicate message from {node_id}, skipping')
                 return
         except Exception as e:

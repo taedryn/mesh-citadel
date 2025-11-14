@@ -82,7 +82,8 @@ class SessionManager:
     def expire_session(self, session_id: str) -> bool:
         with self.lock:
             if session_id in self.sessions:
-                username, _ = self.sessions[session_id]
+                state, _ = self.sessions[session_id]
+                username = state.username
                 del self.sessions[session_id]
                 log.info(f"Session manually expired for username='{username}'")
                 return True
@@ -99,7 +100,6 @@ class SessionManager:
             username = state.username
             node_id = state.node_id
             expired_sessions.append((session_id, username, node_id))
-
 
         msg = "Session closed due to inactivity. Send any message to reconnect."
         for session_id, username, node_id in expired_sessions:

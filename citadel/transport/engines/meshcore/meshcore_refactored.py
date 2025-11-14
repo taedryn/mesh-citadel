@@ -56,7 +56,7 @@ class MeshCoreTransportEngine:
 
         # Initialize components that don't need MeshCore
         self.node_auth = NodeAuth(config, db)
-        self.dedupe = MessageDeduplicator()
+        self.dedupe = None
         self.text_parser = TextParser()
         self.command_processor = CommandProcessor(config, db, session_mgr)
 
@@ -76,6 +76,7 @@ class MeshCoreTransportEngine:
             self._event_loop = asyncio.get_running_loop()
 
             await self.start_watchdog()
+            await self.start_dedupe()
             await self.start_meshcore()
 
             # Initialize protocol handler (now handles send method setup internally)
@@ -144,6 +145,16 @@ class MeshCoreTransportEngine:
             )
         )
         log.info("Started watchdog feeder system")
+
+    async def start_dedupe(self):
+        self.dedupe = MessageDeduplicator()
+        self.tasks.append(
+            self._create_monitored_task(
+                self.dedupe.clear_expired(),
+                f"dedupe_cleaner_{len(self.scheds)}"
+            )
+        )
+        log.info("Started message deduplication system")
 
     async def start_meshcore(self):
         """Initialize and start the MeshCore connection."""
