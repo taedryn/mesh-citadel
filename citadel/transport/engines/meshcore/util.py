@@ -26,16 +26,19 @@ class AdvertScheduler:
         self._stop_event = asyncio.Event()
 
     async def interval_advert(self):
-        interval = self.config.transport.get("meshcore", {}).get("advert_interval", 6)
+        interval = self.config.transport.get(
+            "meshcore", {}).get("advert_interval", 6)
         try:
             while not self._stop_event.is_set():
                 if self.meshcore:
-                    flood = self.config.transport.get('meshcore', {}).get('flood_advert', True)
+                    flood = self.config.transport.get(
+                        'meshcore', {}).get('flood_advert', True)
                     log.info(f"Sending advert (flood={flood})")
                     result = await self.meshcore.commands.send_advert(flood=flood)
                     if result.type == EventType.ERROR:
                         from citadel.transport.manager import TransportError
-                        raise TransportError(f"Unable to send advert: {result.payload}")
+                        raise TransportError(
+                            f"Unable to send advert: {result.payload}")
                 try:
                     # Wait with cancellation support
                     await asyncio.wait_for(self._stop_event.wait(), timeout=interval * 3600)
@@ -61,7 +64,8 @@ class WatchdogFeeder:
             raise RuntimeError("Feeder function must be callable function")
 
     async def start_feeder(self):
-        timeout = self.config.transport.get("meshcore", {}).get("watchdog_reset", 30)
+        timeout = self.config.transport.get(
+            "meshcore", {}).get("watchdog_reset", 30)
         try:
             while not self._stop_event.is_set():
                 self.feeder_func()

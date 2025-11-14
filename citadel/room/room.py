@@ -1,14 +1,14 @@
+from datetime import datetime, UTC
+from citadel.room.errors import RoomNotFoundError, PermissionDeniedError
+from citadel.message.errors import InvalidContentError
+from citadel.message.manager import MessageManager
+from citadel.user.user import User
 from dataclasses import dataclass
 import logging
 
 from citadel.auth.permissions import PermissionLevel
 
 log = logging.getLogger(__name__)
-from citadel.user.user import User
-from citadel.message.manager import MessageManager
-from citadel.message.errors import InvalidContentError
-from citadel.room.errors import RoomNotFoundError, PermissionDeniedError
-from datetime import datetime, UTC
 
 log = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ class Room:
             current = candidate.prev_neighbor
         return None
 
-    async def get_last_unread_message_id(self, user: [User|str]) -> int:
+    async def get_last_unread_message_id(self, user: [User | str]) -> int:
         if isinstance(user, User):
             username = user.username
         elif isinstance(user, str):
@@ -186,7 +186,7 @@ class Room:
             return 0
         return last_read[0][0]
 
-    async def has_unread_messages(self, user: [User|str]) -> bool:
+    async def has_unread_messages(self, user: [User | str]) -> bool:
         # Check if user has any unread messages they can actually read
         if isinstance(user, User):
             username = user.username
@@ -219,7 +219,7 @@ class Room:
 
     @classmethod
     async def get_all_visible_rooms(cls, db, config, user, room_id:
-                                    int=SystemRoomIDs.LOBBY_ID, visited=None):
+                                    int = SystemRoomIDs.LOBBY_ID, visited=None):
         if visited is None:
             visited = []
 
@@ -235,7 +235,6 @@ class Room:
             return await Room.get_all_visible_rooms(db, config, user, room.next_neighbor, visited)
         else:
             return visited
-
 
     # ------------------------------------------------------------
     # message handling
@@ -285,7 +284,6 @@ class Room:
             if msg:  # Only include messages the user can read
                 readable_ids.append(msg_id)
         return readable_ids
-
 
     async def get_oldest_message_id(self) -> int | None:
         result = await self.db.execute(
@@ -337,12 +335,13 @@ class Room:
             await self.db.execute("""
                 DELETE FROM room_messages
                 WHERE room_id = ? AND message_id = ?""",
-                (self.room_id, msg_id)
-            )
+                                  (self.room_id, msg_id)
+                                  )
             log.info(f"Message {msg_id} deleted from room {self.name}")
             return True
         except RuntimeError as err:
-            log.error(f"Unable to delete message {msg_id} from {self.name}: {err}")
+            log.error(
+                f"Unable to delete message {msg_id} from {self.name}: {err}")
         return False
 
     async def get_next_unread_message(self, user: User) -> dict | None:
@@ -397,7 +396,7 @@ class Room:
     # message pointer *if* the user was in fact reading their latest
     # message in the room.  if they were reading older messages, it
     # shouldn't move the pointer.
-    async def revert_last_read(self, user: [User|str], msg_id: int):
+    async def revert_last_read(self, user: [User | str], msg_id: int):
         """Revert the user's last-seen message pointer to the one
         *before* msg_id.  Used when a user loses their connection and
         we don't know if msg_id actually reached them or not."""
@@ -474,15 +473,15 @@ class Room:
             UPDATE rooms
             SET next_neighbor = ?
             WHERE id = ?""",
-            (new_id, after_room_id)
-        )
+                         (new_id, after_room_id)
+                         )
         if next_id:
             await db.execute("""
                 UPDATE rooms
                 SET prev_neighbor = ?
                 WHERE id = ?""",
-                (new_id, next_id)
-            )
+                             (new_id, next_id)
+                             )
 
         await cls.initialize_room_order(db, config)
         log.info(f"New room {name} created with ID {new_id}")

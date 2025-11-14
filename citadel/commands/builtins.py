@@ -50,7 +50,7 @@ async def scan_messages(context, msg_ids):
         # Message not authorized for this user (privacy check failed)
         if not msg:
             continue
-        
+
         msgs.append(msg)
 
     return ToUser(
@@ -316,7 +316,6 @@ class QuitCommand(BaseCommand):
         old_username = state.username if state else "unknown"
 
         log.info(f"User '{old_username}' logged out via quit command")
-
 
         # Start login workflow on existing session (resets to anonymous state)
         session_id, login_prompt = await context.session_mgr.start_login_workflow(
@@ -689,7 +688,6 @@ class WhoCommand(BaseCommand):
         )
 
 
-
 @register_command
 class DeleteMessageCommand(BaseCommand):
     code = "D"
@@ -728,13 +726,15 @@ class DeleteMessageCommand(BaseCommand):
 
         if allowed:
             await room.delete_message(msg['id'])
-            log.info(f'Message {msg["id"]} deleted from room {room.name} by {user.username} (allowed because {reason})')
+            log.info(
+                f'Message {msg["id"]} deleted from room {room.name} by {user.username} (allowed because {reason})')
             return ToUser(
                 session_id=context.session_id,
                 text=f"Message {msg['id']} deleted"
             )
         else:
-            log.info(f'User {user.username} tried to delete message {msg["id"]} in room {room.name}, but was denied (no permission)')
+            log.info(
+                f'User {user.username} tried to delete message {msg["id"]} in room {room.name}, but was denied (no permission)')
             return ToUser(
                 session_id=context.session_id,
                 text=f"You don't have permission to delete message {msg['id']}",
@@ -846,6 +846,7 @@ class CreateRoomCommand(BaseCommand):
             is_error=True,
             error_code="workflow_unavailable"
         )
+
 
 @register_command
 class EditRoomCommand(BaseCommand):

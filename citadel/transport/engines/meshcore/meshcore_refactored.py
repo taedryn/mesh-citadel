@@ -65,9 +65,9 @@ class MeshCoreTransportEngine:
         self.message_router = None
         self.session_coordinator = None
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # process lifecycle controls
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def start(self):
         """Start the MeshCore transport engine and all its components."""
@@ -80,7 +80,8 @@ class MeshCoreTransportEngine:
             await self.start_meshcore()
 
             # Initialize protocol handler (now handles send method setup internally)
-            self.protocol_handler = ProtocolHandler(self.config, self.db, self.meshcore)
+            self.protocol_handler = ProtocolHandler(
+                self.config, self.db, self.meshcore)
 
             # Initialize message router with all dependencies
             self.message_router = MessageRouter(
@@ -97,7 +98,8 @@ class MeshCoreTransportEngine:
             self._wire_component_callbacks()
 
             # Initialize contact manager
-            self.contact_manager = ContactManager(self.meshcore, self.db, self.config)
+            self.contact_manager = ContactManager(
+                self.meshcore, self.db, self.config)
             await self.contact_manager.start()
 
             # Set up event handlers and session notifications
@@ -198,7 +200,8 @@ class MeshCoreTransportEngine:
             coding_rate
         )
         if result.type == EventType.ERROR:
-            raise TransportError(f"Unable to set radio parameters: {result.payload}")
+            raise TransportError(
+                f"Unable to set radio parameters: {result.payload}")
 
         # Set TX power
         log.info(f"Setting MeshCore TX power to {tx_power} dBm")
@@ -217,13 +220,15 @@ class MeshCoreTransportEngine:
             log.info(f"Setting MeshCore multi-acks to '{multi_acks}'")
             result = await mc.commands.set_multi_acks(multi_acks)
             if result.type == EventType.ERROR:
-                raise TransportError(f"Unable to set multi-acks: {result.payload}")
+                raise TransportError(
+                    f"Unable to set multi-acks: {result.payload}")
 
         # Ensure contacts
         log.info("Ensuring contacts")
         result = await mc.ensure_contacts()
         if not result:
-            raise TransportError(f"Unable to ensure contacts: {result.payload}")
+            raise TransportError(
+                f"Unable to ensure contacts: {result.payload}")
 
         # Set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
@@ -281,9 +286,9 @@ class MeshCoreTransportEngine:
 
         log.info("MeshCore transport shut down")
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # Event handling (now much simpler)
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def _register_event_handlers(self):
         """Register event handlers with MeshCore."""
@@ -328,16 +333,17 @@ class MeshCoreTransportEngine:
                 log.exception(f"Handler {handler.__name__} crashed: {e}")
         return wrapper
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # Session management integration
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def disconnect(self, session_id: str, reading_msg: int = None):
         """Disconnect a session and send logout message."""
         try:
             state = self.session_mgr.get_session_state(session_id)
             if not state:
-                log.warning(f"Cannot disconnect - no state for session {session_id}")
+                log.warning(
+                    f"Cannot disconnect - no state for session {session_id}")
                 return
 
             # Send logout message
@@ -393,7 +399,8 @@ class MeshCoreTransportEngine:
                     await self.disconnect(session_id)
 
         except Exception as e:
-            log.exception(f"Failed to start login workflow for {session_id}: {e}")
+            log.exception(
+                f"Failed to start login workflow for {session_id}: {e}")
             try:
                 await self.protocol_handler.send_to_node(
                     node_id, "user", "Login system error. Please try again later."
@@ -401,22 +408,24 @@ class MeshCoreTransportEngine:
             except:
                 pass
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # Task management utilities
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     def _create_monitored_task(self, coro, name="unnamed"):
         """Create a task with exception monitoring (matches original implementation)."""
         try:
             loop = asyncio.get_running_loop()
             task = loop.create_task(coro)
-            task.add_done_callback(lambda t: self._handle_task_exception(t, name))
+            task.add_done_callback(
+                lambda t: self._handle_task_exception(t, name))
             log.debug(f"Created async task for {name}")
             return task
         except RuntimeError:
             # in a thread — use stored event loop for thread-safe execution
             if self._event_loop is None:
-                log.error(f"Cannot run {name} threadsafe: no stored event loop")
+                log.error(
+                    f"Cannot run {name} threadsafe: no stored event loop")
                 return None
 
             log.debug(f"Running {name} threadsafe using stored event loop")
@@ -429,7 +438,8 @@ class MeshCoreTransportEngine:
                 except Exception as e:
                     self._handle_task_exception(fut, name)
             future.add_done_callback(on_done)
-            log.debug(f"Successfully scheduled {name} for threadsafe execution")
+            log.debug(
+                f"Successfully scheduled {name} for threadsafe execution")
             return future
 
     def _handle_task_exception(self, task, name: str):
@@ -443,7 +453,8 @@ class MeshCoreTransportEngine:
             if hasattr(task, 'exception'):
                 exc = task.exception()
                 if exc:
-                    log.exception(f"Fire-and-forget task '{name}' failed: {exc}")
+                    log.exception(
+                        f"Fire-and-forget task '{name}' failed: {exc}")
                 else:
                     log.debug(f"Task '{name}' completed successfully")
             else:

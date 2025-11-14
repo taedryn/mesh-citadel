@@ -14,8 +14,10 @@ from citadel.workflows.registry import register
 
 log = logging.getLogger(__name__)
 
+
 def is_ascii_string(user_str: str) -> bool:
     return all(c in string.ascii_letters + string.digits + "_-" for c in user_str)
+
 
 @register
 class CreateRoomWorkflow(Workflow):
@@ -68,7 +70,8 @@ class CreateRoomWorkflow(Workflow):
                 # room name doesn't exist yet, woot
                 data['room_name'] = room_name
 
-            session_state = context.session_mgr.get_session_state(context.session_id)
+            session_state = context.session_mgr.get_session_state(
+                context.session_id)
             current_room_id = session_state.current_room
             if current_room_id < Room.MIN_USER_ROOM_ID:
                 current_room_id = await Room.get_last_room_id(context.db)
@@ -76,15 +79,14 @@ class CreateRoomWorkflow(Workflow):
             await current_room.load()
             next_room_id = current_room.next_neighbor
 
-
             context.session_mgr.clear_workflow(context.session_id)
 
             new_id = await Room.create(
                 context.db,
                 context.config,
                 name=room_name,
-                description="", # no description for now
-                read_only=False, # read-only can only be set in the edit flow
+                description="",  # no description for now
+                read_only=False,  # read-only can only be set in the edit flow
                 permission_level=PermissionLevel.USER,
                 after_room_id=current_room_id
             )
@@ -102,4 +104,3 @@ class CreateRoomWorkflow(Workflow):
             is_error=True,
             error_code="invalid_step"
         )
-

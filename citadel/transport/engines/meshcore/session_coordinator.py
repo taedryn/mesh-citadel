@@ -42,7 +42,8 @@ class SessionCoordinator:
                     # Check if session still exists (defensive programming)
                     state = self.session_mgr.get_session_state(session_id)
                     if not state:
-                        log.info(f'Session {session_id} no longer exists, terminating BBS listener')
+                        log.info(
+                            f'Session {session_id} no longer exists, terminating BBS listener')
                         break
 
                     log.debug(f'Waiting for BBS msgs for {session_id}')
@@ -54,7 +55,8 @@ class SessionCoordinator:
                     log.debug(f'Received BBS msg for {session_id}: {message}')
 
                     # Add inter_packet_delay before sending messages
-                    inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+                    inter_packet_delay = self.mc_config.get(
+                        "inter_packet_delay", 0.5)
                     await asyncio.sleep(inter_packet_delay)
 
                     if isinstance(message, list):
@@ -92,33 +94,40 @@ class SessionCoordinator:
                     break
                 except (ConnectionError, TimeoutError, OSError) as e:
                     # Network/connection errors - recoverable, continue after brief pause
-                    log.warning(f"Network error in BBS listener for {session_id}: {e}, retrying in 2s")
+                    log.warning(
+                        f"Network error in BBS listener for {session_id}: {e}, retrying in 2s")
                     await asyncio.sleep(2)
                     continue
                 except (AttributeError, TypeError, ValueError) as e:
                     # Data/serialization errors - log and skip this message
-                    log.error(f"Data error in BBS listener for {session_id}: {e}, skipping message")
+                    log.error(
+                        f"Data error in BBS listener for {session_id}: {e}, skipping message")
                     continue
                 except MemoryError as e:
                     # Resource exhaustion - critical, terminate and signal restart needed
-                    log.critical(f"Memory error in BBS listener for {session_id}: {e}, terminating")
+                    log.critical(
+                        f"Memory error in BBS listener for {session_id}: {e}, terminating")
                     # TODO: Signal system restart needed
                     break
                 except Exception as e:
                     # Unexpected error - log details and attempt graceful recovery
-                    log.exception(f"Unexpected error in BBS listener for {session_id}: {e}")
+                    log.exception(
+                        f"Unexpected error in BBS listener for {session_id}: {e}")
 
                     # Check if session still exists before trying to send error
                     try:
-                        current_state = self.session_mgr.get_session_state(session_id)
+                        current_state = self.session_mgr.get_session_state(
+                            session_id)
                         if current_state:
                             await self._send_to_node_func(current_state.node_id,
                                                           current_state.username, f"System error occurred. Please try again.\n")
                         else:
-                            log.info(f'Session {session_id} expired during error handling, terminating listener')
+                            log.info(
+                                f'Session {session_id} expired during error handling, terminating listener')
                             break
                     except Exception as recovery_error:
-                        log.exception(f"Failed to send error message for {session_id}: {recovery_error}")
+                        log.exception(
+                            f"Failed to send error message for {session_id}: {recovery_error}")
                         # If we can't even send an error message, terminate listener
                         break
 
@@ -127,14 +136,16 @@ class SessionCoordinator:
 
             log.info(f'BBS listener for {session_id} terminated')
 
-        task = self._create_monitored_task(listen(), f"bbs_listener_{session_id}")
+        task = self._create_monitored_task(
+            listen(), f"bbs_listener_{session_id}")
         self.listeners[session_id] = task
 
     def cleanup_bbs_listener(self, session_id: str):
         """Cancel and remove BBS listener for a session."""
         if session_id in self.listeners:
             listener_task = self.listeners[session_id]
-            log.info(f"Cancelling BBS listener for expired session {session_id}")
+            log.info(
+                f"Cancelling BBS listener for expired session {session_id}")
 
             # Cancel the task
             listener_task.cancel()
@@ -142,9 +153,11 @@ class SessionCoordinator:
             # Remove from listeners dict
             del self.listeners[session_id]
 
-            log.info(f"BBS listener cleanup completed for session {session_id}")
+            log.info(
+                f"BBS listener cleanup completed for session {session_id}")
         else:
-            log.debug(f"No BBS listener found for session {session_id} during cleanup")
+            log.debug(
+                f"No BBS listener found for session {session_id} during cleanup")
 
     async def shutdown(self):
         """Shutdown all BBS listeners cleanly."""
@@ -175,35 +188,43 @@ class SessionCoordinator:
         messages and listener cleanup."""
         def handle_session_expiration(session_id: str, message: str):
             """Handle session expiration: send logout notification and cleanup listeners."""
-            log.debug(f"Handling session expiration for {session_id}: {message}")
+            log.debug(
+                f"Handling session expiration for {session_id}: {message}")
 
             try:
                 state = self.session_mgr.get_session_state(session_id)
                 if state and state.node_id:
                     # Send logout notification using threadsafe task creation
-                    log.info(f"Sending logout notification to session {session_id}: {message}")
+                    log.info(
+                        f"Sending logout notification to session {session_id}: {message}")
                     task_result = self._create_monitored_task(
-                        self._send_to_node_func(state.node_id, state.username, message),
+                        self._send_to_node_func(
+                            state.node_id, state.username, message),
                         f"logout_notification_{session_id}"
                     )
 
                     if task_result:
-                        log.info(f"Successfully scheduled logout notification for session {session_id}")
+                        log.info(
+                            f"Successfully scheduled logout notification for session {session_id}")
                     else:
-                        log.error(f"Failed to schedule logout notification for session {session_id}")
+                        log.error(
+                            f"Failed to schedule logout notification for session {session_id}")
                 else:
-                    log.warning(f"Cannot send logout notification - no state or node_id for session {session_id}")
+                    log.warning(
+                        f"Cannot send logout notification - no state or node_id for session {session_id}")
 
                 # Clean up BBS listener (critical for preventing hangs!)
                 self.cleanup_bbs_listener(session_id)
 
             except Exception as e:
-                log.exception(f"Error handling session expiration for {session_id}: {e}")
+                log.exception(
+                    f"Error handling session expiration for {session_id}: {e}")
                 # Still try to cleanup listener even if notification fails
                 try:
                     self.cleanup_bbs_listener(session_id)
                 except Exception as cleanup_error:
-                    log.exception(f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
+                    log.exception(
+                        f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
 
         self.session_mgr.set_notification_callback(handle_session_expiration)
 

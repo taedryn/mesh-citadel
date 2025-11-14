@@ -10,7 +10,6 @@ from citadel.message.errors import InvalidRecipientError, InvalidContentError
 log = logging.getLogger(__name__)
 
 
-
 def format_timestamp(config, utc_timestamp):
     if isinstance(utc_timestamp, str):
         utc_timestamp = dateparse(utc_timestamp)
@@ -102,7 +101,7 @@ class MessageManager:
             log.error(f"Failed to delete message {message_id}: {e}")
             return False
 
-    async def get_message_summary(self, message_id: int, recipient_user: "User", msg_len: int=0) -> str:
+    async def get_message_summary(self, message_id: int, recipient_user: "User", msg_len: int = 0) -> str:
         """returns the first msg_len characters of a message (which
         includes the sender and timestamp), as a string."""
         query = """

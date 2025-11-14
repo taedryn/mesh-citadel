@@ -250,7 +250,8 @@ class CLIProtocolHandler:
                 # Handle session changes
                 if new_session_id and new_session_id != session_id:
                     session_id = new_session_id
-                    self._send_line(writer, f"SESSION_ID: {session_id}\n".encode("utf-8"))
+                    self._send_line(
+                        writer, f"SESSION_ID: {session_id}\n".encode("utf-8"))
                     self._send_line(writer, b"CONNECTED\n")
                     await writer.drain()
 
@@ -266,13 +267,17 @@ class CLIProtocolHandler:
 
                 # Send response
                 if response:
-                    formatted_response = self.formatter.format_response(response)
-                    self._send_line(writer, f"{formatted_response}\n".encode("utf-8"))
+                    formatted_response = self.formatter.format_response(
+                        response)
+                    self._send_line(
+                        writer, f"{formatted_response}\n".encode("utf-8"))
 
                 if result:
                     # Send session state
-                    session_state = self.formatter.format_session_state(session_id, self.session_manager)
-                    self._send_line(writer, f"{session_state}\n".encode("utf-8"))
+                    session_state = self.formatter.format_session_state(
+                        session_id, self.session_manager)
+                    self._send_line(
+                        writer, f"{session_state}\n".encode("utf-8"))
 
                     # Send prompt if appropriate
                     prompt = await self.formatter.format_prompt(session_id, result, self.session_manager)
@@ -307,7 +312,8 @@ class CLIProtocolHandler:
             self._send_line(writer, f"{formatted}\n".encode("utf-8"))
 
             # Send session state
-            session_state = self.formatter.format_session_state(session_id, self.session_manager)
+            session_state = self.formatter.format_session_state(
+                session_id, self.session_manager)
             self._send_line(writer, f"{session_state}\n".encode("utf-8"))
 
             if message.is_error:

@@ -37,7 +37,7 @@ class MessageRouter:
         self._start_login_workflow_func = None
 
     def set_callbacks(self, send_to_node_func: Callable, disconnect_func: Callable,
-                     start_bbs_listener_func: Callable, start_login_workflow_func: Callable):
+                      start_bbs_listener_func: Callable, start_login_workflow_func: Callable):
         """Set callbacks for communication and workflow management."""
         self._send_to_node_func = send_to_node_func
         self._disconnect_func = disconnect_func
@@ -50,22 +50,26 @@ class MessageRouter:
             log.debug(f"Received message event: {event}")
             await self._process_mc_message_safe(event)
         except Exception as e:
-            log.exception(f"CRITICAL: Message handler exception - event subscription preserved: {e}")
+            log.exception(
+                f"CRITICAL: Message handler exception - event subscription preserved: {e}")
             # Don't re-raise - that would break the subscription
             # Try to send error message if we can extract basic info
             try:
                 if hasattr(event, 'payload') and isinstance(event.payload, dict) and 'pubkey_prefix' in event.payload:
                     node_id = event.payload['pubkey_prefix']
-                    session_id = self.session_mgr.get_session_by_node_id(node_id)
+                    session_id = self.session_mgr.get_session_by_node_id(
+                        node_id)
                     if session_id:
                         error_msg = ToUser(
                             session_id=session_id,
                             text="System temporarily unavailable. Please try later."
                         )
                         await self.session_mgr.send_msg(session_id, error_msg)
-                        log.info(f"Queued error message for session {session_id}")
+                        log.info(
+                            f"Queued error message for session {session_id}")
             except Exception as recovery_error:
-                log.exception(f"Failed to send error message to user: {recovery_error}")
+                log.exception(
+                    f"Failed to send error message to user: {recovery_error}")
 
     async def _process_mc_message_safe(self, event):
         """The actual message processing logic, separated for better error handling."""
@@ -76,7 +80,8 @@ class MessageRouter:
             text = data['text']
             msg_timestamp = data['sender_timestamp']
         except (KeyError, AttributeError, TypeError) as e:
-            log.error(f"Malformed message event - missing required fields: {e}")
+            log.error(
+                f"Malformed message event - missing required fields: {e}")
             return
 
         # Check for duplicates with error handling
@@ -85,7 +90,8 @@ class MessageRouter:
                 log.debug(f'Duplicate message from {node_id}, skipping')
                 return
         except Exception as e:
-            log.warning(f"Deduplication check failed for {node_id}: {e} - continuing with processing")
+            log.warning(
+                f"Deduplication check failed for {node_id}: {e} - continuing with processing")
 
         # Session management with error handling
         try:
@@ -143,7 +149,8 @@ class MessageRouter:
                 log.info(f'No pw cache found for {node_id}, sending to login')
                 return await self._start_login_workflow_func(session_id, node_id)
         except Exception as e:
-            log.exception(f"Authentication/workflow processing failed for {node_id}")
+            log.exception(
+                f"Authentication/workflow processing failed for {node_id}")
             try:
                 error_msg = ToUser(
                     session_id=session_id,

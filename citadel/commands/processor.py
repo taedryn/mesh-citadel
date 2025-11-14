@@ -99,7 +99,8 @@ class CommandProcessor:
             )
 
         command = packet.payload
-        log.debug(f"Processing command: {command.name} for session {session_id}")
+        log.debug(
+            f"Processing command: {command.name} for session {session_id}")
 
         # Permission check
         user = User(self.db, state.username)
@@ -112,7 +113,6 @@ class CommandProcessor:
 
         if not is_allowed(command.name, user, room):
             return permission_denied(session_id, command.name, user, room)
-
 
         # 6. Execute command via its run method
         try:

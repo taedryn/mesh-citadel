@@ -45,9 +45,9 @@ class MeshCoreTransportEngine:
         self._event_loop = None
         self._acks = {}
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # process lifecycle controls
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     async def start(self):
         try:
             # Store the event loop for later use in threadsafe operations
@@ -85,7 +85,6 @@ class MeshCoreTransportEngine:
             )
         )
         log.info("Started watchdog feeder system")
-
 
     async def start_meshcore(self):
         mc_config = self.mc_config
@@ -127,7 +126,8 @@ class MeshCoreTransportEngine:
             coding_rate
         )
         if result.type == EventType.ERROR:
-            raise TransportError(f"Unable to set radio parameters: {result.payload}")
+            raise TransportError(
+                f"Unable to set radio parameters: {result.payload}")
 
         log.info(f"Setting MeshCore TX power to {tx_power} dBm")
         result = await mc.commands.set_tx_power(tx_power)
@@ -143,16 +143,19 @@ class MeshCoreTransportEngine:
             log.info(f"Setting MeshCore multi-acks to '{multi_acks}'")
             result = await mc.commands.set_multi_acks(multi_acks)
             if result.type == EventType.ERROR:
-                raise TransportError(f"Unable to set multi-acks: {result.payload}")
+                raise TransportError(
+                    f"Unable to set multi-acks: {result.payload}")
 
         log.info("Ensuring contacts")
         result = await mc.ensure_contacts()
         if not result:
-            raise(TransportError(f"Unable to ensure contacts: {result.payload}"))
+            raise (TransportError(
+                f"Unable to ensure contacts: {result.payload}"))
         # set up adverts, one right now, then every N hours (config.yaml)
         scheduler = AdvertScheduler(self.config, mc)
         self.scheds.append(scheduler)
-        self.tasks.append(self._create_monitored_task(scheduler.interval_advert(), f"advert_scheduler_{len(self.scheds)}"))
+        self.tasks.append(self._create_monitored_task(
+            scheduler.interval_advert(), f"advert_scheduler_{len(self.scheds)}"))
         self.meshcore = mc
 
         # Set up the appropriate send method based on what's available
@@ -182,7 +185,8 @@ class MeshCoreTransportEngine:
                     timeout=send_timeout
                 )
             self.send_msg = send_with_retry
-            log.info(f"Using send_msg_with_retry with max_attempts={max_attempts}, ack_timeout={self.mc_config.get('ack_timeout', 8)}s")
+            log.info(
+                f"Using send_msg_with_retry with max_attempts={max_attempts}, ack_timeout={self.mc_config.get('ack_timeout', 8)}s")
 
         except AttributeError:
             # Implement manual retry wrapper
@@ -193,27 +197,32 @@ class MeshCoreTransportEngine:
                         result = await self.meshcore.commands.send_msg(node_id, chunk)
                         if result and result.type != EventType.ERROR:
                             break
-                        log.debug(f"Send attempt {attempt + 1} failed with error: {result.payload if result else 'No result'}")
+                        log.debug(
+                            f"Send attempt {attempt + 1} failed with error: {result.payload if result else 'No result'}")
                     except (OSError, SerialException) as e:
-                        log.debug(f"Send attempt {attempt + 1} raised {type(e).__name__}: {e}")
+                        log.debug(
+                            f"Send attempt {attempt + 1} raised {type(e).__name__}: {e}")
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(1.0)  # Wait 1 second before retry
                 return result
 
             self.send_msg = send_with_manual_retry
-            log.debug("send_msg_with_retry not available, using manual retry wrapper")
+            log.debug(
+                "send_msg_with_retry not available, using manual retry wrapper")
 
     def _create_monitored_task(self, coro, name="unnamed"):
         try:
             loop = asyncio.get_running_loop()
             task = loop.create_task(coro)
-            task.add_done_callback(lambda t: self._handle_task_exception(t, name))
+            task.add_done_callback(
+                lambda t: self._handle_task_exception(t, name))
             log.debug(f"Created async task for {name}")
             return task
         except RuntimeError:
             # in a thread — use stored event loop for thread-safe execution
             if self._event_loop is None:
-                log.error(f"Cannot run {name} threadsafe: no stored event loop")
+                log.error(
+                    f"Cannot run {name} threadsafe: no stored event loop")
                 return None
 
             log.debug(f"Running {name} threadsafe using stored event loop")
@@ -226,7 +235,8 @@ class MeshCoreTransportEngine:
                 except Exception as e:
                     self._handle_task_exception(fut, name)
             future.add_done_callback(on_done)
-            log.debug(f"Successfully scheduled {name} for threadsafe execution")
+            log.debug(
+                f"Successfully scheduled {name} for threadsafe execution")
             return future
 
     def _handle_task_exception(self, task, name: str):
@@ -240,7 +250,8 @@ class MeshCoreTransportEngine:
             if hasattr(task, 'exception'):
                 exc = task.exception()
                 if exc:
-                    log.exception(f"Fire-and-forget task '{name}' failed: {exc}")
+                    log.exception(
+                        f"Fire-and-forget task '{name}' failed: {exc}")
                 else:
                     log.debug(f"Task '{name}' completed successfully")
             else:
@@ -270,9 +281,9 @@ class MeshCoreTransportEngine:
         else:
             log.warning("MeshCoreTransport.stop() called when already stopped")
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # communication methods
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def send_to_node(self, node_id: str, username: str, message: str | ToUser | list):
         """Send a message to a mesh node via MeshCore. Returns False if
@@ -297,9 +308,9 @@ class MeshCoreTransportEngine:
             await asyncio.sleep(inter_packet_delay)
         return sent
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # communication helpers
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     def format_message(self, message) -> str:
         utc_timestamp = dateparse(message.timestamp)
@@ -315,21 +326,25 @@ class MeshCoreTransportEngine:
         """Send a single packet to a node. This assumes that the packet
         is a safe size to send. Blocks until the ack has been
         received."""
-        log.debug(f'Sending packet to {username} at {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
+        log.debug(
+            f'Sending packet to {username} at {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
 
         # Use the pre-configured send method
         result = await self.send_msg(node_id, chunk)
 
         if result and result.type == EventType.ERROR:
-            log.error(f"Error sending '{chunk[:50]}...' to {username} at {node_id}! {result.payload}")
+            log.error(
+                f"Error sending '{chunk[:50]}...' to {username} at {node_id}! {result.payload}")
             return False
         elif not result:
-            log.error(f"Failed to send '{chunk[:50]}...' to {username} at {node_id}")
+            log.error(
+                f"Failed to send '{chunk[:50]}...' to {username} at {node_id}")
             return False
 
         # Wait for ACK with the configured timeout
         exp_ack = result.payload["expected_ack"].hex()
-        ack_timeout = self.mc_config.get("ack_timeout", 8)  # Increased from 5 to 8 seconds
+        # Increased from 5 to 8 seconds
+        ack_timeout = self.mc_config.get("ack_timeout", 8)
         log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
 
         ack = await self.get_ack(exp_ack, ack_timeout)
@@ -339,7 +354,8 @@ class MeshCoreTransportEngine:
             return True
 
         # Log ACK timeout for debugging (this is normal in mesh communication)
-        log.debug(f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
+        log.debug(
+            f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
         return False
 
     def _chunk_message(self, message, max_packet_length):
@@ -380,7 +396,7 @@ class MeshCoreTransportEngine:
                 chunks[i] += f'[{i+1}/{len_chunks}]'
         return chunks
 
-    async def get_ack(self, code: str, timeout: int=10) -> bool:
+    async def get_ack(self, code: str, timeout: int = 10) -> bool:
         """Await this function to see if a named ack has been received.
         Returns True or False."""
         i = 0
@@ -393,9 +409,9 @@ class MeshCoreTransportEngine:
             await asyncio.sleep(1)
             i += 1
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # bbs event handlers
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def start_bbs_listener(self, session_id):
         if session_id in self.listeners:
@@ -408,7 +424,8 @@ class MeshCoreTransportEngine:
                     # Check if session still exists (defensive programming)
                     state = self.session_mgr.get_session_state(session_id)
                     if not state:
-                        log.info(f'Session {session_id} no longer exists, terminating BBS listener')
+                        log.info(
+                            f'Session {session_id} no longer exists, terminating BBS listener')
                         break
 
                     log.debug(f'Waiting for BBS msgs for {session_id}')
@@ -459,17 +476,19 @@ class MeshCoreTransportEngine:
                         await self.send_to_node(state.node_id,
                                                 state.username, f"ERROR: {e}\n")
                     else:
-                        log.info(f'Session {session_id} expired during error handling, terminating listener')
+                        log.info(
+                            f'Session {session_id} expired during error handling, terminating listener')
                         break
 
             log.info(f'BBS listener for {session_id} terminated')
 
-        task = self._create_monitored_task(listen(), f"bbs_listener_{session_id}")
+        task = self._create_monitored_task(
+            listen(), f"bbs_listener_{session_id}")
         self.listeners[session_id] = task
 
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # meshcore event handlers
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def _register_event_handlers(self):
         try:
@@ -524,13 +543,15 @@ class MeshCoreTransportEngine:
             log.debug(f"Received message event: {event}")
             await self._process_mc_message_safe(event)
         except Exception as e:
-            log.exception(f"CRITICAL: Message handler exception - event subscription preserved: {e}")
+            log.exception(
+                f"CRITICAL: Message handler exception - event subscription preserved: {e}")
             # Don't re-raise - that would break the subscription
             # Try to send error message if we can extract basic info
             try:
                 if hasattr(event, 'payload') and isinstance(event.payload, dict) and 'pubkey_prefix' in event.payload:
                     node_id = event.payload['pubkey_prefix']
-                    session_id = self.session_mgr.get_session_by_node_id(node_id)
+                    session_id = self.session_mgr.get_session_by_node_id(
+                        node_id)
                     if session_id:
                         state = self.session_mgr.get_session_state(session_id)
                         success = await self.send_to_node(
@@ -541,9 +562,11 @@ class MeshCoreTransportEngine:
                         if success:
                             log.info(f"Sent error message to node {node_id}")
                         else:
-                            log.warning(f"Unable to send system down msg to {node_id} (failed to get ACK)")
+                            log.warning(
+                                f"Unable to send system down msg to {node_id} (failed to get ACK)")
             except Exception as recovery_error:
-                log.exception(f"Failed to send error message to user: {recovery_error}")
+                log.exception(
+                    f"Failed to send error message to user: {recovery_error}")
 
     async def _process_mc_message_safe(self, event):
         """The actual message processing logic, separated for better error handling."""
@@ -553,7 +576,8 @@ class MeshCoreTransportEngine:
             node_id = data['pubkey_prefix']
             text = data['text']
         except (KeyError, AttributeError, TypeError) as e:
-            log.error(f"Malformed message event - missing required fields: {e}")
+            log.error(
+                f"Malformed message event - missing required fields: {e}")
             return
 
         # Check for duplicates with error handling
@@ -562,7 +586,8 @@ class MeshCoreTransportEngine:
                 log.debug(f'Duplicate message from {node_id}, skipping')
                 return
         except Exception as e:
-            log.warning(f"Deduplication check failed for {node_id}: {e} - continuing with processing")
+            log.warning(
+                f"Deduplication check failed for {node_id}: {e} - continuing with processing")
 
         # Session management with error handling
         try:
@@ -602,7 +627,8 @@ class MeshCoreTransportEngine:
                     welcome_msg = f"Welcome back, {username}! You've been automatically logged in."
                     welcome_msg = await self.insert_prompt(session_id, welcome_msg)
 
-                    inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+                    inter_packet_delay = self.mc_config.get(
+                        "inter_packet_delay", 0.5)
                     await asyncio.sleep(inter_packet_delay)
                     success = await self.send_to_node(
                         node_id,
@@ -629,7 +655,8 @@ class MeshCoreTransportEngine:
                 log.info(f'No pw cache found for {node_id}, sending to login')
                 return await self._start_login_workflow(session_id, node_id)
         except Exception as e:
-            log.exception(f"Authentication/workflow processing failed for {node_id}")
+            log.exception(
+                f"Authentication/workflow processing failed for {node_id}")
             try:
                 success = await self.send_to_node(
                     node_id,
@@ -675,10 +702,9 @@ class MeshCoreTransportEngine:
             except:
                 pass
 
-
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
     # other helper methods
-    #------------------------------------------------------------
+    # ------------------------------------------------------------
 
     async def _start_login_workflow(self, session_id: str, node_id: str):
         """launch the user into the login workflow. this is a temporary
@@ -730,12 +756,13 @@ class MeshCoreTransportEngine:
                 two_weeks_ago = datetime.now() - timedelta(days=days)
                 if dt < two_weeks_ago:
                     log.debug(f"Password cache for {node_id} is expired")
-                    return False # cache is expired
-                return result[0][1] # username, cache is valid
+                    return False  # cache is expired
+                return result[0][1]  # username, cache is valid
             log.debug(f'No passwd cache DB result: "{result}"')
-            return False # has no cache at all
+            return False  # has no cache at all
         except Exception as e:
-            log.exception(f"Uncaught exception checking for password cache for {node_id}: {e}")
+            log.exception(
+                f"Uncaught exception checking for password cache for {node_id}: {e}")
             return False
 
     async def set_cache_username(self, username: str, node_id: str):
@@ -765,7 +792,7 @@ class MeshCoreTransportEngine:
         await self.db.execute(query, (node_id,))
         log.info(f"Removed {node_id} from MC password cache")
 
-    async def disconnect(self, session_id: str, reading_msg: int=None):
+    async def disconnect(self, session_id: str, reading_msg: int = None):
         """Disconnect the named session. To be used when messages can't be
         sent, as a way to preserve the user's experience at least a little
         bit."""
@@ -776,16 +803,15 @@ class MeshCoreTransportEngine:
         workflow_state = self.session_mgr.get_workflow(session_id)
         if workflow_state:
             from citadel.workflows import registry as workflow_registry
-                                          
-            # Call cleanup on the workflow if it has one           
+
+            # Call cleanup on the workflow if it has one
             handler = workflow_registry.get(workflow_state.kind)
             if handler and hasattr(handler, 'cleanup'):
-                try:      
+                try:
                     await handler.cleanup(context)
-                except Exception as e:    
+                except Exception as e:
                     log.warning(
-                        f"Error during workflow cleanup for {workflow_state.kind}: {e}")                 
-
+                        f"Error during workflow cleanup for {workflow_state.kind}: {e}")
 
         if reading_msg:
             # reset last-read message pointer for this room
@@ -809,35 +835,43 @@ class MeshCoreTransportEngine:
         messages and listener cleanup."""
         def handle_session_expiration(session_id: str, message: str):
             """Handle session expiration: send logout notification and cleanup listeners."""
-            log.debug(f"Handling session expiration for {session_id}: {message}")
+            log.debug(
+                f"Handling session expiration for {session_id}: {message}")
 
             try:
                 state = self.session_mgr.get_session_state(session_id)
                 if state and state.node_id:
                     # Send logout notification using threadsafe task creation
-                    log.info(f"Sending logout notification to session {session_id}: {message}")
+                    log.info(
+                        f"Sending logout notification to session {session_id}: {message}")
                     task_result = self._create_monitored_task(
-                        self.send_to_node(state.node_id, state.username, message),
+                        self.send_to_node(
+                            state.node_id, state.username, message),
                         f"logout_notification_{session_id}"
                     )
 
                     if task_result:
-                        log.info(f"Successfully scheduled logout notification for session {session_id}")
+                        log.info(
+                            f"Successfully scheduled logout notification for session {session_id}")
                     else:
-                        log.error(f"Failed to schedule logout notification for session {session_id}")
+                        log.error(
+                            f"Failed to schedule logout notification for session {session_id}")
                 else:
-                    log.warning(f"Cannot send logout notification - no state or node_id for session {session_id}")
+                    log.warning(
+                        f"Cannot send logout notification - no state or node_id for session {session_id}")
 
                 # Clean up BBS listener (critical for preventing hangs!)
                 self._cleanup_bbs_listener(session_id)
 
             except Exception as e:
-                log.exception(f"Error handling session expiration for {session_id}: {e}")
+                log.exception(
+                    f"Error handling session expiration for {session_id}: {e}")
                 # Still try to cleanup listener even if notification fails
                 try:
                     self._cleanup_bbs_listener(session_id)
                 except Exception as cleanup_error:
-                    log.exception(f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
+                    log.exception(
+                        f"Failed to cleanup listener for expired session {session_id}: {cleanup_error}")
 
         self.session_mgr.set_notification_callback(handle_session_expiration)
 
@@ -845,7 +879,8 @@ class MeshCoreTransportEngine:
         """Cancel and remove BBS listener for a session."""
         if session_id in self.listeners:
             listener_task = self.listeners[session_id]
-            log.info(f"Cancelling BBS listener for expired session {session_id}")
+            log.info(
+                f"Cancelling BBS listener for expired session {session_id}")
 
             # Cancel the task
             listener_task.cancel()
@@ -853,9 +888,11 @@ class MeshCoreTransportEngine:
             # Remove from listeners dict
             del self.listeners[session_id]
 
-            log.info(f"BBS listener cleanup completed for session {session_id}")
+            log.info(
+                f"BBS listener cleanup completed for session {session_id}")
         else:
-            log.debug(f"No BBS listener found for session {session_id} during cleanup")
+            log.debug(
+                f"No BBS listener found for session {session_id} during cleanup")
 
     async def insert_prompt(self, session_id, touser):
         if self.session_mgr.get_workflow(session_id):
@@ -887,7 +924,7 @@ class MeshCoreTransportEngine:
             mail = Room(self.db, self.config, SystemRoomIDs.MAIL_ID)
             await mail.load()
             has_mail = await mail.has_unread_messages(session_state.username)
-            if has_mail:                                                
+            if has_mail:
                 prompt.append("* You have unread mail")
 
             # Get room name

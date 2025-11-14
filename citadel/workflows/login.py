@@ -132,7 +132,8 @@ class LoginWorkflow(Workflow):
             context.session_mgr.clear_workflow(context.session_id)
             state = context.session_mgr.get_session_state(context.session_id)
             if state.node_id:
-                log.debug(f"Login workflow updating MeshCore password cache for {username}")
+                log.debug(
+                    f"Login workflow updating MeshCore password cache for {username}")
                 from citadel.transport.engines.meshcore import MeshCoreTransportEngine
                 mc = MeshCoreTransportEngine(
                     context.session_mgr,

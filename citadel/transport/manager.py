@@ -12,8 +12,10 @@ from citadel.transport.engines.meshcore import MeshCoreTransportEngine
 
 log = logging.getLogger(__name__)
 
+
 class TransportError(Exception):
     """Indicates an error has occurred in the transport system"""
+
 
 class TransportManager:
     """
@@ -38,7 +40,8 @@ class TransportManager:
 
         log.info("Starting transport manager")
 
-        timeout = self.config.transport.get('meshcore', {}).get('watchdog_timeout', 60)
+        timeout = self.config.transport.get(
+            'meshcore', {}).get('watchdog_timeout', 60)
         self.mc_watchdog = WatchdogController(
             "MeshCore",
             timeout,
@@ -59,7 +62,8 @@ class TransportManager:
         self._running = True
         num_engines = len(self.engines)
         e_word = "engine" if num_engines == 1 else "engines"
-        log.info(f"Transport manager started with {num_engines} {e_word} running")
+        log.info(
+            f"Transport manager started with {num_engines} {e_word} running")
 
     async def stop(self) -> None:
         """Stop all transport engines."""
@@ -85,7 +89,7 @@ class TransportManager:
         # Create Unix socket path
         socket_name = self.config.transport.get("cli",
                                                 {}).get("socket",
-                                                "/tmp/mesh-citadel-cli.sock")
+                                                        "/tmp/mesh-citadel-cli.sock")
         socket_path = Path(socket_name)
         if socket_path.exists():
             socket_path.unlink()
@@ -137,7 +141,7 @@ class TransportManager:
 
 
 class WatchdogController:
-    def __init__(self, name: str, timeout: int=60, timeout_action: Callable=None):
+    def __init__(self, name: str, timeout: int = 60, timeout_action: Callable = None):
         self.name = name
         self.timeout_action = timeout_action
         self._feed_event = asyncio.Event()
@@ -163,7 +167,8 @@ class WatchdogController:
                 await asyncio.wait_for(self._feed_event.wait(), timeout=self._timeout)
                 # Reset received — continue loop
             except asyncio.TimeoutError:
-                log.warning(f"{self.name} watchdog timed out. Restarting {self.name}")
+                log.warning(
+                    f"{self.name} watchdog timed out. Restarting {self.name}")
                 if self.timeout_action:
                     await self.timeout_action()
 

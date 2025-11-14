@@ -128,7 +128,6 @@ async def initialize_database(db_manager, config=None):
     );
     """
 
-
     # all tables to be initialized
     tables = [
         user_table,
@@ -194,8 +193,8 @@ async def initialize_system_rooms(db_manager, config):
             SELECT name, description, prev_neighbor, next_neighbor
             FROM rooms
             WHERE id = ?""",
-            [room_id]
-        )
+                                          [room_id]
+                                          )
         if result:
             name, description, prev_neighbor, current_next = result[0]
             preserved_next = current_next if next_id is None else next_id
@@ -206,9 +205,11 @@ async def initialize_system_rooms(db_manager, config):
                     prev_neighbor = ?,
                     next_neighbor = ?
                 WHERE id = ?""",
-                [name, description, prev_id, preserved_next, room_id]
-            )
-            log.debug(f'Updating {name}, setting next_neighbor to {preserved_next}')
+                                     [name, description, prev_id,
+                                         preserved_next, room_id]
+                                     )
+            log.debug(
+                f'Updating {name}, setting next_neighbor to {preserved_next}')
         else:
             # Insert room
             await db_manager.execute("""

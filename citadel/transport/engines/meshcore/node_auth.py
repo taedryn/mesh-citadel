@@ -32,12 +32,13 @@ class NodeAuth:
                 two_weeks_ago = datetime.now() - timedelta(days=days)
                 if dt < two_weeks_ago:
                     log.debug(f"Password cache for {node_id} is expired")
-                    return False # cache is expired
-                return result[0][1] # username, cache is valid
+                    return False  # cache is expired
+                return result[0][1]  # username, cache is valid
             log.debug(f'No passwd cache DB result: "{result}"')
-            return False # has no cache at all
+            return False  # has no cache at all
         except Exception as e:
-            log.exception(f"Uncaught exception checking for password cache for {node_id}: {e}")
+            log.exception(
+                f"Uncaught exception checking for password cache for {node_id}: {e}")
             return False
 
     async def set_cache_username(self, username: str, node_id: str):

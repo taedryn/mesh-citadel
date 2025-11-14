@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from citadel.db.manager import DatabaseManager
 
+
 class SessionManager:
     def __init__(self, config: "Config", db: "DatabaseManager"):
         self.timeout = timedelta(seconds=config.auth["session_timeout"])
@@ -24,12 +25,12 @@ class SessionManager:
         self.db = db
         # session_id -> (SessionState, last_active: datetime)
         self.sessions = {}
-        #self.lock = LoggingLock('SessionManager')
+        # self.lock = LoggingLock('SessionManager')
         self.lock = threading.Lock()
         self.notification_callback = None  # Will be set by transport layer
         self._start_sweeper()
 
-    def create_session(self, node_id: str=None) -> str:
+    def create_session(self, node_id: str = None) -> str:
         """Create a session not yet tied to a user."""
         session_id = secrets.token_urlsafe(24)
         state = SessionState(
@@ -75,9 +76,9 @@ class SessionManager:
         if session_id in self.sessions:
             _, last_activity = self.sessions[session_id]
             if (datetime.utcnow() - last_activity) > timedelta(seconds=timeout):
-                return True # session registered, expired
-            return False # session registered, not expired
-        return True # session isn't registered
+                return True  # session registered, expired
+            return False  # session registered, not expired
+        return True  # session isn't registered
 
     def expire_session(self, session_id: str) -> bool:
         with self.lock:
@@ -107,9 +108,11 @@ class SessionManager:
             if self.notification_callback:
                 try:
                     self.notification_callback(session_id, msg)
-                    log.info(f"Session timeout notification sent to {username}")
+                    log.info(
+                        f"Session timeout notification sent to {username}")
                 except Exception as e:
-                    log.exception(f"Failed sending logout msg to {username}: {e}")
+                    log.exception(
+                        f"Failed sending logout msg to {username}: {e}")
             with self.lock:
                 del self.sessions[session_id]
 

@@ -40,7 +40,8 @@ class DatabaseManager:
             await disk_conn.close()
             self._persist_task = asyncio.create_task(self._persist_loop())
             seconds = self.config.database.get("persist_timer", 300)
-            log.info(f"Database loaded into memory; will save to disk every {seconds}s")
+            log.info(
+                f"Database loaded into memory; will save to disk every {seconds}s")
         else:
             self.conn = await aiosqlite.connect(self.db_path)
             log.info(f"Database connected (using disk DB file)")
@@ -121,4 +122,3 @@ class DatabaseManager:
         await self.persist_to_disk()
         await self.conn.close()
         log.info("DatabaseManager shut down cleanly.")
-

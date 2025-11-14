@@ -112,21 +112,29 @@ class ProtocolHandler:
         """Send a single packet to a node. This assumes that the packet
         is a safe size to send. Blocks until the ack has been
         received."""
-        log.debug(f'Sending packet to {username} at {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
+        log.debug(
+            f'Sending packet to {username} at {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
 
         # Use the pre-configured send method
-        result = await self.send_msg(node_id, chunk)
+        try:
+            result = await self.send_msg(node_id, chunk)
+        except KeyError as e:
+            log.error(f"Unexpected error sending packet: {e}")
+            return False
 
         if result and result.type == EventType.ERROR:
-            log.error(f"Error sending '{chunk[:50]}...' to {username} at {node_id}! {result.payload}")
+            log.error(
+                f"Error sending '{chunk[:50]}...' to {username} at {node_id}! {result.payload}")
             return False
         elif not result:
-            log.error(f"Failed to send '{chunk[:50]}...' to {username} at {node_id}")
+            log.error(
+                f"Failed to send '{chunk[:50]}...' to {username} at {node_id}")
             return False
 
         # Wait for ACK with the configured timeout
         exp_ack = result.payload["expected_ack"].hex()
-        ack_timeout = self.mc_config.get("ack_timeout", 8)  # Increased from 5 to 8 seconds
+        # Increased from 5 to 8 seconds
+        ack_timeout = self.mc_config.get("ack_timeout", 8)
         log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
 
         ack = await self.get_ack(exp_ack, ack_timeout)
@@ -136,7 +144,8 @@ class ProtocolHandler:
             return True
 
         # Log ACK timeout for debugging (this is normal in mesh communication)
-        log.debug(f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
+        log.debug(
+            f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
         return False
 
     async def get_ack(self, code: str, timeout: int = 10) -> bool:
