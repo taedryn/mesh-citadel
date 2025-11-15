@@ -1,3 +1,9 @@
+## 0.7.3 (2025-11-15)
+
+### Fix
+
+- **meshcore-engine**: found and fixed more bugs stemming from the meshcore refactor, primarily in the login workflow
+
 ## 0.7.2 (2025-11-15)
 
 ### Fix
