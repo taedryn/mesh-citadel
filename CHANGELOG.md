@@ -1,3 +1,9 @@
+## 0.7.2 (2025-11-15)
+
+### Fix
+
+- **meshcore-transport-engine**: updating several missed calls to the transport engine for correct argument order
+
 ## 0.7.1 (2025-11-13)
 
 ### Fix
