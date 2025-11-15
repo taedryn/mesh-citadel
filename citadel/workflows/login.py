@@ -136,9 +136,9 @@ class LoginWorkflow(Workflow):
                     f"Login workflow updating MeshCore password cache for {username}")
                 from citadel.transport.engines.meshcore import MeshCoreTransportEngine
                 mc = MeshCoreTransportEngine(
-                    context.session_mgr,
                     context.config,
-                    context.db
+                    context.db,
+                    context.session_mgr
                 )
                 await mc.touch_password_cache(username, state.node_id)
                 await mc.set_cache_username(username, state.node_id)
