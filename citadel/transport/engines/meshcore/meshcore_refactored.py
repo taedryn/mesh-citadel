@@ -102,6 +102,10 @@ class MeshCoreTransportEngine:
                 self.meshcore, self.db, self.config)
             await self.contact_manager.start()
 
+            if self.mc_config.get("contact_manager", {}).get("update_contacts", False):
+                log.info("Syncing contacts")
+                await self.contact_manager.sync_db_to_node()
+
             # Set up event handlers and session notifications
             await self._register_event_handlers()
             self.session_coordinator.setup_session_notifications()

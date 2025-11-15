@@ -53,6 +53,15 @@ class ContactManager:
 
         log.debug(f"Loaded {len(self._contacts_cache)} contacts into cache")
 
+    async def sync_db_to_node(self):
+        """Load only essential contact info into cache."""
+        log.info("Synchronizing contacts down to MC node")
+        for node_id in self._contacts_cache.keys():
+            log.debug(f"Syncing {node_id} down to node")
+            await self.add_node(node_id, quiet=True)
+
+        log.info(f"Synced {len(self._contacts_cache)} contacts into node")
+
     def _is_chat_node(self, advert_data: dict) -> bool:
         """Determine if this is a chat node (companion) we want to track."""
         node_type = advert_data.get('type', 0)
@@ -169,7 +178,7 @@ class ContactManager:
                 raw_advert_data = excluded.raw_advert_data
         """, (node_id, public_key, name, node_type, latitude, longitude, now, now, raw_data_json))
 
-    async def add_node(self, node_id: str) -> bool:
+    async def add_node(self, node_id: str, quiet: bool=False) -> bool:
         """Add a chat node to the meshcore device, expiring oldest if at limit."""
         if node_id not in self._contacts_cache:
             log.warning(f"Cannot add unknown node: {node_id}")
@@ -222,7 +231,10 @@ class ContactManager:
                 (datetime.now(UTC).isoformat(), node_id)
             )
             name = self._contacts_cache[node_id]
-            log.info(f"Added contact to MC device: {name} ({node_id})")
+            if quiet:
+                log.debug(f"Added contact to MC device: {name} ({node_id})")
+            else:
+                log.info(f"Added contact to MC device: {name} ({node_id})")
             return True
         else:
             name = self._contacts_cache[node_id]

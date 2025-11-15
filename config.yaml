@@ -71,6 +71,7 @@ transport:
     contact_manager:
       max_device_contacts: 300
       contact_limit_buffer: 10
+      update_contacts: false          # copy DB contacts to node on startup
   cli:
     socket: "/tmp/mesh-citadel-cli.sock"
 
