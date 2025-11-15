@@ -140,8 +140,10 @@ class LoginWorkflow(Workflow):
                     context.db,
                     context.session_mgr
                 )
-                await mc.touch_password_cache(username, state.node_id)
-                await mc.set_cache_username(username, state.node_id)
+                from citadel.transport.engines.meshcore.node_auth import NodeAuth
+                auth = NodeAuth(context.config, context.db)
+                await auth.touch_password_cache(username, state.node_id)
+                await auth.set_cache_username(username, state.node_id)
             room = Room(context.db, context.config, state.current_room)
             await room.load()
             return ToUser(

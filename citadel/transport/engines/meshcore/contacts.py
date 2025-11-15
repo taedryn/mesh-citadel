@@ -207,6 +207,7 @@ class ContactManager:
                 f"Failed to parse stored contact data for {node_id}: {e}")
             return False
 
+        log.debug(f"Preparing to add {node_id} to device contacts")
         try:
             result = await self.meshcore.commands.add_contact(contact_data)
         except (OSError, AttributeError) as e:

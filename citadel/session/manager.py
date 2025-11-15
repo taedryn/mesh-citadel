@@ -257,7 +257,11 @@ class SessionManager:
             log.info(f"Session '{session_id}' marked as {status}")
             if not logged_in and state.node_id:
                 from citadel.transport.engines.meshcore.meshcore import MeshCoreTransportEngine
-                mc = MeshCoreTransportEngine(self.config, self.db, self)
+                mc = MeshCoreTransportEngine(
+                    config=self.config,
+                    db=self.db,
+                    session_mgr=self
+                )
                 await mc.remove_cache_node_id(state.node_id)
 
     def is_logged_in(self, session_id: str):

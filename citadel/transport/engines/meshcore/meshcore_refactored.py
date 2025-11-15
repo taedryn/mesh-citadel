@@ -187,6 +187,7 @@ class MeshCoreTransportEngine:
         from citadel.transport.manager import TransportError
         if result.type == EventType.ERROR:
             log.warning(f"Unable to sync time: {result.payload}")
+            log.warning("Consider rebooting node (non-critical)")
 
         # Configure radio parameters
         log.info(f"Setting MeshCore frequency to {frequency} MHz")
