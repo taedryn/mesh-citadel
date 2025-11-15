@@ -257,11 +257,12 @@ class MeshCoreTransportEngine:
             sched.stop()
 
         # Cancel all tasks
+        from citadel.transport.manager import TransportError
         for task in self.tasks:
             task.cancel()
             try:
                 await task
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, TransportError):
                 pass
 
         # Shutdown session coordinator (cleans up BBS listeners)
