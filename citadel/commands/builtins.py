@@ -643,11 +643,18 @@ class WhoCommand(BaseCommand):
                 online_user = User(context.db, session_state.username)
                 await online_user.load()
 
-                # TODO: Add has_posted_publicly field to users table and User model
-                # For now, show all users (will be restricted once field is added)
-                # For non-privileged users, only show users who have posted publicly
-                # if not is_privileged and not online_user.has_posted_publicly:
-                #     continue
+                query = """
+                    SELECT COUNT(*)
+                    FROM messages
+                    WHERE sender = ?
+                    AND timestamp >= DATETIME('now', '-14 days')
+                    AND recipient is null
+                """
+                result = await context.db.execute(query, (online_user.username,))
+                has_posted_publicly = bool(result[0][0])
+
+                if not is_privileged and not has_posted_publicly:
+                    continue
 
                 # Calculate activity status
                 seconds_idle = (now - last_active).total_seconds()
@@ -661,9 +668,10 @@ class WhoCommand(BaseCommand):
                     else:  # 1+ hours
                         activity_str = f"idle ({int(seconds_idle // 3600)}h)"
 
-                    # Include public/private status for privileged users
-                    # TODO: Replace with actual has_posted_publicly check
-                    visibility = "public"  # Placeholder until has_posted_publicly is implemented
+                    if has_posted_publicly:
+                        visibility = "public"
+                    else:
+                        visibility = "hidden"
                     user_info = f"{session_state.username} ({activity_str}) [{visibility}]"
                 else:
                     # Simple active/idle for regular users

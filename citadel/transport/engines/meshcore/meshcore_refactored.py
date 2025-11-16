@@ -323,7 +323,7 @@ class MeshCoreTransportEngine:
                 self.safe_handler(self.protocol_handler.handle_ack)
             ))
 
-            await self.meshcore.start_auto_message_fetching()
+            task = await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
 
         except Exception as e:
