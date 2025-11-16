@@ -1,3 +1,14 @@
+## 0.8.0 (2025-11-16)
+
+### Feat
+
+- **Who-command**: the Who command now correctly hides users who haven't posted publicly in the last 14 days
+- **contact-management**: added new feature to sync contacts from the database to the node, if the config option is enabled
+
+### Fix
+
+- **meshcore-engine**: updated .stop() method to hopefully account for an intermittent error on shutdown
+
 ## 0.7.3 (2025-11-15)
 
 ### Fix
