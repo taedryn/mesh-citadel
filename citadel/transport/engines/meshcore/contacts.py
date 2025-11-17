@@ -178,7 +178,7 @@ class ContactManager:
                 raw_advert_data = excluded.raw_advert_data
         """, (node_id, public_key, name, node_type, latitude, longitude, now, now, raw_data_json))
 
-    async def add_node(self, node_id: str, quiet: bool=False) -> bool:
+    async def add_node(self, node_id: str, quiet: bool = False) -> bool:
         """Add a chat node to the meshcore device, expiring oldest if at limit."""
         if node_id not in self._contacts_cache:
             log.warning(f"Cannot add unknown node: {node_id}")
