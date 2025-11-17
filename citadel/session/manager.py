@@ -131,7 +131,7 @@ class SessionManager:
         """ add a message to the outbound message queue.  returns the
         number of items currently in the outbound queue. """
         if not isinstance(message, ToUser):
-            raise ValueError("Sent messages must be ToUser type")
+            message = ToUser(session_id=session_id, text=message)
         state = self.get_session_state(session_id)
         log.debug(f'adding message to queue: {message}')
         await state.msg_queue.put(message)

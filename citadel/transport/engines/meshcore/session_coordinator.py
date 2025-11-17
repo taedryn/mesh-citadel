@@ -70,6 +70,8 @@ class SessionCoordinator:
                                 reading_msg = False
                                 if msg.message:
                                     reading_msg = msg.message.id
+                                log.debug(f"Disconnecting in list message context")
+                                log.debug(f"Trying to send: {msg}")
                                 return await self._disconnect_func(
                                     session_id,
                                     reading_msg=reading_msg
@@ -84,6 +86,8 @@ class SessionCoordinator:
                             reading_msg = False
                             if message.message:
                                 reading_msg = message.message.id
+                            log.debug("Disconnecting in single message context")
+                            log.debug(f"Trying to send: {message}")
                             return await self._disconnect_func(
                                 session_id,
                                 reading_msg=reading_msg

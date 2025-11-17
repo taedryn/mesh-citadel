@@ -20,7 +20,6 @@ from citadel.transport.parser import TextParser
 from citadel.transport.engines.meshcore.contacts import ContactManager
 from citadel.workflows.base import WorkflowState, WorkflowContext
 from citadel.workflows import registry as workflow_registry
-from citadel.transport.manager import WatchdogController
 
 # Import our new separated components
 from citadel.transport.engines.meshcore.node_auth import NodeAuth
@@ -150,7 +149,7 @@ class MeshCoreTransportEngine:
         )
 
     async def start_watchdog(self):
-        """Start the watchdog feeder system."""
+        """Start the overall engine watchdog feeder system."""
         scheduler = WatchdogFeeder(self.config, self.feed_watchdog)
         self.scheds.append(scheduler)
         self.tasks.append(
@@ -322,7 +321,7 @@ class MeshCoreTransportEngine:
 
     async def _setup_handler_watchdogs(self):
         """Set up watchdogs for critical event handlers."""
-        handler_timeout = self.mc_config.get("handler_watchdog_timeout", 90)
+        handler_timeout = self.mc_config.get("watchdog_timeout", 60)
 
         # Create watchdogs for critical handlers that can be affected by meshcore reader.py crashes
         critical_handlers = [
@@ -344,6 +343,7 @@ class MeshCoreTransportEngine:
                 except Exception as e:
                     log.error(f"Failed to restart meshcore service: {e}")
 
+            from citadel.transport.manager import WatchdogController
             watchdog = WatchdogController(
                 name=f"{handler_name}_watchdog",
                 timeout=handler_timeout,
@@ -375,7 +375,10 @@ class MeshCoreTransportEngine:
                 log.error(f"Beacon task for {handler_name} crashed: {e}")
                 # If beacon crashes, watchdog will timeout and trigger restart
 
-        return self._create_monitored_task(beacon_task(), f"{handler_name}_beacon")
+        return self._create_monitored_task(
+            beacon_task(),
+            f"{handler_name}_beacon"
+        )
 
     # ------------------------------------------------------------
     # Event handling (now much simpler)
@@ -412,7 +415,7 @@ class MeshCoreTransportEngine:
             log.debug("Event subscriptions registered")
 
             # Start handler beacon tasks to feed watchdogs
-            beacon_interval = self.mc_config.get("handler_beacon_interval", 30)
+            beacon_interval = self.mc_config.get("watchdog_reset", 30)
 
             # Create beacon tasks for each critical handler
             handler_mappings = [
