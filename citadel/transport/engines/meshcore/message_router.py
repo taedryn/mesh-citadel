@@ -165,6 +165,9 @@ class MessageRouter:
         try:
             touser = await self.command_processor.process(packet)
 
+            if not touser:
+                return
+
             if isinstance(touser, list):
                 last_msg = len(touser) - 1
 
