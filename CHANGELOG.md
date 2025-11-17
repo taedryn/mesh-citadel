@@ -1,3 +1,14 @@
+## 0.9.0 (2025-11-16)
+
+### Feat
+
+- **meshcore-engine**: found a bug in message entry which is causing disconnects.  tracking it down now
+
+### Fix
+
+- **command-processing**: fixed bug where no response from the command processor would result in an exception
+- **meshcore-engine**: starting work on a new set of watchdog timers to restart meshcore engine when event handlers crash
+
 ## 0.8.0 (2025-11-16)
 
 ### Feat

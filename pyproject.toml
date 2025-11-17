@@ -6,4 +6,4 @@ version_provider = "commitizen"
 version_files = ["VERSION"]
 update_changelog_on_bump = true
 major_version_zero = true
-version = "0.8.0"
+version = "0.9.0"
