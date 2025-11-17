@@ -1,3 +1,9 @@
+## 0.9.1 (2025-11-16)
+
+### Fix
+
+- **message-display**: corrected message display so that a single message doesn't trigger the multi-message header
+
 ## 0.9.0 (2025-11-16)
 
 ### Feat
