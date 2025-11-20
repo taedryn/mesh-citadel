@@ -14,7 +14,8 @@ from prompt_toolkit.styles import Style
 
 SERIAL_PORT = "/dev/ttyACM0"
 BAUDRATE = 115200
-RECIPIENT_ADDRESS = "0895dec9caa112d1"
+#RECIPIENT_ADDRESS = "0896dec9caa112d1"  # tae's tag
+RECIPIENT_ADDRESS = "ca11ccc5d7fac21d"
 
 class MeshChatUI:
     def __init__(self, meshcore):
@@ -77,7 +78,9 @@ class MeshChatUI:
         self.message_area.buffer.cursor_position = len(self.message_area.text)
 
     async def send_message(self, msg):
-        result = await self.mc.commands.send_msg(RECIPIENT_ADDRESS, msg)
+        result = await self.mc.commands.send_msg_with_retry(RECIPIENT_ADDRESS, msg)
+        if result.type == EventType.ERROR:
+            self._add_message(f"Error sending: {result.payload}")
         self._add_message(f"📤 Sent: {msg}")
 
     async def handle_incoming(self, packet):

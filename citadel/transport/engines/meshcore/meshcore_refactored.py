@@ -459,7 +459,7 @@ class MeshCoreTransportEngine:
                 return
 
             # Send logout message
-            msg = "Signal lost. Disconnecting your session. Send any text to reconnect."
+            msg = "RF path too unstable; disconnecting your session. Send any text to reconnect."
             await self.protocol_handler.send_to_node(state.node_id, state.username, msg)
 
             # Expire the session
