@@ -463,7 +463,7 @@ class MeshCoreTransportEngine:
             await self.protocol_handler.send_to_node(state.node_id, state.username, msg)
 
             # Expire the session
-            self.session_mgr.expire_session(session_id)
+            await self.session_mgr.expire_session(session_id)
 
         except Exception as e:
             log.exception(f"Error disconnecting session {session_id}: {e}")

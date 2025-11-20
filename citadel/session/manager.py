@@ -80,11 +80,11 @@ class SessionManager:
             return False  # session registered, not expired
         return True  # session isn't registered
 
-    def expire_session(self, session_id: str) -> bool:
+    async def expire_session(self, session_id: str) -> bool:
         with self.lock:
             if session_id in self.sessions:
                 state, _ = self.sessions[session_id]
-                self.cancel_workflow(session_id, state)
+                await self.cancel_workflow(session_id, state)
                 username = state.username
                 del self.sessions[session_id]
                 log.info(f"Session manually expired for username='{username}'")
@@ -181,7 +181,7 @@ class SessionManager:
         if state:
             state.workflow = None
 
-    def cancel_workflow(self, session_id: str, state: SessionState) -> None:
+    async def cancel_workflow(self, session_id: str, state: SessionState) -> None:
         """idempotently cancel any running workflow"""
         log.debug(f"Preparing to clean up any running workflow")
         if state:
