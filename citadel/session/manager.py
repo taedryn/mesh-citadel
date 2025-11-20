@@ -201,7 +201,7 @@ class SessionManager:
                 handler = workflow_registry.get(wf_state.kind)
                 if handler:
                     log.info(f"Cleaning up {wf_state.kind} workflow")
-                    handler.cleanup(context)
+                    await handler.cleanup(context)
 
     async def start_login_workflow(self, config, db, session_id: str = None) -> tuple[str, "ToUser | None"]:
         """Start login workflow on existing or new session.
