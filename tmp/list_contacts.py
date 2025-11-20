@@ -3,6 +3,7 @@ the connected USB companion."""
 
 import logging
 import asyncio
+from pprint import pprint as pp
 
 from meshcore import MeshCore, EventType
 
@@ -21,6 +22,7 @@ async def main():
         node_id = contact[:16]
         full_info = mc.get_contact_by_key_prefix(node_id)
         print(f"found {full_info['adv_name']}")
+        pp(full_info)
 
 if __name__ == '__main__':
     asyncio.run(main())

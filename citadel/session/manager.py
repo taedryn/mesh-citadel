@@ -84,7 +84,7 @@ class SessionManager:
         with self.lock:
             if session_id in self.sessions:
                 state, _ = self.sessions[session_id]
-                self.cancel_workflow(session_id)
+                self.cancel_workflow(session_id, state)
                 username = state.username
                 del self.sessions[session_id]
                 log.info(f"Session manually expired for username='{username}'")
@@ -181,12 +181,11 @@ class SessionManager:
         if state:
             state.workflow = None
 
-    def cancel_workflow(self, session_id: str) -> None:
+    def cancel_workflow(self, session_id: str, state: SessionState) -> None:
         """idempotently cancel any running workflow"""
         log.debug(f"Preparing to clean up any running workflow")
-        state = self.get_session_state(session_id)
         if state:
-            wf_state = self.get_workflow_state(session_id)
+            wf_state = self.get_workflow(session_id)
             if wf_state:
                 from citadel.workflows.base import WorkflowContext
                 from citadel.workflows import registry as workflow_registry
