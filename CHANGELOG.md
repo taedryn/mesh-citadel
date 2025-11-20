@@ -1,3 +1,13 @@
+## 0.9.2 (2025-11-19)
+
+### Fix
+
+- **session-cancellation**: more async hijinks
+- **session-cancellation**: missed an await for workflow cancellation
+- **session-cancellation**: fixed yet another deadlocking bug in session cancellation
+- **session-cancellation**: fixed deadlock issue with session cancellation
+- **user-registration**: fixed bug which was preventing user entry from being removed when registration fails
+
 ## 0.9.1 (2025-11-16)
 
 ### Fix
