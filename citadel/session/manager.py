@@ -185,7 +185,7 @@ class SessionManager:
         """idempotently cancel any running workflow"""
         log.debug(f"Preparing to clean up any running workflow")
         if state:
-            wf_state = self.get_workflow(session_id)
+            wf_state = state.workflow
             if wf_state:
                 from citadel.workflows.base import WorkflowContext
                 from citadel.workflows import registry as workflow_registry
