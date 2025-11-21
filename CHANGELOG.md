@@ -1,3 +1,10 @@
+## 0.9.3 (2025-11-20)
+
+### Fix
+
+- **meshcore-engine**: removed ineffective handler watchdog timers.  removed now-extraneous code for ack handling.  cleaned up session expiration to eliminate deadlock issue
+- **meshcore-engine**: remove extraneous ack handler
+
 ## 0.9.2 (2025-11-19)
 
 ### Fix
