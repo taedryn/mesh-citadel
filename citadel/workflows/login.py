@@ -59,9 +59,9 @@ class LoginWorkflow(Workflow):
                         error_code="workflow_not_found"
                     )
 
-            user_exists = await User.username_exists(context.db,
+            username = await User.username_exists(context.db,
                                                      data["username"])
-            if not user_exists:
+            if not username:
                 context.session_mgr.set_workflow(
                     context.session_id,
                     WorkflowState(
@@ -79,6 +79,9 @@ class LoginWorkflow(Workflow):
                     is_error=True,
                     error_code="invalid_username"
                 )
+            else:
+                # record correct capitalization
+                data["username"] = username
 
             context.session_mgr.set_workflow(
                 context.session_id,

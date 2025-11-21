@@ -62,11 +62,14 @@ class User:
                                      status.value))
 
     @classmethod
-    async def username_exists(cls, db_mgr, test_username: str) -> bool:
+    async def username_exists(cls, db_mgr, test_username: str) -> str:
         """Check if username exists (case-insensitive)."""
-        query = "SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)"
+        query = "SELECT username FROM users WHERE LOWER(username) = LOWER(?)"
         result = await db_mgr.execute(query, (test_username,))
-        return bool(result)
+        if result:
+            return result[0][0]
+        else:
+            return None
 
     @classmethod
     async def get_actual_username(cls, db_mgr, username_input: str) -> Optional[str]:

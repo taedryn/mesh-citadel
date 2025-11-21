@@ -58,6 +58,7 @@ class ProtocolHandler:
                 max_retries = self.mc_config.get("max_retries", 3)
                 retry_delay = self.mc_config.get("retry_delay", 1.0)
 
+                # TODO: copy retry function from meshcore_py to here
                 for attempt in range(max_retries):
                     try:
                         result = await self.meshcore.commands.send_msg(node_id, message)
@@ -122,6 +123,28 @@ class ProtocolHandler:
                 chunks[i] += f'[{i+1}/{len_chunks}]'
         return chunks
 
+    async def send_to_node(self, node_id: str, username: str, message: Union[str, ToUser, List]) -> bool:
+        """Send a message to a mesh node via MeshCore. Returns False if
+        the message couldn't be sent."""
+        if isinstance(message, ToUser):
+            if message.message:
+                log.debug("Formatting BBS message")
+                text = self.format_message(message.message)
+            else:
+                text = message.text
+        else:
+            text = message
+
+        max_packet_length = self.mc_config.get("max_packet_size", 140)
+
+        chunks = self._chunk_message(text, max_packet_length)
+        inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
+
+        for chunk in chunks:
+            sent = await self._send_packet(username, node_id, chunk)
+            await asyncio.sleep(inter_packet_delay)
+        return sent
+
     async def _send_packet(self, username: str, node_id: str, chunk: str) -> bool:
         """Send a single packet to a node. This assumes that the packet
         is a safe size to send. Blocks until the ack has been
@@ -129,7 +152,6 @@ class ProtocolHandler:
         log.debug(
             f'Sending packet to {username} at {node_id}: {len(chunk)} bytes, content: "{chunk[:50]}..."')
 
-        # Use the pre-configured send method
         try:
             result = await self.send_msg(node_id, chunk)
         except KeyError as e:
@@ -146,80 +168,3 @@ class ProtocolHandler:
             return False
         return result
 
-    # it appears the send with retry lib call already checks for acks
-    """
-        # Wait for ACK with the configured timeout
-        exp_ack = result.payload["expected_ack"].hex()
-        ack_timeout = result.payload
-        # Increased from 5 to 8 seconds
-        ack_timeout = self.mc_config.get("ack_timeout", 8)
-        log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
-
-        ack = await self.get_ack(exp_ack, ack_timeout)
-
-        if ack:
-            log.debug(f"✅ ACK received for packet to {node_id}")
-            return True
-
-        # Log ACK timeout for debugging (this is normal in mesh communication)
-        log.debug(
-            f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
-        return False
-    """
-
-    async def get_ack(self, code: str, timeout: int = 10) -> bool:
-        """Await this function to see if a named ack has been received.
-        Returns True or False."""
-        i = 0
-        while True:
-            if i > timeout:
-                return False
-            if code in self._acks:
-                # Check if ACK is not too old (matching original logic)
-                now = datetime.now(UTC)
-                if (now - self._acks[code]).seconds <= 20:
-                    del self._acks[code]
-                    return True
-                else:
-                    # ACK is too old, remove it
-                    del self._acks[code]
-            await asyncio.sleep(1)
-            i += 1
-
-    async def handle_ack(self, event):
-        """Handle incoming ACKs from MeshCore events."""
-        if hasattr(event, 'payload') and 'code' in event.payload:
-            code = event.payload['code']
-            log.debug(f'Received an ACK with code {code}')
-            now = datetime.now(UTC)
-            if code in self._acks:
-                if (now - self._acks[code]).seconds > 20:
-                    self._acks[code] = datetime.now(UTC)
-            else:
-                self._acks[code] = datetime.now(UTC)
-        else:
-            log.warning(f'Received an ACK without a code: {event.payload}')
-
-    async def send_to_node(self, node_id: str, username: str, message: Union[str, ToUser, List]) -> bool:
-        """Send a message to a mesh node via MeshCore. Returns False if
-        the message couldn't be sent."""
-        # TODO: probably need to handle ToUser packets more intelligently than this
-        if isinstance(message, ToUser):
-            if message.message:
-                log.debug("Formatting BBS message")
-                text = self.format_message(message.message)
-            else:
-                text = message.text
-        else:
-            text = message
-
-        # Get configured packet size (calculated from MeshCore packet structure)
-        max_packet_length = self.mc_config.get("max_packet_size", 140)
-
-        chunks = self._chunk_message(text, max_packet_length)
-        inter_packet_delay = self.mc_config.get("inter_packet_delay", 0.5)
-
-        for chunk in chunks:
-            sent = await self._send_packet(username, node_id, chunk)
-            await asyncio.sleep(inter_packet_delay)
-        return sent

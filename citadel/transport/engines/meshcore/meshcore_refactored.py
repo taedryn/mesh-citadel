@@ -54,11 +54,6 @@ class MeshCoreTransportEngine:
         self.scheds = []
         self._event_loop = None
 
-        # Handler watchdogs for detecting crashed event subscriptions
-        handler_timeout = self.mc_config.get("handler_watchdog_timeout", 90)
-        self._handler_watchdogs = {}
-        self._beacon_tasks = []
-
         # Initialize components that don't need MeshCore
         self.node_auth = NodeAuth(config, db)
         self.dedupe = None
@@ -79,9 +74,6 @@ class MeshCoreTransportEngine:
         try:
             # Store the event loop for later use in threadsafe operations
             self._event_loop = asyncio.get_running_loop()
-
-            # Set up handler watchdogs
-            await self._setup_handler_watchdogs()
 
             await self.start_watchdog()
             await self.start_dedupe()
@@ -293,92 +285,12 @@ class MeshCoreTransportEngine:
             await self.meshcore.stop_auto_message_fetching()
             await self.meshcore.disconnect()
 
-        # Stop handler watchdogs
-        for name, watchdog in self._handler_watchdogs.items():
-            log.debug(f"Stopping handler watchdog: {name}")
-            await watchdog.shutdown()
-
-        # Cancel beacon tasks
-        for task in self._beacon_tasks:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-
         # Clear all collections
         self.tasks.clear()
         self.subs.clear()
         self.scheds.clear()
-        self._handler_watchdogs.clear()
-        self._beacon_tasks.clear()
 
         log.info("MeshCore transport shut down")
-
-    # ------------------------------------------------------------
-    # Handler watchdog system
-    # ------------------------------------------------------------
-
-    async def _setup_handler_watchdogs(self):
-        """Set up watchdogs for critical event handlers."""
-        handler_timeout = self.mc_config.get("watchdog_timeout", 60)
-
-        # Create watchdogs for critical handlers that can be affected by meshcore reader.py crashes
-        critical_handlers = [
-            "contact_msg_handler",
-            "new_contact_handler",
-            "advertisement_handler",
-            "ack_handler"
-        ]
-
-        for handler_name in critical_handlers:
-            # Create a restart callback that triggers meshcore restart
-            async def restart_callback(name=handler_name):
-                log.error(f"Handler '{name}' watchdog timeout - restarting meshcore service")
-                try:
-                    await self.stop()
-                    await asyncio.sleep(2)  # Let hardware settle
-                    await self.start()
-                    log.info(f"Meshcore service restarted due to '{name}' handler failure")
-                except Exception as e:
-                    log.error(f"Failed to restart meshcore service: {e}")
-
-            from citadel.transport.manager import WatchdogController
-            watchdog = WatchdogController(
-                name=f"{handler_name}_watchdog",
-                timeout=handler_timeout,
-                timeout_action=restart_callback
-            )
-
-            self._handler_watchdogs[handler_name] = watchdog
-            await watchdog.start()
-
-            log.info(f"Started watchdog for {handler_name} (timeout: {handler_timeout}s)")
-
-    def _create_handler_beacon(self, handler_name, beacon_interval=30):
-        """Create a beacon task that regularly feeds a handler's watchdog."""
-        async def beacon_task():
-            try:
-                watchdog = self._handler_watchdogs.get(handler_name)
-                if not watchdog:
-                    log.error(f"No watchdog found for handler: {handler_name}")
-                    return
-
-                while self._running:
-                    watchdog.feed_watchdog()
-                    log.debug(f"Fed watchdog for {handler_name}")
-                    await asyncio.sleep(beacon_interval)
-
-            except asyncio.CancelledError:
-                log.debug(f"Beacon task for {handler_name} was cancelled")
-            except Exception as e:
-                log.error(f"Beacon task for {handler_name} crashed: {e}")
-                # If beacon crashes, watchdog will timeout and trigger restart
-
-        return self._create_monitored_task(
-            beacon_task(),
-            f"{handler_name}_beacon"
-        )
 
     # ------------------------------------------------------------
     # Event handling (now much simpler)
@@ -405,33 +317,8 @@ class MeshCoreTransportEngine:
                 self.safe_handler(self.contact_manager.handle_advert)
             ))
 
-            # ACK handling - delegated to protocol handler
-            self.subs.append(self.meshcore.subscribe(
-                EventType.ACK,
-                self.safe_handler(self.protocol_handler.handle_ack)
-            ))
-
             task = await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
-
-            # Start handler beacon tasks to feed watchdogs
-            beacon_interval = self.mc_config.get("watchdog_reset", 30)
-
-            # Create beacon tasks for each critical handler
-            handler_mappings = [
-                ("contact_msg_handler", "CONTACT_MSG_RECV"),
-                ("new_contact_handler", "NEW_CONTACT"),
-                ("advertisement_handler", "ADVERTISEMENT"),
-                ("ack_handler", "ACK")
-            ]
-
-            for handler_name, event_type in handler_mappings:
-                beacon_task = self._create_handler_beacon(handler_name, beacon_interval)
-                self._beacon_tasks.append(beacon_task)
-                log.debug(f"Started beacon task for {handler_name} ({event_type})")
-
-            log.info(f"Started {len(self._beacon_tasks)} handler watchdog beacons (interval: {beacon_interval}s)")
-
         except Exception as e:
             log.error(f"Failed to register handlers: {e}")
             raise

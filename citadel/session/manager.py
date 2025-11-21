@@ -81,15 +81,17 @@ class SessionManager:
         return True  # session isn't registered
 
     async def expire_session(self, session_id: str) -> bool:
-        with self.lock:
-            if session_id in self.sessions:
+        if session_id in self.sessions:
+            with self.lock:
                 state, _ = self.sessions[session_id]
-                await self.cancel_workflow(session_id, state)
-                username = state.username
+        if state:
+            await self.cancel_workflow(session_id, state)
+            username = state.username
+            with lock:
                 del self.sessions[session_id]
-                log.info(f"Session manually expired for username='{username}'")
-                return True
-            return False
+            log.info(f"Session manually expired for username='{username}'")
+            return True
+        return False
 
     def sweep_expired_sessions(self):
         now = datetime.now(UTC)
