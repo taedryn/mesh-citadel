@@ -36,8 +36,22 @@ class ProtocolHandler:
     def _setup_send_method(self):
         """Set up the send method with retry configuration."""
         if hasattr(self.meshcore, 'commands') and hasattr(self.meshcore.commands, 'send_msg_with_retry'):
-            # Use MeshCore's built-in retry functionality
-            self.send_msg = self.meshcore.commands.send_msg_with_retry
+            # Create a wrapper function with config pre-applied
+            max_attempts = self.mc_config.get("max_retries", 3)
+            max_flood_attempts = self.mc_config.get("max_flood_attempts", 3)
+            flood_after = self.mc_config.get("flood_after", 2)
+            send_timeout = self.mc_config.get("send_timeout", 0)
+
+            async def send_with_retry(node_id, message):
+                return await self.meshcore.commands.send_msg_with_retry(
+                    node_id,
+                    message,
+                    max_attempts=max_attempts,
+                    max_flood_attempts=max_flood_attempts,
+                    flood_after=flood_after,
+                    timeout=send_timeout
+                )
+            self.send_msg = send_with_retry
         else:
             # Fallback: create manual retry wrapper
             async def send_with_manual_retry(node_id, message):
@@ -130,9 +144,13 @@ class ProtocolHandler:
             log.error(
                 f"Failed to send '{chunk[:50]}...' to {username} at {node_id}")
             return False
+        return result
 
+    # it appears the send with retry lib call already checks for acks
+    """
         # Wait for ACK with the configured timeout
         exp_ack = result.payload["expected_ack"].hex()
+        ack_timeout = result.payload
         # Increased from 5 to 8 seconds
         ack_timeout = self.mc_config.get("ack_timeout", 8)
         log.debug(f"Waiting for ACK {exp_ack} with timeout {ack_timeout}s")
@@ -147,6 +165,7 @@ class ProtocolHandler:
         log.debug(
             f"❌ ACK timeout ({ack_timeout}s) for packet '{chunk[:30]}...' to {username} at {node_id}")
         return False
+    """
 
     async def get_ack(self, code: str, timeout: int = 10) -> bool:
         """Await this function to see if a named ack has been received.
