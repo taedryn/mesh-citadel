@@ -87,7 +87,7 @@ class SessionManager:
         if state:
             await self.cancel_workflow(session_id, state)
             username = state.username
-            with lock:
+            with self.lock:
                 del self.sessions[session_id]
             log.info(f"Session manually expired for username='{username}'")
             return True
