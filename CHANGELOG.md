@@ -1,3 +1,37 @@
+## 0.9.3 (2025-11-20)
+
+### Fix
+
+- **meshcore-engine**: removed ineffective handler watchdog timers.  removed now-extraneous code for ack handling.  cleaned up session expiration to eliminate deadlock issue
+- **meshcore-engine**: remove extraneous ack handler
+
+## 0.9.2 (2025-11-19)
+
+### Fix
+
+- **session-cancellation**: more async hijinks
+- **session-cancellation**: missed an await for workflow cancellation
+- **session-cancellation**: fixed yet another deadlocking bug in session cancellation
+- **session-cancellation**: fixed deadlock issue with session cancellation
+- **user-registration**: fixed bug which was preventing user entry from being removed when registration fails
+
+## 0.9.1 (2025-11-16)
+
+### Fix
+
+- **message-display**: corrected message display so that a single message doesn't trigger the multi-message header
+
+## 0.9.0 (2025-11-16)
+
+### Feat
+
+- **meshcore-engine**: found a bug in message entry which is causing disconnects.  tracking it down now
+
+### Fix
+
+- **command-processing**: fixed bug where no response from the command processor would result in an exception
+- **meshcore-engine**: starting work on a new set of watchdog timers to restart meshcore engine when event handlers crash
+
 ## 0.8.0 (2025-11-16)
 
 ### Feat

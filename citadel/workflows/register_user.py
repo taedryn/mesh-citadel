@@ -323,11 +323,11 @@ class RegisterUserWorkflow(Workflow):
                 # User doesn't exist - nothing to clean up
                 return
 
-            if user.status == UserStatus.PROVISIONAL:
+            if user.permission_level == PermissionLevel.UNVERIFIED:
                 try:
                     await context.db.execute(
-                        "DELETE FROM users WHERE username = ? AND status = ?",
-                        (username, UserStatus.PROVISIONAL.value)
+                        "DELETE FROM users WHERE username = ? AND permission_level = ?",
+                        (username, PermissionLevel.UNVERIFIED.value)
                     )
                     log.info(
                         f"Deleted provisional user '{username}' during workflow cancellation")

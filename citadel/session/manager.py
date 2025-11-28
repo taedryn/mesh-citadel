@@ -80,15 +80,18 @@ class SessionManager:
             return False  # session registered, not expired
         return True  # session isn't registered
 
-    def expire_session(self, session_id: str) -> bool:
-        with self.lock:
-            if session_id in self.sessions:
+    async def expire_session(self, session_id: str) -> bool:
+        if session_id in self.sessions:
+            with self.lock:
                 state, _ = self.sessions[session_id]
-                username = state.username
+        if state:
+            await self.cancel_workflow(session_id, state)
+            username = state.username
+            with self.lock:
                 del self.sessions[session_id]
-                log.info(f"Session manually expired for username='{username}'")
-                return True
-            return False
+            log.info(f"Session manually expired for username='{username}'")
+            return True
+        return False
 
     def sweep_expired_sessions(self):
         now = datetime.now(UTC)
@@ -131,7 +134,7 @@ class SessionManager:
         """ add a message to the outbound message queue.  returns the
         number of items currently in the outbound queue. """
         if not isinstance(message, ToUser):
-            raise ValueError("Sent messages must be ToUser type")
+            message = ToUser(session_id=session_id, text=message)
         state = self.get_session_state(session_id)
         log.debug(f'adding message to queue: {message}')
         await state.msg_queue.put(message)
@@ -179,6 +182,28 @@ class SessionManager:
         state = self.get_session_state(session_id)
         if state:
             state.workflow = None
+
+    async def cancel_workflow(self, session_id: str, state: SessionState) -> None:
+        """idempotently cancel any running workflow"""
+        log.debug(f"Preparing to clean up any running workflow")
+        if state:
+            wf_state = state.workflow
+            if wf_state:
+                from citadel.workflows.base import WorkflowContext
+                from citadel.workflows import registry as workflow_registry
+
+                context = WorkflowContext(
+                    session_id=session_id,
+                    config=self.config,
+                    db=self.db,
+                    session_mgr=self,
+                    wf_state=wf_state
+                )
+
+                handler = workflow_registry.get(wf_state.kind)
+                if handler:
+                    log.info(f"Cleaning up {wf_state.kind} workflow")
+                    await handler.cleanup(context)
 
     async def start_login_workflow(self, config, db, session_id: str = None) -> tuple[str, "ToUser | None"]:
         """Start login workflow on existing or new session.

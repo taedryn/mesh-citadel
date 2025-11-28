@@ -141,7 +141,7 @@ class MeshCoreTransportEngine:
         )
 
     async def start_watchdog(self):
-        """Start the watchdog feeder system."""
+        """Start the overall engine watchdog feeder system."""
         scheduler = WatchdogFeeder(self.config, self.feed_watchdog)
         self.scheds.append(scheduler)
         self.tasks.append(
@@ -317,15 +317,8 @@ class MeshCoreTransportEngine:
                 self.safe_handler(self.contact_manager.handle_advert)
             ))
 
-            # ACK handling - delegated to protocol handler
-            self.subs.append(self.meshcore.subscribe(
-                EventType.ACK,
-                self.safe_handler(self.protocol_handler.handle_ack)
-            ))
-
             task = await self.meshcore.start_auto_message_fetching()
             log.debug("Event subscriptions registered")
-
         except Exception as e:
             log.error(f"Failed to register handlers: {e}")
             raise
@@ -353,11 +346,11 @@ class MeshCoreTransportEngine:
                 return
 
             # Send logout message
-            msg = "Signal lost. Disconnecting your session. Send any text to reconnect."
+            msg = "RF path too unstable; disconnecting your session. Send any text to reconnect."
             await self.protocol_handler.send_to_node(state.node_id, state.username, msg)
 
             # Expire the session
-            self.session_mgr.expire_session(session_id)
+            await self.session_mgr.expire_session(session_id)
 
         except Exception as e:
             log.exception(f"Error disconnecting session {session_id}: {e}")

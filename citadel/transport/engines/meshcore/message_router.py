@@ -165,15 +165,18 @@ class MessageRouter:
         try:
             touser = await self.command_processor.process(packet)
 
+            if not touser:
+                return
+
             if isinstance(touser, list):
                 last_msg = len(touser) - 1
 
                 for i, msg in enumerate(touser):
-                    if i == 0:
-                        await self.send_msg_header(session_id, len(touser))
-                    elif i == last_msg:
+                    if i == last_msg:
                         # just send the message
                         msg = await self.insert_prompt(session_id, msg)
+                    elif i == 0:
+                        await self.send_msg_header(session_id, len(touser))
                     await self.session_mgr.send_msg(session_id, msg)
             else:
                 touser = await self.insert_prompt(session_id, touser)
