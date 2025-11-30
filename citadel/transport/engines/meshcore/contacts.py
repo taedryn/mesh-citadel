@@ -353,7 +353,7 @@ class ContactManager:
             log.error(f"Error getting device contacts for expiry: {e}")
             return False
 
-        if result.type == EventType.ERROR:
+        if not result or result.type == EventType.ERROR:
             log.warning(
                 f"No device contacts found to expire: {result.payload}")
             return False
