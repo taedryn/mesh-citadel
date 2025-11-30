@@ -100,10 +100,15 @@ class EditUserWorkflow(Workflow):
                 )
             elif selected == "Permission Level":
                 context.wf_state.step = 4
+                levels = []
+                # don't allow aides to assign sysop level
+                for level in PermissionLevel:
+                    if level <= editor.permission_level:
+                        levels.append(level)
                 return ToUser(
                     session_id=context.session_id,
                     text="Select new permission level:\n" + "\n".join(
-                        f"{i+1}. {level.name}" for i, level in enumerate(PermissionLevel)
+                        f"{i+1}. {level.name}" for i, level in levels
                     ),
                     hints={"type": "menu", "workflow": self.kind, "step": 4}
                 )
@@ -117,7 +122,7 @@ class EditUserWorkflow(Workflow):
                     hints={"type": "menu", "workflow": self.kind, "step": 5}
                 )
 
-        if step == 3:
+        if step == 3: # display name change
             new_name = command.strip()
             target = await db.get_user(data["target_user"])
             old = target.display_name
@@ -127,7 +132,7 @@ class EditUserWorkflow(Workflow):
             context.wf_state.step = 2
             return await self._present_edit_menu(context, editor)
 
-        if step == 4:
+        if step == 4: # permission level change
             try:
                 index = int(command.strip()) - 1
                 new_perm = list(PermissionLevel)[index]
@@ -146,7 +151,7 @@ class EditUserWorkflow(Workflow):
             context.wf_state.step = 2
             return await self._present_edit_menu(context, editor)
 
-        if step == 5:
+        if step == 5: # account status change
             try:
                 index = int(command.strip()) - 1
                 new_status = list(UserStatus)[index]
