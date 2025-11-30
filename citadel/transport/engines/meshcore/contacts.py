@@ -242,19 +242,20 @@ class ContactManager:
                 f"Failed to add contact {name}: {result.payload if result else 'No data'}")
             return False
 
-    async def delete_node(self, node_id: str) -> bool:
+    async def delete_node(self, node_id: str, pubkey: str=None) -> bool:
         """Remove a chat node from meshcore device."""
         if not self.meshcore:
             log.error("MeshCore not available for deleting contact")
             return False
 
-        query = "SELECT public_key FROM mc_chat_contacts WHERE node_id = ?"
-        result = await self.db.execute(query, (node_id,))
-        if result:
-            pubkey = result[0][0]
-        else:
-            log.warning(f"Unable to remove {node_id}; node not in DB")
-            return False
+        if not pubkey:
+            query = "SELECT public_key FROM mc_chat_contacts WHERE node_id = ?"
+            result = await self.db.execute(query, (node_id,))
+            if result:
+                pubkey = result[0][0]
+            else:
+                log.warning(f"Unable to remove {node_id}; no pubkey found")
+                return False
 
         try:
             result = await self.meshcore.commands.remove_contact(pubkey)
@@ -366,6 +367,7 @@ class ContactManager:
 
         for contact_key, contact_data in device_contacts.items():
             node_id = contact_data.get('public_key', contact_key)[:16]
+            pubkey = contact_data.get('public_key')
 
             result = await self.db.execute(
                 "SELECT last_seen FROM mc_chat_contacts WHERE node_id = ?",
@@ -392,7 +394,7 @@ class ContactManager:
                 contact_name = self._contacts_cache[oldest_node_id]
 
             days = (datetime.now(UTC) - oldest_time).days
-            if await self.delete_node(oldest_node_id):
+            if await self.delete_node(oldest_node_id, pubkey):
                 log.info(
                     f"Expired oldest contact to make room: {contact_name} ({oldest_node_id}) - {days}d old")
                 return True
