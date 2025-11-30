@@ -1,3 +1,10 @@
+## 0.10.1 (2025-11-30)
+
+### Fix
+
+- **user-registration**: added forbidden usernames ("citadel" is always forbidden, used for system messages), and improved registration error messages; also added system log message for room creation
+- **meshcore-contacts**: modified delete_node() method to only look up pubkey if it isn't passed in
+
 ## 0.10.0 (2025-11-29)
 
 ### Feat
