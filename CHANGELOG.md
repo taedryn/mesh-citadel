@@ -1,3 +1,15 @@
+## 0.10.0 (2025-11-29)
+
+### Feat
+
+- **user-edit**: modified user edit workflow to only allow an aide to promote someone else to aide, not sysop
+- **user-management**: started writing a workflow for an edit user command
+
+### Fix
+
+- **meshcore-contacts**: fixed a bug where a failed command to the node crashes the process
+- **session-manager**: fixed minor bug in session expiration code
+
 ## 0.9.3 (2025-11-20)
 
 ### Fix
