@@ -29,6 +29,8 @@ class User:
 
     # this must be called for every User invocation
     async def load(self, force=False):
+        if self.username == "citadel":
+            return self._load_citadel()
         if self._loaded and not force:
             return
         query = "SELECT * FROM users WHERE username = ?"
@@ -47,6 +49,17 @@ class User:
         self._last_login = row[5]
         self._permission_level = row[6]
         self._status = row[7]
+
+    def _load_citadel(self):
+        self.id = 0
+        self._username = "citadel"
+        self._password_hash = "*"
+        self._salt = "*"
+        self._display_name = "Citadel System"
+        self._last_login = datetime.now(UTC)
+        self._permission_level = PermissionLevel.SYSOP
+        self._status = UserStatus.ACTIVE
+        self._loaded = True
 
     # ------------------------------------------------------------
     # class methods

@@ -49,26 +49,39 @@ class RegisterUserWorkflow(Workflow):
         # Step 1: Username
         if step == 1:
             username = command.strip() if command else ""
+            forbidden = context.config.bbs.get('forbidden_usernames', [])
+            forbidden.append("citadel") # citadel is always reserved
+            if username.lower() in forbidden:
+                return ToUser(
+                    session_id=context.session_id,
+                    text=f"'{username}' is reserved and may not be used\nEnter a username:",
+                    is_error=True,
+                    error_code="invalid_username",
+                    hints={"type": "text", "workflow": self.kind, "step": 1}
+                )
             if not is_ascii_username(username):
                 return ToUser(
                     session_id=context.session_id,
-                    text="Usernames are limited to ASCII characters only",
+                    text="Usernames are limited to ASCII characters only\nEnter a username:",
                     is_error=True,
-                    error_code="invalid_username"
+                    error_code="invalid_username",
+                    hints={"type": "text", "workflow": self.kind, "step": 1}
                 )
             if not username or len(username) < 3:
                 return ToUser(
                     session_id=context.session_id,
-                    text="Username must be at least 3 characters.",
+                    text="Username must be at least 3 characters\nEnter a username:",
                     is_error=True,
-                    error_code="invalid_username"
+                    error_code="invalid_username",
+                    hints={"type": "text", "workflow": self.kind, "step": 1}
                 )
             if await User.username_exists(db, username):
                 return ToUser(
                     session_id=context.session_id,
-                    text=f"'{username}' is already in use. Try again.",
+                    text=f"'{username}' is already in use\nEnter a username:",
                     is_error=True,
-                    error_code="username_taken"
+                    error_code="username_taken",
+                    hints={"type": "text", "workflow": self.kind, "step": 1}
                 )
 
             # Create provisional user immediately with temporary credentials

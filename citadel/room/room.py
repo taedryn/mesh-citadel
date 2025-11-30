@@ -93,6 +93,17 @@ class Room:
         return result[0][0]
 
     # ------------------------------------------------------------
+    # logging to the system room
+    # ------------------------------------------------------------
+
+    @classmethod
+    async def system_log(cls, db, config, msg: str):
+        """Record a message in the System room"""
+        room = Room(db, config, SystemRoomIDs.SYSTEM_ID)
+        await room.load()
+        await room.post_message("citadel", msg)
+
+    # ------------------------------------------------------------
     # permission methods
     # ------------------------------------------------------------
     def can_user_read(self, user: User) -> bool:
@@ -485,6 +496,7 @@ class Room:
 
         await cls.initialize_room_order(db, config)
         log.info(f"New room {name} created with ID {new_id}")
+        await cls.system_log(db, config, f"New room {name} created")
         return new_id
 
     async def delete_room(self, sys_user: str):
@@ -493,15 +505,7 @@ class Room:
             raise PermissionDeniedError(
                 f"Cannot delete system room '{self.name}' (ID: {self.room_id})")
 
-        # Log to system events room (always ID 5)
-        try:
-            system_room = Room(self.db, self.config, SystemRoomIDs.SYSTEM_ID)
-            await system_room.load()
-            await system_room.post_message(
-                sys_user, f"Room '{self.name}' was deleted.")
-        except Exception as e:
-            log.warning(
-                f"Failed to log room deletion to system events room: {e}")
+        await Room.system_log(self.db, self.config, f"Room '{self.name}' was deleted")
 
         # Delete room and cascade
         await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))

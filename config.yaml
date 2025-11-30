@@ -20,6 +20,16 @@ bbs:
     sysop: "Sysop"                  # Room ID 4
     system: "System"                # Room ID 5
     twit: "Purgatory"               # Room ID 6
+  forbidden_usernames:              # names we don't want users to register
+    - "citadel"
+    - "system"
+    - "sysop"
+    - "admin"
+    - "administrator"
+    - "system"
+    - "aide"
+    - "twit"
+    - "unverified"
   registration:
     terms_required: true
     terms: "To register, agree to these conditions:\n
