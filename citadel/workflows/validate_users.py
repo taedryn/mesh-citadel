@@ -2,10 +2,11 @@
 
 from datetime import datetime
 from citadel.auth.permissions import PermissionLevel
+from citadel.room.room import Room
+from citadel.transport.packets import ToUser
 from citadel.user.user import User, UserStatus
 from citadel.workflows.base import Workflow, WorkflowState
 from citadel.workflows.registry import register
-from citadel.transport.packets import ToUser
 import logging
 
 log = logging.getLogger(__name__)
@@ -17,9 +18,9 @@ class ValidateUsersWorkflow(Workflow):
 
     async def start(self, context):
         """Start validation workflow - show commands once and first user."""
-        commands_text = "USER VALIDATION\nA=approve R=reject S=skip Q=quit\n\n"
+        intro_text = "User Validation\n\n"
         user_info = await self._show_current_user(context)
-        user_info.text = commands_text + user_info.text
+        user_info.text = intro_text + user_info.text
         return user_info
 
     async def handle(self, context, command):
@@ -47,6 +48,7 @@ class ValidateUsersWorkflow(Workflow):
 
     async def _show_current_user(self, context):
         """Show current user details concisely."""
+        commands_text = "A=approve R=reject S=skip Q=quit"
         data = context.wf_state.data
         pending_users = data.get("pending_users", [])
         current_index = data.get("current_index", 0)
@@ -96,7 +98,9 @@ class ValidateUsersWorkflow(Workflow):
 Submitted: {submitted_at}
 
 Introduction:
-{intro_text}"""
+{intro_text}
+
+{commands_text}"""
 
         return ToUser(
             session_id=context.session_id,
@@ -127,6 +131,8 @@ Introduction:
             validator_username = validator_state.username if validator_state else "unknown"
             log.info(
                 f"User '{username}' validated by '{validator_username}' - promoted to USER level")
+            await Room.system_log(context.db, context.config, 
+                f"User {username} validated by {validator_username}")
 
             # Move to next user
             await self._advance_to_next_user(context)
@@ -164,6 +170,8 @@ Introduction:
             validator_state = context.session_mgr.get_session_state(
                 context.session_id)
             validator_username = validator_state.username if validator_state else "unknown"
+            await Room.system_log(context.db, context.config,
+                f"User {username} rejected by {validator_username}")
             log.info(
                 f"User '{username}' rejected by '{validator_username}' - account deleted")
 

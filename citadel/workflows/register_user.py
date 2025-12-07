@@ -6,6 +6,7 @@ import string
 
 from citadel.auth.passwords import generate_salt, hash_password
 from citadel.auth.permissions import PermissionLevel
+from citadel.room.room import Room
 from citadel.transport.packets import ToUser
 from citadel.user.user import User, UserStatus
 from citadel.workflows.base import Workflow, WorkflowState, WorkflowContext
@@ -303,6 +304,8 @@ class RegisterUserWorkflow(Workflow):
                 await context.session_mgr.mark_logged_in(context.session_id)
 
             context.session_mgr.clear_workflow(context.session_id)
+            await Room.system_log(db, context.config,
+                f"New user {data['display_name']} ({username}) registered")
             return ToUser(
                 session_id=context.session_id,
                 text=f"{step_num}: Registration complete! You have limited access until validated"
