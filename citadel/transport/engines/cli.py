@@ -336,6 +336,7 @@ class CLITransportEngine:
         self.config = config
         self.db_manager = db_manager
         self.session_manager = session_manager
+        self._client_tasks = set()
 
         # Create components
         self.formatter = CLIFormatter(db_manager, config)
@@ -372,9 +373,20 @@ class CLITransportEngine:
         """Stop the transport engine."""
         if not self._running:
             return
+
         if self.server:
             self.server.close()
             await self.server.wait_closed()
+
+        # Gracefully stop client tasks
+        if self._client_tasks:
+            num = len(self._client_tasks)
+            for t in list(self._client_tasks):
+                t.cancel()
+            for t in list(self._client_tasks):
+                with suppress(asyncio.CancelledError):
+                    await t
+
         if self.socket_path.exists():
             self.socket_path.unlink()
         log.info("CLI transport engine stopped")
@@ -390,10 +402,24 @@ class CLITransportEngine:
         self._client_count += 1
         client_id = self._client_count
         log.info(f"CLI client connected: {client_id}")
+        task = asyncio.current_task()
+        self._client_tasks.add(task)
 
-        # Send initial connection message
-        writer.write(b"CONNECTED\n")
-        await writer.drain()
+        try:
+            # Send initial connection message
+            writer.write(b"CONNECTED\n")
+            await writer.drain()
 
-        # Delegate to protocol handler
-        await self.protocol_handler.handle_client_session(reader, writer, client_id)
+            # Delegate to protocol handler
+            await self.protocol_handler.handle_client_session(reader, writer, client_id)
+        except Exception as e:
+            log.exception(f"Error in client session: {e}")
+        finally:
+            try:
+                self._client_tasks.discard(task)
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            log.info(f"CLI client disconnected: {client_id}")
+
