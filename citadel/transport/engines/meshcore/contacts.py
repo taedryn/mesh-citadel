@@ -54,9 +54,10 @@ class ContactManager:
         log.debug(f"Loaded {len(self._contacts_cache)} contacts into cache")
 
     async def sync_db_to_node(self):
-        """Load only essential contact info into cache."""
+        """Send database contacts to node"""
         log.info("Synchronizing contacts down to MC node")
-        for node_id in self._contacts_cache.keys():
+        node_ids = list(self._contacts_cache.keys())
+        for node_id in node_ids:
             log.debug(f"Syncing {node_id} down to node")
             await self.add_node(node_id, quiet=True)
 
@@ -363,6 +364,7 @@ class ContactManager:
 
         # Find the oldest contact from our database
         oldest_node_id = None
+        oldest_pubkey = None
         oldest_time = datetime.now(UTC)
 
         for contact_key, contact_data in device_contacts.items():
@@ -383,9 +385,11 @@ class ContactManager:
                 if last_seen < oldest_time:
                     oldest_time = last_seen
                     oldest_node_id = node_id
+                    oldest_pubkey = pubkey
             else:
                 # No database record, this is very old
                 oldest_node_id = node_id
+                oldest_pubkey = pubkey
                 break
 
         if oldest_node_id:
@@ -394,7 +398,13 @@ class ContactManager:
                 contact_name = self._contacts_cache[oldest_node_id]
 
             days = (datetime.now(UTC) - oldest_time).days
-            if await self.delete_node(oldest_node_id, pubkey):
+            if await self.delete_node(oldest_node_id, oldest_pubkey):
+                await self.db.execute(
+                    "DELETE FROM mc_chat_contacts WHERE node_id = ?",
+                    (oldest_node_id,)
+                )
+                self._contacts_cache.pop(oldest_node_id, None)
+
                 log.info(
                     f"Expired oldest contact to make room: {contact_name} ({oldest_node_id}) - {days}d old")
                 return True
