@@ -18,6 +18,7 @@ from citadel.commands.processor import CommandProcessor
 from citadel.transport.engines.meshcore.util import MessageDeduplicator, AdvertScheduler, WatchdogFeeder
 from citadel.transport.parser import TextParser
 from citadel.transport.engines.meshcore.contacts import ContactManager
+from citadel.transport.engines.meshcore.mqtt_publisher import MqttPublisher
 from citadel.workflows.base import WorkflowState, WorkflowContext
 from citadel.workflows import registry as workflow_registry
 
@@ -46,6 +47,7 @@ class MeshCoreTransportEngine:
         # Core MeshCore objects
         self.meshcore = None
         self.contact_manager = None
+        self.mqtt_publisher = None
 
         # Process lifecycle
         self._running = False
@@ -53,6 +55,11 @@ class MeshCoreTransportEngine:
         self.subs = []
         self.scheds = []
         self._event_loop = None
+        # Serializes calls to meshcore.commands.* that involve a stateful
+        # multi-frame handshake (currently just on-device JWT signing) so
+        # they can't be interleaved by other commands on the same serial
+        # connection.
+        self.command_lock = asyncio.Lock()
 
         # Initialize components that don't need MeshCore
         self.node_auth = NodeAuth(config, db)
@@ -101,6 +108,12 @@ class MeshCoreTransportEngine:
             self.contact_manager = ContactManager(
                 self.meshcore, self.db, self.config)
             await self.contact_manager.start()
+
+            # Initialize MQTT publisher (packet telemetry + status)
+            self.mqtt_publisher = MqttPublisher(
+                self.config, self.meshcore, self._create_monitored_task,
+                self.command_lock)
+            await self.mqtt_publisher.start()
 
             # Set up event handlers and session notifications
             await self._register_event_handlers()
@@ -282,6 +295,10 @@ class MeshCoreTransportEngine:
             if self.meshcore:
                 self.meshcore.unsubscribe(sub)
 
+        # Stop MQTT publisher (announces offline, tears down broker conns)
+        if self.mqtt_publisher:
+            await self.mqtt_publisher.stop()
+
         # Close MeshCore connection
         if self.meshcore:
             # TODO: figure out exceptions for this
@@ -319,6 +336,12 @@ class MeshCoreTransportEngine:
             self.subs.append(self.meshcore.subscribe(
                 EventType.NEW_CONTACT,
                 self.safe_handler(self.contact_manager.handle_advert)
+            ))
+
+            # Packet telemetry - delegated to MQTT publisher
+            self.subs.append(self.meshcore.subscribe(
+                EventType.RX_LOG_DATA,
+                self.safe_handler(self.mqtt_publisher.handle_rx_log_data)
             ))
 
             task = await self.meshcore.start_auto_message_fetching()
