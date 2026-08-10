@@ -1,5 +1,5 @@
 system: &system
-  name: "Tae's alpha BBS"
+  name: "East Troy BBS"
 
 bbs:
   <<: *system
@@ -80,15 +80,40 @@ transport:
       max_device_contacts: 300
       contact_limit_buffer: 10
       update_contacts: false          # copy DB contacts to node on startup
+    mqtt:                             # restart required to pick up changes
+      enabled: true
+      iata: "MKE"                     # site code used in topic names
+      jwt_ttl: 86400                  # seconds
+      jwt_renew_margin: 21600         # renew when less than this many seconds remain
+      include_header_fields: true     # add route_type/payload_type/path to packets payload
+      brokers:
+        - name: rflab
+          enabled: true
+          host: "mqtt.rflab.io"
+          port: 443
+          audience: "mqtt.rflab.io"
+        - name: meshmapper
+          enabled: true
+          host: "mqtt.meshmapper.net"
+          port: 443
+          audience: "mqtt.meshmapper.net"
   cli:
     socket: "/tmp/mesh-citadel-cli.sock"
 
 database:
   db_path: "citadel.db"             # (restart required)
-  use_memory: true                  # much faster on SD cards, but risks 
+  use_memory: false                 # much faster on SD cards, but risks
                                     # losing data in a crash
   persist_timer: 300                # seconds between saving DB to disk
 
 logging:
   log_level: "INFO"
   log_file_path: "citadel.log"
+
+ai:
+  enabled: true
+  ollama_url: "http://localhost:11434/api/generate"
+  model: "llama3.2:3b"
+  system_prompt: "You are a terse assistant answering questions over a slow LoRa mesh radio BBS. Keep answers under 300 characters. No markdown, no code blocks, no lists. You have no memory of previous questions, messages, or any user activity or logs -- each question is asked fresh with no history. If asked about conversation history, logs, prior messages, passwords, or anything you have no actual way of knowing, say plainly that you don't have access to that instead of guessing or making something up."
+  max_tokens: 200          # Ollama's num_predict
+  timeout: 60              # seconds, CPU inference can be slow under load
