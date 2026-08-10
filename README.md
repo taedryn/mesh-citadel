@@ -1,10 +1,63 @@
-# Mesh-Citadel BBS
+# Mesh-Citadel BBS (East Troy BBS fork)
 
 This project aims to create a MeshCore-connected BBS, heavily inspired
 by the Citadel BBS from the 1980s.  This system is lightweight,
 designed to run on a solar-powered Raspberry Pi Zero and a low-power
 nRF52-based LoRa node running the USB companion firmware via
 py-meshcore.
+
+## About this fork
+
+This is a fork of [taedryn/mesh-citadel](https://github.com/taedryn/mesh-citadel),
+running as **East Troy BBS**. Upstream is inactive and not currently
+accepting outside contributions, so rather than let fixes and additions
+sit idle, they live here instead. What's changed relative to upstream:
+
+**Bug fixes** (all found by getting the dormant test suite running
+again and exercising real code paths against it):
+* `Room.delete_room()` crashed unconditionally with a `NameError` any
+  time it was actually called.
+* `SessionManager.expire_session()` raised `UnboundLocalError` instead
+  of cleanly returning `False` for a session that didn't exist.
+* `SessionManager.is_expired()` mixed naive and timezone-aware
+  datetimes and always raised `TypeError` when called.
+* `HelpCommand`'s detailed per-command help (e.g. `H G`) was silently
+  inert -- it checked its argument as a dict when it's actually always
+  a plain string, so it never matched and always fell back to the
+  general menu.
+* `Room.get_next_unread_message()` never awaited an async call, so a
+  room's first-visit-unread detection didn't work correctly.
+* `Room.get_unread_message_ids()` compared `message_id > NULL` in SQL
+  (always false), so a room you'd never visited before showed *zero*
+  unread messages instead of all of them.
+
+**Test suite**: the suite (131 tests) had drifted heavily out of sync
+with the actual code -- 52 tests were failing, including one that
+couldn't even be collected. All of it now passes against current
+behavior; several tests that covered functionality later removed
+(the old dict-based command argument/validation system) were rewritten
+to cover what actually exists today instead.
+
+**CI**: added a GitHub Actions workflow that runs the test suite on
+every push/PR (there wasn't one before).
+
+**New features**:
+* **MQTT packet-telemetry publishing** -- replaces the separate
+  `meshcore-packet-capture` observer tool with equivalent
+  functionality built directly into the BBS, publishing to MQTT
+  brokers (rflab, MeshMapper) using on-device Ed25519-signed JWT auth,
+  reusing the BBS's existing live radio connection instead of running
+  a second process against the same hardware.
+* **Local AI question-answering command** (`A <question>`) -- answers
+  questions using a locally-hosted Ollama model (default
+  `llama3.2:3b`), replying privately to whoever asked. No external API
+  or network dependency, in keeping with this project's own
+  resilient/infrastructure-free design goals.
+* A `CANCEL` fix so it actually escapes an in-progress workflow
+  (previously swallowed as literal input, e.g. as a bogus recipient
+  username, with no way out short of a server restart).
+* A systemd service unit for running the BBS as a proper background
+  service that survives reboots.
 
 # In Progress
 
@@ -175,6 +228,23 @@ running with the memory-based database (set `database -> use_memory` to
 are immediately written out to the persistent database.  Once everything
 seems to be working right, you can re-enable `use_memory`, which will
 noticeably speed up slower machines.
+
+**Running as a service (this fork):** `mesh-citadel.service` in the repo
+root is a systemd unit for running the BBS unattended and having it
+survive reboots. Install it with:
+
+```bash
+sudo cp mesh-citadel.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mesh-citadel
+```
+
+**MQTT and AI config (this fork):** see the `transport.meshcore.mqtt`
+and top-level `ai` sections in `config.yaml` for the packet-telemetry
+and local-AI-command settings respectively. Both default to disabled
+if left unconfigured. The AI command needs
+[Ollama](https://ollama.com) installed and running locally
+(`ollama pull llama3.2:3b`, or whatever model you set `ai.model` to).
 
 Always keep in mind, this is _super duper ALPHA quality software._
 That means it's riddled with bugs and problems and missing features,
