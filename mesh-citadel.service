@@ -1,0 +1,19 @@
+[Unit]
+Description=Mesh-Citadel BBS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=charlie
+Group=charlie
+WorkingDirectory=/home/charlie/mesh-citadel
+ExecStart=/home/charlie/mesh-citadel/.mesh-citadel/bin/python -u main.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mesh-citadel
+
+[Install]
+WantedBy=multi-user.target
