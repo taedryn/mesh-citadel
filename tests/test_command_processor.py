@@ -25,7 +25,7 @@ class DummyCommand(BaseCommand):
 
     async def run(self, context):
         if self.name == "quit":
-            context.session_mgr.expire_session(context.session_id)
+            await context.session_mgr.expire_session(context.session_id)
             return ToUser(session_id=None, text="Goodbye!")
         return ToUser(
             session_id=context.session_id,
@@ -64,16 +64,16 @@ async def db(config):
 @pytest.fixture
 def session_mgr(config, db):
     mgr = SessionManager(config, db)
-    # assume you have a sync helper for tests
     session_id = mgr.create_session("alice")
+    mgr.mark_username(session_id, "alice")
     return mgr, session_id
 
 
-@pytest.fixture
-def processor(config, db, session_mgr, monkeypatch):
+@pytest_asyncio.fixture
+async def processor(config, db, session_mgr, monkeypatch):
     mgr, session_id = session_mgr
     proc = CommandProcessor(config, db, mgr)
-    proc.sessions.mark_logged_in(session_id)
+    await proc.sessions.mark_logged_in(session_id)
 
     # Patch User.load to always set permission_level high enough
     # so we're testing commands, not permissions
@@ -153,8 +153,8 @@ async def test_workflow_delegation(processor, session_mgr, monkeypatch):
     class DummyWorkflow:
         kind = "dummy"
 
-        async def handle(self, processor, session_id, state, command, wf):
-            return ToUser(session_id=session_id, text="Handled by dummy workflow")
+        async def handle(self, context, command):
+            return ToUser(session_id=context.session_id, text="Handled by dummy workflow")
 
     mgr, session_id = session_mgr
     state = mgr.get_session_state(session_id)

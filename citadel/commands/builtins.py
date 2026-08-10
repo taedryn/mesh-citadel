@@ -487,8 +487,9 @@ class HelpCommand(BaseCommand):
             await room.load()
 
         # If specific command requested, show detailed help
-        if "command" in self.args and self.args["command"]:
-            return await self._show_command_help(context.session_id, self.args["command"], user, room)
+        requested_command = (self.args or "").strip()
+        if requested_command:
+            return await self._show_command_help(context.session_id, requested_command, user, room)
 
         # Build dynamic menu by category
         all_commands = registry.available()

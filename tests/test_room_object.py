@@ -133,9 +133,12 @@ async def test_go_to_next_room_with_unread(db, config, setup_rooms, setup_users)
     user = User(db, "user")
     await user.load()
 
-    # Simulate unread messages in room 2
-    await db.execute("INSERT INTO room_messages (room_id, message_id, timestamp) VALUES (2, 101, '2025-09-18T21:00:00Z')")
-    await db.execute("INSERT INTO user_room_state (username, room_id, last_seen_message_id) VALUES ('user', 2, NULL)")
+    # Post a real message in room 2 so it has genuine unread content --
+    # a message needs an actual row in `messages`, not just a dangling
+    # room_messages link, or get_message() filters it out as unreadable.
+    tech_room = Room(db, config, 2)
+    await tech_room.load()
+    await tech_room.post_message("user", "hello from Tech")
 
     next_room = await lobby.go_to_next_room(user, with_unread=True)
     await next_room.load()
@@ -207,16 +210,17 @@ async def test_room_deletion_logs_event(db, config, setup_rooms, setup_users):
         WHERE rm.room_id = ?
     """, (SystemRoomIDs.SYSTEM_ID,))
 
-    assert any("Room 'Test Room' was deleted." in msg[0] for msg in messages)
+    assert any("Room 'Test Room' was deleted" in msg[0] for msg in messages)
 
 
 @pytest.mark.asyncio
 async def test_get_id_by_name(db, config, setup_rooms):
-    room = Room(db, config, 1)
-    assert await room.get_id_by_name("Lobby") == 1
-    assert await room.get_id_by_name("lobby") == 1
+    # get_id_by_name is a classmethod that takes db explicitly -- it
+    # isn't bound to a particular loaded room instance.
+    assert await Room.get_id_by_name(db, "Lobby") == 1
+    assert await Room.get_id_by_name(db, "lobby") == 1
     with pytest.raises(RoomNotFoundError):
-        await room.get_id_by_name("Nonexistent")
+        await Room.get_id_by_name(db, "Nonexistent")
 
 
 @pytest.mark.asyncio

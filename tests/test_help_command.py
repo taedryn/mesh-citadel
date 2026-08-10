@@ -41,6 +41,8 @@ async def setup_user_and_session(config):
 
     # Create session
     session_id = session_mgr.create_session('testuser')
+    session_mgr.mark_username(session_id, 'testuser')
+    await session_mgr.mark_logged_in(session_id)
 
     yield db, session_mgr, session_id, user
 
@@ -118,11 +120,9 @@ async def test_help_menu_generation(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
-    processor.sessions.mark_username(session_id, 'testuser')
-    processor.sessions.mark_logged_in(session_id)
 
-    # Create help command
-    help_cmd = HelpCommand(username='testuser', args={})
+    # Create help command -- args is a plain string (empty = general menu)
+    help_cmd = HelpCommand(username='testuser', args="")
 
     # Process the command
     fromuser = FromUser(
@@ -146,11 +146,10 @@ async def test_specific_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
-    processor.sessions.mark_username(session_id, 'testuser')
-    processor.sessions.mark_logged_in(session_id)
 
-    # Test help for a specific implemented command
-    help_cmd = HelpCommand(username='testuser', args={"command": "G"})
+    # Test help for a specific implemented command -- args is the
+    # requested command's code, as a plain string.
+    help_cmd = HelpCommand(username='testuser', args="G")
     fromuser = FromUser(
         session_id=session_id,
         payload=help_cmd,
@@ -173,11 +172,10 @@ async def test_unimplemented_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
-    processor.sessions.mark_username(session_id, 'testuser')
-    processor.sessions.mark_logged_in(session_id)
 
-    # Test help for an unimplemented command
-    help_cmd = HelpCommand(username='testuser', args={"command": "D"})
+    # Test help for an unimplemented command (I - ignore_room is a stub
+    # today; if it gets implemented later, swap in whatever's still a stub)
+    help_cmd = HelpCommand(username='testuser', args="I")
     fromuser = FromUser(
         session_id=session_id,
         payload=help_cmd,
@@ -187,10 +185,10 @@ async def test_unimplemented_command_help(setup_user_and_session):
 
     assert isinstance(response, ToUser)
     assert not response.is_error
-    assert "D - " in response.text
+    assert "I - " in response.text
     assert "(Not yet implemented)" in response.text
 
-    print(f"\nHelp for unimplemented 'D' command:")
+    print(f"\nHelp for unimplemented 'I' command:")
     print(response.text)
 
 
@@ -200,11 +198,9 @@ async def test_unknown_command_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
-    processor.sessions.mark_username(session_id, 'testuser')
-    processor.sessions.mark_logged_in(session_id)
 
     # Test help for unknown command
-    help_cmd = HelpCommand(username='testuser', args={"command": "Z"})
+    help_cmd = HelpCommand(username='testuser', args="Z")
     fromuser = FromUser(
         session_id=session_id,
         payload=help_cmd,
@@ -224,12 +220,10 @@ async def test_menu_command_works_same_as_help(setup_user_and_session):
     db, session_mgr, session_id, user = setup_user_and_session
     config = Config()
     processor = CommandProcessor(config, db, session_mgr)
-    processor.sessions.mark_username(session_id, 'testuser')
-    processor.sessions.mark_logged_in(session_id)
 
     # Test both commands with same args
-    help_cmd = HelpCommand(username='testuser', args={})
-    menu_cmd = MenuCommand(username='testuser', args={})
+    help_cmd = HelpCommand(username='testuser', args="")
+    menu_cmd = MenuCommand(username='testuser', args="")
 
     fromuser = FromUser(
         session_id=session_id,

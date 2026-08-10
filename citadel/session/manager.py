@@ -75,12 +75,13 @@ class SessionManager:
         timeout = self.config.auth["session_timeout"]
         if session_id in self.sessions:
             _, last_activity = self.sessions[session_id]
-            if (datetime.utcnow() - last_activity) > timedelta(seconds=timeout):
+            if (datetime.now(UTC) - last_activity) > timedelta(seconds=timeout):
                 return True  # session registered, expired
             return False  # session registered, not expired
         return True  # session isn't registered
 
     async def expire_session(self, session_id: str) -> bool:
+        state = None
         if session_id in self.sessions:
             with self.lock:
                 state, _ = self.sessions[session_id]

@@ -10,54 +10,37 @@ class MockConfig:
         self.auth = {"session_timeout": timeout}
 
 
-class MockDB:
-    def __init__(self, existing_usernames=None, fail=False):
-        self.existing_usernames = existing_usernames or {"alice", "bob"}
-        self.fail = fail
-
-    async def execute(self, query, params):
-        if self.fail:
-            raise RuntimeError("Simulated DB failure")
-        username = params[0]
-        if username in self.existing_usernames:
-            return [(1,)]
-        return []
-
-
 @pytest.fixture
 def session_mgr():
     config = MockConfig(timeout=10)
-    db = MockDB()
-    mgr = SessionManager(config, db)
+    # session CRUD never touches db, so a stub is fine here.
+    mgr = SessionManager(config, db=None)
     return mgr
 
 
-@pytest.mark.asyncio
-async def test_sweeper_expires_stale_sessions(session_mgr):
+def test_sweeper_expires_stale_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
-        session_id = await session_mgr.create_session("alice")
-        state = session_mgr.validate_session(session_id)
-        assert state.username == "alice"
+        session_id = session_mgr.create_session("node-alice")
+        state = session_mgr.get_session_state(session_id)
+        assert state.node_id == "node-alice"
 
         # Advance time past timeout
         frozen.move_to("2025-09-17 00:00:11")
         session_mgr.sweep_expired_sessions()  # Direct call
 
-        assert session_mgr.validate_session(session_id) is None
+        assert session_mgr.get_session_state(session_id) is None
 
 
-@pytest.mark.asyncio
-async def test_sweeper_preserves_active_sessions(session_mgr):
+def test_sweeper_preserves_active_sessions(session_mgr):
     with freeze_time("2025-09-17 00:00:00") as frozen:
-        session_id = await session_mgr.create_session("bob")
-        state = session_mgr.validate_session(session_id)
-        assert state.username == "bob"
+        session_id = session_mgr.create_session("node-bob")
+        state = session_mgr.get_session_state(session_id)
+        assert state.node_id == "node-bob"
 
         # Advance time just before timeout
         frozen.move_to("2025-09-17 00:00:09")
-        session_mgr._start_sweeper()
-        threading.Event().wait(0.1)
+        session_mgr.sweep_expired_sessions()  # Direct call
 
         # Should still be valid
-        state = session_mgr.validate_session(session_id)
-        assert state.username == "bob"
+        state = session_mgr.get_session_state(session_id)
+        assert state.node_id == "node-bob"

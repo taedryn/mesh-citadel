@@ -5,7 +5,7 @@ from unittest.mock import Mock, AsyncMock, MagicMock
 from citadel.config import Config
 from citadel.db.manager import DatabaseManager
 from citadel.session.manager import SessionManager
-from citadel.transport.engines.meshcore.meshcore_refactored import MeshCoreTransportEngine
+from citadel.transport.engines.meshcore.main import MeshCoreTransportEngine
 from citadel.transport.engines.meshcore.session_coordinator import SessionCoordinator
 from citadel.transport.packets import ToUser
 

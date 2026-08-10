@@ -11,13 +11,18 @@ def mock_user(monkeypatch):
     verify_password_mock = AsyncMock()
     get_actual_username_mock = AsyncMock()
 
-    monkeypatch.setattr("citadel.user.user.User.username_exists", username_exists_mock)
-    monkeypatch.setattr("citadel.user.user.User.verify_password", verify_password_mock)
-    monkeypatch.setattr("citadel.user.user.User.get_actual_username", get_actual_username_mock)
-
     mock_user_instance = MagicMock()
     mock_user_instance.load = AsyncMock()
+    # authenticate() calls User.username_exists/get_actual_username/
+    # verify_password as classmethod-style calls on `User` itself (not on
+    # an instance), so the mocks need to live on the replacement class,
+    # not on the real User class -- patching the real class's methods and
+    # *then* replacing citadel.user.user.User wholesale (as this fixture
+    # used to) shadows those patches entirely.
     mock_user_class = MagicMock(return_value=mock_user_instance)
+    mock_user_class.username_exists = username_exists_mock
+    mock_user_class.verify_password = verify_password_mock
+    mock_user_class.get_actual_username = get_actual_username_mock
     monkeypatch.setattr("citadel.user.user.User", mock_user_class)
 
     return {

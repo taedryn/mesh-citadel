@@ -95,19 +95,25 @@ async def test_delete_message(msg_mgr, db):
     msg_id = await msg_mgr.post_message("alice", "Temporary message")
     del_result = await msg_mgr.delete_message(msg_id)
     assert del_result is True
-    get_result = await msg_mgr.get_message(msg_id)
+    user = User(db, "bob")
+    await user.load()
+    # get_message() returns None before ever touching recipient_user for a
+    # missing message, but the param is still required at the call site.
+    get_result = await msg_mgr.get_message(msg_id, recipient_user=user)
     assert get_result is None
 
 
 @pytest.mark.asyncio
 async def test_get_messages_batch(msg_mgr, db):
+    # There's no batch get_messages() method -- callers fetch one at a
+    # time (see the read_messages() helper in commands/builtins.py).
     ids = [
         await msg_mgr.post_message("alice", f"Message {i}")
         for i in range(3)
     ]
     user = User(db, "bob")
     await user.load()
-    messages = await msg_mgr.get_messages(ids, recipient_user=user)
+    messages = [await msg_mgr.get_message(mid, recipient_user=user) for mid in ids]
 
     assert len(messages) == 3
     assert all(msg["sender"] == "alice" for msg in messages)
@@ -120,12 +126,13 @@ async def test_get_messages_batch(msg_mgr, db):
 async def test_message_summary_respects_packet_limit(msg_mgr, db):
     long_text = "X" * 500
     msg_id = await msg_mgr.post_message("alice", long_text)
-    summary = await msg_mgr.get_message_summary(msg_id)
+    user = User(db, "bob")
+    await user.load()
+    # get_message_summary() truncates the combined header+content to
+    # msg_len, so the result length is capped at msg_len directly.
+    summary = await msg_mgr.get_message_summary(msg_id, recipient_user=user, msg_len=184)
 
-    display_name = "Alice"
-    timestamp_len = len(datetime.now(UTC).isoformat())
-    reserved = len(display_name) + timestamp_len
-    assert len(summary) <= 184 - reserved
+    assert len(summary) <= 184
 
 
 @pytest.mark.asyncio

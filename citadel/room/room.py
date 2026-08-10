@@ -276,11 +276,14 @@ class Room:
         user = User(self.db, username)
         await user.load()
         last_read = await self.get_last_unread_message_id(user)
+        # last_read is NULL/None for a room the user has never visited --
+        # "message_id > NULL" is never true in SQL, so without this a
+        # first-time visit would incorrectly show zero unread messages.
         id_list = await self.db.execute("""
             SELECT message_id FROM room_messages
             WHERE room_id = ?
             AND message_id > ?
-            """, (self.room_id, last_read))
+            """, (self.room_id, last_read or 0))
         readable_ids = await self.filter_user_messages(
             user,
             [row[0] for row in id_list]
@@ -356,7 +359,7 @@ class Room:
         return False
 
     async def get_next_unread_message(self, user: User) -> dict | None:
-        last_seen = self.get_last_unread_message_id(user)
+        last_seen = await self.get_last_unread_message_id(user)
 
         message_ids = await self.get_message_ids()
         if not message_ids:
@@ -511,7 +514,7 @@ class Room:
 
         # Delete room and cascade
         await self.db.execute("DELETE FROM rooms WHERE id = ?", (self.room_id,))
-        await Room.initialize_room_order(db, config)
+        await Room.initialize_room_order(self.db, self.config)
         # TODO: remove linked messages from appropriate table
         # TODO: link previous and next room IDs together
 

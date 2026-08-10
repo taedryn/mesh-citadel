@@ -6,56 +6,25 @@ from citadel.commands import builtins
 from citadel.auth.permissions import PermissionLevel
 
 
-def test_create_room_requires_room_name():
-    cmd = builtins.CreateRoomCommand(username="aide", args={})
-    with pytest.raises(ValueError):
-        cmd.validate(context={"role": "aide"})
+def test_create_room_is_implemented_and_ignores_args_at_validate_time():
+    # CreateRoomCommand doesn't validate args at all anymore -- it just
+    # kicks off the create_room workflow, which collects the room name
+    # interactively. validate() is the inherited BaseCommand no-op.
+    assert builtins.CreateRoomCommand.is_implemented()
+    cmd = builtins.CreateRoomCommand(username="aide", args="")
+    cmd.validate(context={"role": "aide"})  # should not raise
 
 
-def test_create_room_valid():
-    cmd = builtins.CreateRoomCommand(
-        username="aide",
-        args={"room": "NewRoom", "description": "A test room"}
-    )
-    cmd.validate(context={"role": "aide"})
+def test_edit_room_not_yet_implemented():
+    assert not builtins.EditRoomCommand.is_implemented()
 
 
-def test_edit_room_requires_room_and_attributes():
-    cmd = builtins.EditRoomCommand(username="sysop", args={})
-    with pytest.raises(ValueError):
-        cmd.validate(context={"role": "sysop"})
+def test_edit_user_not_yet_implemented():
+    assert not builtins.EditUserCommand.is_implemented()
 
 
-def test_edit_room_valid():
-    cmd = builtins.EditRoomCommand(
-        username="sysop",
-        args={"room": "Lobby", "attributes": {"topic": "New topic"}}
-    )
-    cmd.validate(context={"role": "sysop"})
-
-
-def test_edit_user_requires_target_and_attributes():
-    cmd = builtins.EditUserCommand(username="sysop", args={})
-    with pytest.raises(ValueError):
-        cmd.validate(context={"role": "sysop"})
-
-
-def test_edit_user_valid():
-    cmd = builtins.EditUserCommand(
-        username="sysop",
-        args={"target_user": "alice", "attributes": {"permission": "aide"}}
-    )
-    cmd.validate(context={"role": "sysop"})
-
-
-def test_fast_forward_has_no_args():
-    cmd = builtins.FastForwardCommand(username="bob", args={})
-    cmd.validate(context={"room": "Lobby"})  # should not raise
-
-    # If args are provided, it should fail
-    cmd = builtins.FastForwardCommand(username="bob", args={"extra": "oops"})
-    with pytest.raises(ValueError):
-        cmd.validate(context={"room": "Lobby"})
+def test_fast_forward_not_yet_implemented():
+    assert not builtins.FastForwardCommand.is_implemented()
 
 
 def test_permissions_for_dot_commands():
