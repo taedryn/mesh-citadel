@@ -110,7 +110,17 @@ class MessageRouter:
 
             wf_state = self.session_mgr.get_workflow(session_id)
 
-            if wf_state:
+            if wf_state and text.strip().upper() == "CANCEL":
+                # Let CANCEL escape an active workflow instead of being
+                # swallowed as literal workflow input (e.g. a recipient name).
+                # (STOP is not a supported workflow-escape command.)
+                command = self.text_parser.parse_command(text)
+                packet = FromUser(
+                    session_id=session_id,
+                    payload_type=FromUserType.COMMAND,
+                    payload=command
+                )
+            elif wf_state:
                 packet = FromUser(
                     session_id=session_id,
                     payload_type=FromUserType.WORKFLOW_RESPONSE,

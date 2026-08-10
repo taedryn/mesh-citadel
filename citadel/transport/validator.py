@@ -40,8 +40,16 @@ class InputValidator:
         # Determine expected input type based on session state
         expected_type = self._get_expected_input_type(session_state)
 
+        # CANCEL is allowed to escape an active workflow, so a COMMAND
+        # packet carrying it is valid even when WORKFLOW_RESPONSE is expected.
+        is_cancel_escape = (
+            packet.payload_type == FromUserType.COMMAND
+            and isinstance(packet.payload, BaseCommand)
+            and packet.payload.name == "cancel"
+        )
+
         # Validate payload type matches expectation
-        if packet.payload_type != expected_type:
+        if packet.payload_type != expected_type and not is_cancel_escape:
             workflow_info = session_state.workflow.kind if session_state.workflow else 'None'
             log.error(
                 f"Transport error: Expected {expected_type} but received {packet.payload_type}. "
