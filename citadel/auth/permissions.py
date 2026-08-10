@@ -24,6 +24,7 @@ class PermissionInfo:
 # Map actions to the minimum permission level required
 # if you create a new command, add it here
 ACTION_REQUIREMENTS = {
+    "ask_ai": PermissionInfo(level=PermissionLevel.USER, description="ask the AI"),
     "block_user": PermissionInfo(level=PermissionLevel.TWIT, description="block users"),
     "cancel": PermissionInfo(level=PermissionLevel.TWIT,
                              description="cancel a workflow"),

@@ -15,6 +15,7 @@ from citadel.workflows.base import WorkflowContext
 
 # Import to register built-in commands
 import citadel.commands.builtins  # noqa: F401
+import citadel.commands.ai  # noqa: F401
 
 log = logging.getLogger(__name__)
 

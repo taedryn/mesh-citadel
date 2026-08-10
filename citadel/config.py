@@ -42,6 +42,24 @@ class Config:
         "database": {
             "db_path": "citadel.db",
         },
+        "ai": {
+            "enabled": False,
+            "ollama_url": "http://localhost:11434/api/generate",
+            "model": "llama3.2:3b",
+            "system_prompt": (
+                "You are a terse assistant answering questions over a slow "
+                "LoRa mesh radio BBS. Keep answers under 300 characters. "
+                "No markdown, no code blocks, no lists. You have no memory "
+                "of previous questions, messages, or any user activity or "
+                "logs -- each question is asked fresh with no history. If "
+                "asked about conversation history, logs, prior messages, "
+                "passwords, or anything you have no actual way of knowing, "
+                "say plainly that you don't have access to that instead of "
+                "guessing or making something up."
+            ),
+            "max_tokens": 200,
+            "timeout": 60,
+        },
         "logging": {
             "log_level": "INFO",
             "log_file_path": "citadel.log",
@@ -87,6 +105,7 @@ class Config:
         self.transport = raw["transport"]
         self.database = raw["database"]
         self.logging = raw["logging"]
+        self.ai = raw["ai"]
 
         self._reboot_snapshot = {
             key: self._get_nested(raw, key.split("."))
@@ -121,6 +140,7 @@ class Config:
         self.transport = new_raw["transport"]
         self.database = new_raw["database"]
         self.logging = new_raw["logging"]
+        self.ai = new_raw["ai"]
 
     def _apply_env_overrides(self, raw):
         overrides = {}
